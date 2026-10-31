@@ -2121,6 +2121,7 @@ ${storyboardBullets}
           <div className="flex items-center gap-1.5 ml-2">
             <button
               type="button"
+              data-testid="top-tab-chat"
               onClick={() => setWorkspaceMode('user')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border ${
                 workspaceMode === 'user'
@@ -2133,7 +2134,7 @@ ${storyboardBullets}
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
-              <span>{WORKSPACE_LABELS[chatCapability]}</span>
+              <span>Chat</span>
             </button>
 
             {isAdminTabOpen && (
@@ -2372,7 +2373,7 @@ ${storyboardBullets}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                    v5.2 (SVN-r402.0) · Panini-Synapse-Distiller Active
+                    v5.4 (SVN-r404.0) · Panini-Aether-3D + Chronos-2M + Polyglot-AST Active
                   </span>
                   <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">
                     Golden SVN-r500.0-LTS Train

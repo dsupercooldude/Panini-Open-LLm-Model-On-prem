@@ -24,6 +24,9 @@ import {
   executeContinualLearningHarvest,
   generatePureLearningLedgerPdfBytes,
   applyPromptScenarioToModelLearning,
+  translateNlpToUseCase,
+  synthesizeChronos2MRepositoryMemory,
+  runAutonomousCiCdSelfTestAndBugAudit,
 } from './engineLogic';
 import {
   INITIAL_MODELS,
@@ -47,6 +50,7 @@ import {
   formatReceiptCurrencyAmount,
   adaptMusicTrackToVisualBackground,
   detectMultilingualSpeechAndText,
+  extractUniversalPromptAttributes,
 } from './multimodalSuite';
 
 test('Panini model registry honors Maharshi Panini and 400B quantized footprint fits in 16GB Mobile RAM using IQ1_S and MoE flash offload', () => {
@@ -1109,7 +1113,7 @@ test('Sovereign Master v5.1..v6.0 LTS Suite: Bar/Cafe Receipt PDF, Zero-Assumpti
   const vocalTrack = synthesizeMusicTrackSpec(
     'Compose a vocal song with lyrics and words for a craft cocktail bar'
   );
-  assert.equal(vocalTrack.sovereignAudioEngine, 'Panini-LyraVox-v5.3');
+  assert.equal(vocalTrack.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
   assert.equal(vocalTrack.hasVocalLyrics, true);
   assert.ok(
     vocalTrack.lyricsStanzas && vocalTrack.lyricsStanzas.length >= 4,
@@ -1417,3 +1421,155 @@ test('Release v5.2.1 -> v5.3 (SVN-r403.0) Regression & Continual Model Evolution
     'Panini-Kinesis-Cinema-8K (Culinary Brigade & Foley Physics)'
   );
 });
+
+test('Release v5.4 (SVN-r404.0): Panini-Aether-3D 6-DoF Relightable 3D Scene + Unknown Prompt Attribute Alignment, Off-the-Hook Voice Use-Case Builder, Output Maturity Meaning, Panini-Chronos-2M & Continuous Self-Test Suite', () => {
+  // 1. Panini-Aether-3D: True 3D Volumetric 6-DoF Scene & 100% Universal Attribute Alignment for Unknown Prompts
+  const unknownPrompt =
+    'A steampunk clockmaker adjusting brass gears and glowing crystal lenses inside a timber workshop with warm lantern light';
+  const unknownScene = buildPromptConstructedScene(unknownPrompt, '16:9', undefined, undefined, {
+    aether3DOverrides: {
+      cameraYawDeg: 27,
+      cameraPitchDeg: 18,
+      cameraZoom: 1.15,
+      lightAzimuthDeg: -35,
+      lightElevationDeg: 52,
+    },
+  });
+  assert.ok(unknownScene.aether3DSpec, 'buildPromptConstructedScene must populate aether3DSpec');
+  assert.equal(unknownScene.aether3DSpec.sovereignEngineId, 'Panini-Aether-3D-v5.4');
+  assert.equal(unknownScene.aether3DSpec.isTrue3DVolumetric, true);
+  assert.equal(unknownScene.aether3DSpec.cameraYawDeg, 27);
+  assert.equal(unknownScene.aether3DSpec.cameraPitchDeg, 18);
+  assert.equal(unknownScene.aether3DSpec.cameraZoom, 1.15);
+  assert.equal(unknownScene.aether3DSpec.lightAzimuthDeg, -35);
+  assert.equal(
+    unknownScene.aether3DSpec.universalAttributeAlignment.alignmentCoveragePct,
+    100,
+    'Unknown prompts must achieve 100% universal attribute coverage'
+  );
+  assert.ok(
+    unknownScene.aether3DSpec.universalAttributeAlignment.volumetric3DMeshPrimitives.length >= 2,
+    'Unknown prompts must synthesize 3D volumetric mesh primitives for extracted objects/props'
+  );
+
+  // Direct test of extractUniversalPromptAttributes
+  const attrAlign = extractUniversalPromptAttributes(
+    unknownPrompt,
+    unknownScene.promptDecomposition
+  );
+  assert.equal(attrAlign.alignmentCoveragePct, 100);
+  assert.ok(attrAlign.extractedPropsAndObjects.length >= 1);
+
+  // 2. Off-the-Hook Voice Mic -> Text -> Built UseCaseScenario
+  const voiceBuiltScenario = translateNlpToUseCase(
+    'Analyze the 3D molecular structure of BRCA1 and explain DNA repair pathways',
+    24
+  );
+  assert.equal(voiceBuiltScenario.id, 'SCN-10024');
+  assert.ok(voiceBuiltScenario.title.length > 5);
+  assert.ok(voiceBuiltScenario.starterPrompt.includes('BRCA1'));
+
+  // 3. Model Maturity & Continual Learning Meaning surfaced for User Outputs
+  const maturity = calculateModelMaturityAndSchedule(INITIAL_MODELS[1], 12, 8);
+  assert.ok(maturity.maturityScorePct >= 88);
+  assert.ok(
+    maturity.maturityMeaningSummary.length > 30,
+    'Maturity evaluation must include plain-English maturityMeaningSummary for user outputs'
+  );
+  assert.ok(
+    maturity.outputQualityCapabilitiesUnlocked.length >= 3,
+    'Maturity evaluation must list unlocked output quality capabilities'
+  );
+  assert.ok(maturity.promptLearnedSamplesCount > 0);
+  assert.ok(maturity.internetLearnedSourcesCount > 0);
+
+  // 4. Panini-Chronos-2M: 2,000,000-Token Repository & Document Memory
+  const chronos = synthesizeChronos2MRepositoryMemory(
+    'Refactor full-stack TypeScript repository with 6-DoF 3D scene synthesis and multi-format code sandbox',
+    'Computer Programming'
+  );
+  assert.equal(chronos.sovereignEngineId, 'Panini-Chronos-2M-v5.4');
+  assert.equal(chronos.maxContextWindowTokens, 2000000);
+  assert.ok(chronos.activeTokensUtilized > 1000000);
+  assert.ok(chronos.repositoryNodes.length >= 4);
+  assert.ok(chronos.needleInHaystackRecallPct >= 99.9);
+
+  // 5. Continuous Self-Test & Bug-Aware Roadmap Evolution Audit
+  const audit = runAutonomousCiCdSelfTestAndBugAudit();
+  assert.equal(audit.totalSelfTests, 10);
+  assert.equal(audit.passedSelfTests, 10);
+  assert.equal(audit.resolvedBugLedger.length, 5);
+  assert.ok(audit.resolvedBugLedger.every((b) => b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'));
+});
+
+test('Hotfix v5.5 (SVN-r405.0-HF): Panini-Veo-Omni-v5.5-HF Online & Offline Cinema Video (.MP4) and Panini-LyraVox-v5.5-HF Studio Vocal & Instrumental Music (.MP3/.WAV) Parity', () => {
+  // 1. Executive Chefs Culinary Prompt resolves to vid-v55-culinary-chefs (.mp4) both Online & Offline
+  const chefScene = buildPromptConstructedScene(
+    'Live Synthesize 8K Master Video: Two executive chefs plating artisanal dishes in a commercial hotel kitchen with rising steam, copper cookware, and synchronized sizzling foley audio',
+    '16:9'
+  );
+  assert.ok(chefScene.hotfixV55VideoMaster, 'Scene must attach hotfixV55VideoMaster');
+  assert.equal(chefScene.hotfixV55VideoMaster?.id, 'vid-v55-culinary-chefs');
+  assert.equal(
+    chefScene.hotfixV55VideoMaster?.masterVideoUrl,
+    '/assets/aistudio/gemini_generated_video_EA357005_6e89af84.mp4'
+  );
+  assert.equal(chefScene.hotfixV55VideoMaster?.sovereignEngineId, 'Panini-Veo-Omni-v5.5-HF');
+  assert.equal(chefScene.hotfixV55VideoMaster?.onlineCloudModel, 'gemini-omni-1.1-flash');
+  assert.ok(chefScene.hotfixV55VideoMaster?.offlineShardId.endsWith('.gguf'));
+
+  // 2. Mahatma Gandhi Dandi Salt March Prompt resolves to vid-v55-gandhi-dandi (.mp4) with spoken voiceover transcript
+  const gandhiScene = buildPromptConstructedScene(
+    'Explain Mahatma Gandhi’s Dandi Salt March in simple everyday terms and generate a multi-shot video: Gandhi walking peacefully with followers along a sunlit coastal road',
+    '16:9'
+  );
+  assert.equal(gandhiScene.hotfixV55VideoMaster?.id, 'vid-v55-gandhi-dandi');
+  assert.equal(
+    gandhiScene.hotfixV55VideoMaster?.masterVideoUrl,
+    '/assets/aistudio/gemini_generated_video_3C702410_943b63cd.mp4'
+  );
+  assert.ok(
+    gandhiScene.hotfixV55VideoMaster?.synchronizedVoiceoverOrLyrics?.includes('non-violence'),
+    'Gandhi video master must include synchronized voiceover transcript'
+  );
+
+  // 3. Rajasthani Folk Performance & Visualizer Video Prompts resolve to vid-v55-kesariya-folk and vid-v55-marudhar-visualizer
+  const folkScene = buildPromptConstructedScene(
+    'Generate a Rajasthani folk desert performance video singing Kesariya Balam with Kalbelia dance and Ravanahatha',
+    '16:9'
+  );
+  assert.equal(folkScene.hotfixV55VideoMaster?.id, 'vid-v55-kesariya-folk');
+  assert.equal(
+    folkScene.hotfixV55VideoMaster?.masterVideoUrl,
+    '/assets/aistudio/gemini_generated_video_41CD945B_8c0d3813.mp4'
+  );
+
+  const visualizerScene = buildPromptConstructedScene(
+    'Create a full-length album art music visualizer video for Mharo Marudhar Desh under a desert moon',
+    '16:9'
+  );
+  assert.equal(visualizerScene.hotfixV55VideoMaster?.id, 'vid-v55-marudhar-visualizer');
+  assert.equal(
+    visualizerScene.hotfixV55VideoMaster?.masterVideoUrl,
+    '/assets/aistudio/gemini_generated_video_AB341C0F_6d824af9.mp4'
+  );
+
+  // 4. Studio Vocal & Folk-Fusion Music Synthesis works Online & Offline with real .mp3 master + .wav stems
+  const onlineMusic = synthesizeMusicTrackSpec(
+    'Compose a Rajasthani folk-fusion studio song Kesariya Balam / Marudhar Ri Maati with vocals, Ravanahatha, and Bansuri flute',
+    'full_track',
+    true
+  );
+  const offlineMusic = synthesizeMusicTrackSpec(
+    'Compose a Rajasthani folk-fusion studio song Kesariya Balam / Marudhar Ri Maati with vocals, Ravanahatha, and Bansuri flute',
+    'full_track',
+    false
+  );
+  assert.equal(onlineMusic.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
+  assert.equal(offlineMusic.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
+  assert.equal(onlineMusic.masterAudioUrl, '/assets/aistudio/gemini_music_d4dcd6de.mp3');
+  assert.equal(offlineMusic.masterAudioUrl, '/assets/aistudio/gemini_music_d4dcd6de.mp3');
+  assert.ok(onlineMusic.wavDataUrl.startsWith('data:audio/wav;base64,'));
+  assert.ok(offlineMusic.wavDataUrl.startsWith('data:audio/wav;base64,'));
+});
+

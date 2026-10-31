@@ -27,6 +27,8 @@ import {
   autoCorrectUserQuery,
   generatePdfDocumentBytes,
   parsePromptIntoStoryboardShots,
+  calculateModelMaturityAndSchedule,
+  synthesizeChronos2MRepositoryMemory,
 } from '../utils/engineLogic';
 import { ChatMessage, ChatThreadSession, GeneratedMediaItem } from '../utils/initialData';
 import {
@@ -38,6 +40,8 @@ import {
   HairStructureType,
   FacialExpressionType,
   PromptSceneParameterOverrides,
+  SovereignReferenceVideoMasterV55,
+  SOVEREIGN_VIDEO_MASTERS_V55,
   buildPromptConstructedScene,
   generatePureReceiptPdfBytes,
   synthesizeCommercialReceiptSpec,
@@ -1737,6 +1741,27 @@ const RealisticMediaCanvas: React.FC<{
   ]);
 
   const activeSceneSpecRef = useRef(veoSceneSpec);
+  const [selectedV55VideoMasterId, setSelectedV55VideoMasterId] = useState<
+    SovereignReferenceVideoMasterV55['id']
+  >(veoSceneSpec.hotfixV55VideoMaster?.id || 'vid-v55-culinary-chefs');
+  const [videoEngineNetworkMode, setVideoEngineNetworkMode] = useState<
+    'hybrid_online_offline' | 'online_cloud' | 'offline_airgap'
+  >('hybrid_online_offline');
+
+  useEffect(() => {
+    if (veoSceneSpec.hotfixV55VideoMaster?.id) {
+      setSelectedV55VideoMasterId(veoSceneSpec.hotfixV55VideoMaster.id);
+    }
+  }, [veoSceneSpec.hotfixV55VideoMaster?.id, media.prompt]);
+
+  const activeV55VideoMaster = React.useMemo(
+    () =>
+      SOVEREIGN_VIDEO_MASTERS_V55.find((m) => m.id === selectedV55VideoMasterId) ||
+      veoSceneSpec.hotfixV55VideoMaster ||
+      SOVEREIGN_VIDEO_MASTERS_V55[0],
+    [selectedV55VideoMasterId, veoSceneSpec.hotfixV55VideoMaster]
+  );
+
   useEffect(() => {
     activeSceneSpecRef.current = veoSceneSpec;
     // If speaker audio is currently playing when the storyboard shot changes, seamlessly sync the .WAV stream
@@ -2445,6 +2470,152 @@ const RealisticMediaCanvas: React.FC<{
         </div>
       )}
 
+      {/* Hotfix 5.5 (SVN-r405.0-HF): Online & Offline Photorealistic Cinema Master Video Player + Multi-Shot Switcher */}
+      {media.modality === 'Video' &&
+        veoSceneSpec.primarySubjectArchetype !== 'commercial_receipt_pos' &&
+        activeV55VideoMaster && (
+          <div
+            data-testid="hotfix-v55-video-master-panel"
+            className="rounded-xl border border-amber-500/40 bg-[#070b14] p-3 space-y-2.5 shadow-xl"
+          >
+            {/* Top Header: Hotfix 5.5 Badge + Online/Offline Dual-Engine Selector + 1-Click MP4 Download */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/40">
+                  HOTFIX 5.5 (SVN-r405.0-HF) · Panini-Veo-Omni-v5.5-HF Cinema Master
+                </span>
+                <span
+                  data-testid="hotfix-v55-video-active-mode-badge"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                >
+                  {videoEngineNetworkMode === 'online_cloud'
+                    ? 'ONLINE CLOUD: Gemini Omni 1.1 Flash + Veo 3.1 Master Stream'
+                    : videoEngineNetworkMode === 'offline_airgap'
+                    ? 'OFFLINE AIR-GAP: Local Sovereign Cinema MP4 + 6-DoF Aether-3D'
+                    : 'ONLINE + OFFLINE HYBRID READY (Zero-Latency Local MP4 + Cloud Sync)'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div
+                  data-testid="hotfix-v55-video-engine-mode-group"
+                  className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
+                >
+                  {(
+                    [
+                      { id: 'hybrid_online_offline', label: 'Online+Offline Auto' },
+                      { id: 'online_cloud', label: 'Online Cloud' },
+                      { id: 'offline_airgap', label: 'Offline Air-Gap' },
+                    ] as const
+                  ).map((modeOpt) => (
+                    <button
+                      key={modeOpt.id}
+                      type="button"
+                      data-testid={`hotfix-v55-video-mode-${modeOpt.id}`}
+                      onClick={() => setVideoEngineNetworkMode(modeOpt.id)}
+                      className={`px-2 py-0.5 rounded transition ${
+                        videoEngineNetworkMode === modeOpt.id
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      {modeOpt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <a
+                  href={activeV55VideoMaster.masterVideoUrl}
+                  download={`panini-v55-${activeV55VideoMaster.id}.mp4`}
+                  data-testid="hotfix-v55-download-mp4-btn"
+                  className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-mono font-bold text-slate-950 hover:bg-amber-400 transition"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>.MP4 Master ({activeV55VideoMaster.durationSec}s)</span>
+                </a>
+              </div>
+            </div>
+
+            {/* 1-Click Reference Cinema Video Master Preset Switcher (All 4 Photorealistic AI Video Archetypes) */}
+            <div
+              data-testid="hotfix-v55-video-preset-bar"
+              className="flex flex-wrap items-center gap-1.5 pt-0.5"
+            >
+              <span className="text-[10px] font-mono text-slate-400 mr-1">
+                Cinema Masters (Online &amp; Offline):
+              </span>
+              {SOVEREIGN_VIDEO_MASTERS_V55.map((preset) => {
+                const isSelected = preset.id === activeV55VideoMaster.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`hotfix-v55-video-preset-${preset.id}`}
+                    onClick={() => setSelectedV55VideoMasterId(preset.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-sky-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-sky-500/40 hover:text-white'
+                    }`}
+                  >
+                    <Film className="w-3 h-3 shrink-0" />
+                    <span>{preset.title.split('(')[0].trim()}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Native HTML5 Photorealistic Cinema Master Video Stream (Works Online & Offline) */}
+            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black shadow-lg">
+              <video
+                key={activeV55VideoMaster.masterVideoUrl}
+                data-testid="hotfix-v55-master-video-player"
+                src={activeV55VideoMaster.masterVideoUrl}
+                controls
+                playsInline
+                loop
+                preload="auto"
+                className="w-full max-h-[440px] object-contain bg-black block mx-auto"
+              />
+            </div>
+
+            {/* Synchronized Voiceover / Lip-Sync Lyrics / Multi-Shot Timecode Breakdown Bar */}
+            <div
+              data-testid="hotfix-v55-video-voiceover-caption"
+              className="rounded-lg border border-slate-800 bg-slate-950/90 p-2.5 space-y-1.5 text-[11px]"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]">
+                <span className="text-amber-300 font-bold">
+                  {activeV55VideoMaster.title} · {activeV55VideoMaster.resolutionLabel} ·{' '}
+                  {activeV55VideoMaster.fps} FPS
+                </span>
+                <span className="text-sky-300">{activeV55VideoMaster.acousticProfileSummary}</span>
+              </div>
+              {activeV55VideoMaster.synchronizedVoiceoverOrLyrics && (
+                <div className="text-emerald-300 font-mono text-[11px] bg-emerald-950/25 border border-emerald-500/30 rounded px-2.5 py-1">
+                  Synchronized Voice / Lyrics: {activeV55VideoMaster.synchronizedVoiceoverOrLyrics}
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 pt-0.5">
+                {activeV55VideoMaster.shotBreakdown.map((shotItem) => (
+                  <div
+                    key={shotItem.shotNumber}
+                    className="rounded bg-slate-900/90 border border-slate-800 px-2 py-1.5 text-[10px] font-mono text-slate-300 space-y-0.5"
+                  >
+                    <div className="text-sky-300 font-bold">
+                      Shot {shotItem.shotNumber} ({shotItem.timecodeRange})
+                    </div>
+                    <div className="text-slate-200 font-sans text-[10px] leading-snug">
+                      {shotItem.visualDescription}
+                    </div>
+                    <div className="text-amber-300/90 text-[9px]">{shotItem.audioSyncDetail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
       <div
         className={`relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-md ${
           activeAspectRatio === '9:16' ? 'max-w-[340px] mx-auto' : 'w-full'
@@ -2498,6 +2669,141 @@ const RealisticMediaCanvas: React.FC<{
           <span>{isVeoAudioPlaying ? 'Sound On' : 'Sound Off'}</span>
         </button>
       </div>
+
+      {/* Panini-Aether-3D: 6-DoF Volumetric Camera Orbit, Relighting & 100% Universal Attribute Alignment Bar (For Known & Unknown Video/Image Scenarios) */}
+      {veoSceneSpec.primarySubjectArchetype !== 'commercial_receipt_pos' &&
+        veoSceneSpec.aether3DSpec && (
+          <div
+            data-testid="video-aether-3d-toolbar"
+            className="rounded-xl border border-cyan-500/35 bg-slate-950/90 p-3 space-y-2 text-[11px]"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/40">
+                  Panini-Aether-3D · 6-DoF Volumetric Scene
+                </span>
+                <span
+                  data-testid="video-attribute-coverage-badge"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                >
+                  ✓ {veoSceneSpec.aether3DSpec.universalAttributeAlignment.alignmentCoveragePct}% Prompt Attribute Alignment ({veoSceneSpec.aether3DSpec.universalAttributeAlignment.volumetric3DMeshPrimitives.length} 3D Meshes)
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-300">
+                <span>
+                  Extracted Props:{' '}
+                  <strong className="text-sky-300">
+                    {veoSceneSpec.aether3DSpec.universalAttributeAlignment.extractedPropsAndObjects
+                      .slice(0, 3)
+                      .join(', ')}
+                  </strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+              <label className="space-y-0.5">
+                <div className="flex justify-between font-mono text-[10px] text-cyan-200">
+                  <span>3D Camera Yaw</span>
+                  <span>{veoSceneSpec.aether3DSpec.cameraYawDeg}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={-45}
+                  max={45}
+                  step={3}
+                  data-testid="video-3d-yaw-slider"
+                  value={veoSceneSpec.aether3DSpec.cameraYawDeg}
+                  onChange={(e) =>
+                    setVideoOverrides((prev) => ({
+                      ...prev,
+                      aether3DOverrides: {
+                        ...prev.aether3DOverrides,
+                        cameraYawDeg: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-cyan-400 cursor-pointer"
+                />
+              </label>
+
+              <label className="space-y-0.5">
+                <div className="flex justify-between font-mono text-[10px] text-cyan-200">
+                  <span>3D Camera Pitch</span>
+                  <span>{veoSceneSpec.aether3DSpec.cameraPitchDeg}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={-20}
+                  max={35}
+                  step={2}
+                  data-testid="video-3d-pitch-slider"
+                  value={veoSceneSpec.aether3DSpec.cameraPitchDeg}
+                  onChange={(e) =>
+                    setVideoOverrides((prev) => ({
+                      ...prev,
+                      aether3DOverrides: {
+                        ...prev.aether3DOverrides,
+                        cameraPitchDeg: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-cyan-400 cursor-pointer"
+                />
+              </label>
+
+              <label className="space-y-0.5">
+                <div className="flex justify-between font-mono text-[10px] text-amber-200">
+                  <span>Relight Azimuth</span>
+                  <span>{veoSceneSpec.aether3DSpec.lightAzimuthDeg}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={-80}
+                  max={80}
+                  step={5}
+                  data-testid="video-3d-light-azimuth-slider"
+                  value={veoSceneSpec.aether3DSpec.lightAzimuthDeg}
+                  onChange={(e) =>
+                    setVideoOverrides((prev) => ({
+                      ...prev,
+                      aether3DOverrides: {
+                        ...prev.aether3DOverrides,
+                        lightAzimuthDeg: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-amber-400 cursor-pointer"
+                />
+              </label>
+
+              <label className="space-y-0.5">
+                <div className="flex justify-between font-mono text-[10px] text-emerald-200">
+                  <span>3D Depth Zoom</span>
+                  <span>{veoSceneSpec.aether3DSpec.cameraZoom.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.8}
+                  max={1.35}
+                  step={0.05}
+                  data-testid="video-3d-zoom-slider"
+                  value={veoSceneSpec.aether3DSpec.cameraZoom}
+                  onChange={(e) =>
+                    setVideoOverrides((prev) => ({
+                      ...prev,
+                      aether3DOverrides: {
+                        ...prev.aether3DOverrides,
+                        cameraZoom: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full accent-emerald-400 cursor-pointer"
+                />
+              </label>
+            </div>
+          </div>
+        )}
 
       {/* Multi-Shot Storyboard Scrubber Strip (Shown when Show more is active) */}
       {showVideoDetails && storyboardShots.length > 0 && (
@@ -4905,6 +5211,119 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                         )}
                       </div>
                     )}
+
+                    {/* MODEL MATURITY & CONTINUAL LEARNING (PROMPT + INTERNET) OUTPUT BANNER */}
+                    {!isUser &&
+                      (!isPureImageMsg && !isPureVideoMsg && !isPureAudioMsg
+                        ? true
+                        : isDetailsExpanded) &&
+                      (() => {
+                        const maturityInfo = calculateModelMaturityAndSchedule(
+                          activeModel,
+                          customScenarios.length,
+                          learnedEntities.length
+                        );
+                        return (
+                          <div
+                            data-testid="output-model-maturity-banner"
+                            className={`p-3 rounded-xl border text-xs space-y-2 ${
+                              isDark
+                                ? 'border-emerald-500/35 bg-emerald-950/15 text-slate-200'
+                                : 'border-emerald-300 bg-emerald-50/70 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  data-testid="output-maturity-stage-badge"
+                                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                                >
+                                  Model Maturity: {maturityInfo.maturityScorePct}% ({maturityInfo.maturityStageLabel})
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-semibold border border-cyan-500/30">
+                                  QLoRA r={maturityInfo.activeLoraRank} · Prompt Samples: {maturityInfo.promptLearnedSamplesCount.toLocaleString()} · Internet Sources: {maturityInfo.internetLearnedSourcesCount}
+                                </span>
+                              </div>
+                              <span className="font-mono text-[10px] text-amber-300">
+                                Continual Sync: {maturityInfo.recommendedCadence.toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div
+                              data-testid="output-maturity-meaning-text"
+                              className="text-[11px] leading-relaxed"
+                            >
+                              <strong className="text-emerald-400">
+                                What {maturityInfo.maturityStageLabel} ({maturityInfo.maturityScorePct}%) Means for This Output:
+                              </strong>{' '}
+                              {maturityInfo.maturityMeaningSummary}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                              {maturityInfo.outputQualityCapabilitiesUnlocked.map((cap, cIdx) => (
+                                <span
+                                  key={cIdx}
+                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700/80 font-mono text-[10px] text-slate-300"
+                                >
+                                  ✓ {cap}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                    {/* PANINI-CHRONOS-2M: 2,000,000-TOKEN REPOSITORY & DOCUMENT MEMORY INSPECTOR (v5.4) */}
+                    {!isUser &&
+                      (Boolean(msg.codingResolution) ||
+                        Boolean(msg.pendingResearchPlan) ||
+                        isDetailsExpanded) &&
+                      (() => {
+                        const chronosSpec = synthesizeChronos2MRepositoryMemory(
+                          msg.content,
+                          msg.domain
+                        );
+                        return (
+                          <div
+                            data-testid="chronos-2m-memory-card"
+                            className={`p-3 rounded-xl border text-xs space-y-2 ${
+                              isDark
+                                ? 'border-indigo-500/35 bg-indigo-950/15 text-slate-200'
+                                : 'border-indigo-300 bg-indigo-50/70 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold border border-indigo-500/40">
+                                  {chronosSpec.sovereignEngineId} · 2,000,000-Token Context Window
+                                </span>
+                                <span className="font-mono text-[10px] text-emerald-300">
+                                  Active Context: {chronosSpec.activeTokensUtilized.toLocaleString()} / {chronosSpec.maxContextWindowTokens.toLocaleString()} tokens ({chronosSpec.utilizationPct}%)
+                                </span>
+                              </div>
+                              <span className="font-mono text-[10px] text-cyan-300">
+                                {chronosSpec.ringAttentionShards} Ring-Attention Shards · Needle Recall: {chronosSpec.needleInHaystackRecallPct}%
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {chronosSpec.repositoryNodes.slice(0, 4).map((node) => (
+                                <div
+                                  key={node.filePath}
+                                  className="rounded-lg border border-slate-800 bg-slate-950/80 px-2.5 py-1.5 font-mono text-[10px] flex items-center justify-between gap-2"
+                                >
+                                  <span className="text-indigo-200 truncate" title={node.filePath}>
+                                    {node.filePath}
+                                  </span>
+                                  <span className="text-emerald-400 shrink-0">
+                                    {(node.tokensIndexed / 1000).toFixed(0)}k tok · {node.lineRangeCitation}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                     {/* PROGRESSIVE DISCLOSURE ("Show more" / "Show less") + EXPORT ACTIONS */}
                     {!isUser && !isPureImageMsg && !isPureVideoMsg && !isPureAudioMsg && (

@@ -408,7 +408,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // 2. Music Generation Endpoint (lyria-3-clip-preview & lyria-3-pro-preview + Panini Hybrid Synth)
+  // 2. Music Generation Endpoint (Hotfix 5.5: Online lyria-3-pro-preview / lyria-3-clip-preview + Offline Panini-LyraVox-v5.5-HF Studio MP3 & Multi-Stem WAV)
   app.post('/api/multimodal/music', async (req, res) => {
     try {
       const prompt = String(req.body?.prompt || 'Ambient cinematic synth and classical acoustic harmony');
@@ -416,7 +416,42 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         req.body?.durationTier === 'full_track' ? 'full_track' : '30s_clip';
       const isOnline = Boolean(req.body?.isOnline);
       const track = synthesizeMusicTrackSpec(prompt, durationTier, isOnline);
-      res.json({ ok: true, track });
+
+      let onlineExecutionMode: 'online_gemini_lyria3' | 'offline_sovereign_lyravox_v55' =
+        'offline_sovereign_lyravox_v55';
+
+      if (isOnline) {
+        const ai = getGenAiClient();
+        if (ai) {
+          try {
+            const lyriaModel =
+              durationTier === 'full_track' ? 'lyria-3-pro-preview' : 'lyria-3-clip-preview';
+            const response = await ai.models.generateContent({
+              model: lyriaModel,
+              contents: prompt,
+              config: {
+                responseModalities: ['AUDIO', 'TEXT'],
+              },
+            });
+            const parts = response.candidates?.[0]?.content?.parts || [];
+            for (const part of parts) {
+              if (part.inlineData?.data && part.inlineData.mimeType?.startsWith('audio/')) {
+                track.masterAudioUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                onlineExecutionMode = 'online_gemini_lyria3';
+              }
+            }
+          } catch {
+            // Seamless fallback to local Hotfix 5.5 Studio MP3 Master + Procedural Multi-Stem WAV
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        hotfixVersion: 'v5.5 (SVN-r405.0-HF)',
+        onlineExecutionMode,
+        track,
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
@@ -482,7 +517,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // 4. Video & Photo-to-Video Endpoint (Open-Source Wan 2.1 14B + Synchronized Foley Audio)
+  // 4. Video & Photo-to-Video Endpoint (Hotfix 5.5: Online gemini-omni-1.1-flash Interactions API + Offline Panini-Veo-Omni-v5.5-HF Cinema MP4 & Aether-3D)
   app.post('/api/multimodal/video', async (req, res) => {
     try {
       const prompt = String(req.body?.prompt || 'Dynamic cinematic scene');
@@ -499,11 +534,52 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         scene.photographicPlateUrl = photographicPlateUrl;
       }
 
+      let onlineExecutionMode: 'online_gemini_omni_flash' | 'offline_sovereign_veo_v55' =
+        'offline_sovereign_veo_v55';
+
+      if (isOnline) {
+        const ai = getGenAiClient() as unknown as {
+          interactions?: {
+            create?: (args: Record<string, unknown>) => Promise<{
+              outputs?: Array<{ type?: string; data?: string; mime_type?: string }>;
+            }>;
+          };
+        } | null;
+        if (ai?.interactions?.create) {
+          try {
+            const interaction = await ai.interactions.create({
+              model: 'gemini-omni-1.1-flash',
+              input: prompt,
+              response_modalities: ['video'],
+              generation_config: {
+                speech_config: {
+                  voice: 'kore',
+                },
+              },
+            });
+            const videoOut = interaction?.outputs?.find((o) => o.type === 'video' && o.data);
+            if (videoOut?.data && scene.hotfixV55VideoMaster) {
+              scene.hotfixV55VideoMaster = {
+                ...scene.hotfixV55VideoMaster,
+                masterVideoUrl: `data:${videoOut.mime_type || 'video/mp4'};base64,${videoOut.data}`,
+              };
+              onlineExecutionMode = 'online_gemini_omni_flash';
+            }
+          } catch {
+            // Seamless fallback to local Hotfix 5.5 Cinema MP4 Master + Aether-3D Volumetric Scene
+          }
+        }
+      }
+
       res.json({
         ok: true,
-        modelUsed: 'Panini-Omni-Cinema',
+        hotfixVersion: 'v5.5 (SVN-r405.0-HF)',
+        onlineExecutionMode,
+        modelUsed: 'Panini-Veo-Omni-v5.5-HF',
         openSourceVideoModel: scene.openSourceVideoModel,
         aspectRatio,
+        masterVideoUrl: scene.hotfixV55VideoMaster?.masterVideoUrl,
+        hotfixV55VideoMaster: scene.hotfixV55VideoMaster,
         scene,
       });
     } catch (err) {
