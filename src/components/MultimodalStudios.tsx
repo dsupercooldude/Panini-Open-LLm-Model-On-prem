@@ -57,6 +57,8 @@ import {
   VisualBackgroundAcousticAdaptation,
   SovereignReferenceAudioMasterV55,
   SOVEREIGN_AUDIO_MASTERS_V55,
+  SovereignV56HardwareFormFactor,
+  buildSovereignV56OmniLyriaStitchSpec,
   synthesizeMusicTrackSpec,
   adaptMusicTrackToVisualBackground,
   formatReceiptCurrencyAmount,
@@ -4963,8 +4965,21 @@ export const MusicSynthStudioCard: React.FC<{
   const [audioNetworkMode, setAudioNetworkMode] = useState<
     'hybrid_online_offline' | 'online_cloud' | 'offline_airgap'
   >('hybrid_online_offline');
+  const [audioHardwarePolicy, setAudioHardwarePolicy] =
+    useState<SovereignV56HardwareFormFactor>('desktop_laptop_onprem');
+  const [audioLearnedShardsDelta, setAudioLearnedShardsDelta] = useState<number>(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const spectrumCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const activeV56AudioStitchSpec = React.useMemo(
+    () =>
+      buildSovereignV56OmniLyriaStitchSpec(track.prompt, {
+        isOnlineMode: audioNetworkMode !== 'offline_airgap',
+        hardwareFormFactor: audioHardwarePolicy,
+        additionalLearnedShards: audioLearnedShardsDelta,
+      }),
+    [track.prompt, audioNetworkMode, audioHardwarePolicy, audioLearnedShardsDelta]
+  );
 
   useEffect(() => {
     setTrack(initialTrack);
@@ -5166,6 +5181,60 @@ export const MusicSynthStudioCard: React.FC<{
           >
             Procedural 4-Stem PCM Synth (.WAV)
           </button>
+        </div>
+
+        {/* Release v5.6 (SVN-r406.0): Sovereign Panini-Lyria-3-Pro-Sovereign Audio Stitcher, Hardware Policy & Offline Shard Self-Learner */}
+        <div
+          data-testid="v56-audio-stitcher-panel"
+          className="rounded-lg border border-cyan-500/35 bg-slate-900/90 p-2 space-y-1.5 text-[10px] font-mono"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40">
+                RELEASE v5.6 · {activeV56AudioStitchSpec.sovereignAudioModelName} (Zero External Calls)
+              </span>
+              <span className="text-emerald-300">
+                Policy: {activeV56AudioStitchSpec.deviceExecutionPolicy}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="v56-audio-policy-desktop-btn"
+                onClick={() => setAudioHardwarePolicy('desktop_laptop_onprem')}
+                className={`px-2 py-0.5 rounded transition ${
+                  audioHardwarePolicy === 'desktop_laptop_onprem'
+                    ? 'bg-cyan-500 text-slate-950 font-bold'
+                    : 'bg-slate-950 text-slate-300 border border-slate-800'
+                }`}
+              >
+                Laptop/Desktop On-Prem
+              </button>
+              <button
+                type="button"
+                data-testid="v56-audio-policy-mobile-btn"
+                onClick={() => setAudioHardwarePolicy('mobile_edge')}
+                className={`px-2 py-0.5 rounded transition ${
+                  audioHardwarePolicy === 'mobile_edge'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'bg-slate-950 text-slate-300 border border-slate-800'
+                }`}
+              >
+                Mobile (Internet Stitch Only)
+              </button>
+              <button
+                type="button"
+                data-testid="v56-audio-stitch-learn-btn"
+                onClick={() => setAudioLearnedShardsDelta((d) => d + 1)}
+                className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400 transition"
+              >
+                + Stitch Audio &amp; Learn Shard ({activeV56AudioStitchSpec.offlineShardLearning.learnedMediaShardsCount})
+              </button>
+            </div>
+          </div>
+          <div className="text-indigo-200 truncate">
+            {activeV56AudioStitchSpec.offlineShardLearning.offlineAutonomousSummary}
+          </div>
         </div>
       </div>
 

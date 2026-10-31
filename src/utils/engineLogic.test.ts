@@ -51,6 +51,8 @@ import {
   adaptMusicTrackToVisualBackground,
   detectMultilingualSpeechAndText,
   extractUniversalPromptAttributes,
+  buildSovereignV56OmniLyriaStitchSpec,
+  learnFromOfflineMediaShardsV56,
 } from './multimodalSuite';
 
 test('Panini model registry honors Maharshi Panini and 400B quantized footprint fits in 16GB Mobile RAM using IQ1_S and MoE flash offload', () => {
@@ -1113,7 +1115,7 @@ test('Sovereign Master v5.1..v6.0 LTS Suite: Bar/Cafe Receipt PDF, Zero-Assumpti
   const vocalTrack = synthesizeMusicTrackSpec(
     'Compose a vocal song with lyrics and words for a craft cocktail bar'
   );
-  assert.equal(vocalTrack.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
+  assert.equal(vocalTrack.sovereignAudioEngine, 'Panini-Lyria-3-Pro-Sovereign (v5.6)');
   assert.equal(vocalTrack.hasVocalLyrics, true);
   assert.ok(
     vocalTrack.lyricsStanzas && vocalTrack.lyricsStanzas.length >= 4,
@@ -1496,9 +1498,9 @@ test('Release v5.4 (SVN-r404.0): Panini-Aether-3D 6-DoF Relightable 3D Scene + U
 
   // 5. Continuous Self-Test & Bug-Aware Roadmap Evolution Audit
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.totalSelfTests, 10);
-  assert.equal(audit.passedSelfTests, 10);
-  assert.equal(audit.resolvedBugLedger.length, 5);
+  assert.equal(audit.totalSelfTests, 12);
+  assert.equal(audit.passedSelfTests, 12);
+  assert.equal(audit.resolvedBugLedger.length, 6);
   assert.ok(audit.resolvedBugLedger.every((b) => b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'));
 });
 
@@ -1565,11 +1567,86 @@ test('Hotfix v5.5 (SVN-r405.0-HF): Panini-Veo-Omni-v5.5-HF Online & Offline Cine
     'full_track',
     false
   );
-  assert.equal(onlineMusic.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
-  assert.equal(offlineMusic.sovereignAudioEngine, 'Panini-LyraVox-v5.5-HF');
+  assert.equal(onlineMusic.sovereignAudioEngine, 'Panini-Lyria-3-Pro-Sovereign (v5.6)');
+  assert.equal(offlineMusic.sovereignAudioEngine, 'Panini-Lyria-3-Pro-Sovereign (v5.6)');
   assert.equal(onlineMusic.masterAudioUrl, '/assets/aistudio/gemini_music_d4dcd6de.mp3');
   assert.equal(offlineMusic.masterAudioUrl, '/assets/aistudio/gemini_music_d4dcd6de.mp3');
   assert.ok(onlineMusic.wavDataUrl.startsWith('data:audio/wav;base64,'));
   assert.ok(offlineMusic.wavDataUrl.startsWith('data:audio/wav;base64,'));
+});
+
+test('Release v5.6 (SVN-r406.0): Packaged Sovereign Panini-Omni-Flash-1.1-Sovereign & Panini-Lyria-3-Pro-Sovereign (Zero External Calls), Online Media Stitching, Laptop/Desktop On-Prem vs. Mobile Internet-Stitch Policy, & Offline Shard Self-Learning', () => {
+  // 1. Packaged Sovereign Models in INITIAL_MODELS
+  const omniModel = INITIAL_MODELS.find((m) => m.id === 'panini-omni-flash-v56');
+  const lyriaModel = INITIAL_MODELS.find((m) => m.id === 'panini-lyria-3-pro-v56');
+  assert.ok(omniModel, 'panini-omni-flash-v56 must be packaged in INITIAL_MODELS');
+  assert.ok(lyriaModel, 'panini-lyria-3-pro-v56 must be packaged in INITIAL_MODELS');
+  assert.equal(omniModel?.name, 'Panini-Omni-Flash-1.1-Sovereign');
+  assert.equal(lyriaModel?.name, 'Panini-Lyria-3-Pro-Sovereign');
+
+  // 2. Laptop / Desktop On-Premises Execution Policy (Full Synthesis + Multi-Segment Stitching)
+  const desktopSpec = buildSovereignV56OmniLyriaStitchSpec(
+    'Two executive chefs plating artisanal dishes in a commercial hotel kitchen with copper cookware and sizzling foley',
+    {
+      isOnlineMode: true,
+      hardwareFormFactor: 'desktop_laptop_onprem',
+      fetchedOnlineAssets: [
+        {
+          title: 'Commercial Hotel Kitchen Copper Skillet Plate',
+          url: 'https://upload.wikimedia.org/wikipedia/commons/culinary_plate.jpg',
+          mediaKind: 'image',
+        },
+      ],
+    }
+  );
+  assert.equal(desktopSpec.releaseVersion, 'v5.6 (SVN-r406.0)');
+  assert.equal(desktopSpec.zeroExternalModelCalls, true);
+  assert.equal(desktopSpec.sovereignVideoModelId, 'panini-omni-flash-v56');
+  assert.equal(desktopSpec.sovereignAudioModelId, 'panini-lyria-3-pro-v56');
+  assert.equal(desktopSpec.hardwareFormFactor, 'desktop_laptop_onprem');
+  assert.equal(desktopSpec.deviceExecutionPolicy, 'on_prem_full_synthesis_and_stitching');
+  assert.equal(desktopSpec.stitchedMediaSegments.length, 4);
+  assert.equal(
+    desktopSpec.stitchedMediaSegments[0].assetUrl,
+    'https://upload.wikimedia.org/wikipedia/commons/culinary_plate.jpg'
+  );
+
+  // 3. Mobile Device Execution Policy (Internet Data Stitching Only — Zero Heavy Local On-Prem Synthesis)
+  const mobileSpec = buildSovereignV56OmniLyriaStitchSpec(
+    'Generate a multi-shot Rajasthani desert folk music video on mobile phone',
+    {
+      isOnlineMode: true,
+      hardwareFormFactor: 'mobile_edge',
+    }
+  );
+  assert.equal(mobileSpec.hardwareFormFactor, 'mobile_edge');
+  assert.equal(mobileSpec.deviceExecutionPolicy, 'mobile_internet_stitch_only');
+  assert.equal(mobileSpec.networkMode, 'online_fetch_and_stitch');
+  assert.ok(
+    mobileSpec.stitchedMediaSegments.every(
+      (s) => s.sourceOrigin === 'Online Open-Web Media Fetch (Wikimedia/Commons)'
+    ),
+    'Mobile mode must only stitch based on data available from internet'
+  );
+
+  // 4. Offline Self-Learning from Shards Over Time
+  const learnStep0 = learnFromOfflineMediaShardsV56(
+    'Mahatma Gandhi Dandi Salt March coastal cinema and voiceover',
+    0
+  );
+  const learnStep5 = learnFromOfflineMediaShardsV56(
+    'Mahatma Gandhi Dandi Salt March coastal cinema and voiceover',
+    5
+  );
+  assert.ok(
+    learnStep5.learnedMediaShardsCount > learnStep0.learnedMediaShardsCount,
+    'Offline shard learner must accumulate learned media shards over time'
+  );
+  assert.ok(
+    learnStep5.cinematicQualityProgressionPct > learnStep0.cinematicQualityProgressionPct,
+    'Offline shard learner must increase cinematic quality progression over time'
+  );
+  assert.ok(learnStep5.distilledVisualPrimitives.length >= 3);
+  assert.ok(learnStep5.distilledAcousticFormants.length >= 3);
 });
 

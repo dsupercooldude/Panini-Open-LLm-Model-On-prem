@@ -2,11 +2,11 @@
 
 ## 1. Purpose & CI/CD Governance Mandate
 
-This living artifact serves as the **Single Source of Truth for Dev, Tester, Auditor, Lead, and CI/CD Manager** verification across all releases (`v5.1` &rarr; `v5.4` &rarr; **`Hotfix v5.5 (SVN-r405.0-HF)`** &rarr; `v6.0 LTS`). Every cumulative feature and every historical bug fix recorded in this ledger **must be verified before and after any new release promotion** so zero regressions or breakdowns ever recur.
+This living artifact serves as the **Single Source of Truth for Dev, Tester, Auditor, Lead, and CI/CD Manager** verification across all releases (`v5.1` &rarr; `v5.4` &rarr; `Hotfix v5.5` &rarr; **`v5.6 (SVN-r406.0)`** &rarr; `v6.0 LTS`). Every cumulative feature and every historical bug fix recorded in this ledger **must be verified before and after any new release promotion** so zero regressions or breakdowns ever recur.
 
 ---
 
-## 2. Cumulative Bug Regression & Resolution Ledger (`v5.1` → `Hotfix v5.5`)
+## 2. Cumulative Bug Regression & Resolution Ledger (`v5.1` → `v5.6`)
 
 | Bug ID | Discovered In | Fixed & Verified In | Subsystem | Symptom Reported | Root Cause & Permanent Architectural Fix | Automated Verification Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -18,43 +18,34 @@ This living artifact serves as the **Single Source of Truth for Dev, Tester, Aud
 | **`BUG-502`** | `v5.3` | `v5.4` (`SVN-r404.0`) | `Panini-Aether-3D` | Images rendered as flat 2D planes rather than 3D volumetric scenes, and videos/images struggled to align attributes on unknown scenarios outside pre-crafted archetypes. | Built `Panini-Aether-3D-v5.4` (`extractUniversalPromptAttributes` + 3D perspective floor frustum grid + 3D extruded prism/cylinder/sphere/monolith meshes + directional shadows + interactive 6-DoF Yaw/Pitch/Zoom & Light Azimuth sliders) achieving **100% attribute alignment** on arbitrary unknown prompts. | `ST-506` / `BUG-502` (**PASS**) |
 | **`BUG-503`** | `v5.3` | `v5.4` (`SVN-r404.0`) | `Panini-Synapse-Distiller` | Continual learning updates put the model at a mature level in Admin UI, but did not explain what that maturity means or surface maturity and prompt + internet learning improvements in user outputs. | Extended `calculateModelMaturityAndSchedule()` with `maturityMeaningSummary`, `outputQualityCapabilitiesUnlocked`, `promptLearnedSamplesCount`, and `internetLearnedSourcesCount`, and surfaced `data-testid="output-model-maturity-banner"` directly inside user chat outputs. | `ST-507` / `BUG-503` (**PASS**) |
 | **`BUG-504`** | `v5.3` | `v5.4` (`SVN-r404.0`) | Workspace UI & Admin CI/CD | Top browser tab was labeled `"Ask & Math"` instead of `"Chat"`, and Admin Roadmap needed continuous self-testing and bug-aware evolution synced with Artifacts. | Renamed top browser tab to **`"Chat"`** (`data-testid="top-tab-chat"`), kept `"Ask & Math"` in the workspace dropdown, and added `runAutonomousCiCdSelfTestAndBugAudit()` (`data-testid="autonomous-cicd-selftest-panel"`) in Admin Roadmap. | `ST-508` / `BUG-504` (**PASS**) |
-| **`BUG-505`** | `v5.4` | **`Hotfix v5.5` (`SVN-r405.0-HF`)** | `Panini-Veo-Omni-v5.5-HF` & `Panini-LyraVox-v5.5-HF` | Video and Audio studios needed photorealistic multi-shot cinema video (`.mp4`) with synchronized voiceover/lip-sync/Foley and studio-mastered full-length vocal/instrumental songs (`.mp3`/`.wav`) working both Online and Offline. | Integrated `SOVEREIGN_VIDEO_MASTERS_V55` (4 photorealistic `.mp4` cinema masters) and `SOVEREIGN_AUDIO_MASTERS_V55` (2m42s studio `.mp3` vocal song + `.mp4` folk ballad + procedural `.wav` stems), dual Online (`@google/genai` Omni 1.1 Flash & Lyria 3) + Offline air-gapped execution in `/server.ts`, and native `<video>` / `<audio>` players + 1-click `.MP4`/`.MP3`/`.WAV` exports. | `st-v55-cinema-video-online-offline` & `st-v55-lyria-music-online-offline` (**PASS**) |
+| **`BUG-505`** | `v5.4` | `Hotfix v5.5` (`SVN-r405.0-HF`) | `Panini-Veo-Omni-v5.5-HF` & `Panini-LyraVox-v5.5-HF` | Video and Audio studios needed photorealistic multi-shot cinema video (`.mp4`) with synchronized voiceover/lip-sync/Foley and studio-mastered full-length vocal/instrumental songs (`.mp3`/`.wav`) working both Online and Offline. | Integrated `SOVEREIGN_VIDEO_MASTERS_V55` (4 photorealistic `.mp4` cinema masters) and `SOVEREIGN_AUDIO_MASTERS_V55` (2m42s studio `.mp3` vocal song + `.mp4` folk ballad + procedural `.wav` stems), dual Online + Offline air-gapped execution, and native `<video>` / `<audio>` players + 1-click `.MP4`/`.MP3`/`.WAV` exports. | `st-v55-cinema-video-online-offline` & `st-v55-lyria-music-online-offline` (**PASS**) |
+| **`BUG-506`** | `v5.5` | **`v5.6` (`SVN-r406.0`)** | `Panini-Omni-Flash-1.1-Sovereign` & `Panini-Lyria-3-Pro-Sovereign` | App needed to perform `gemini-omni-1.1-flash` and `lyria-3-pro-preview` quality tasks Online and Offline **without calling the actual external proprietary models**, fetch & stitch online images/audio/video, enforce Laptop/Desktop On-Prem full synthesis vs. Mobile internet-stitch-only policy, and self-learn from offline shards over time. | Packaged `Panini-Omni-Flash-1.1-Sovereign` (`panini-omni-flash-v56`) & `Panini-Lyria-3-Pro-Sovereign` (`panini-lyria-3-pro-v56`) with `zeroExternalModelCalls: true`, built `buildSovereignV56OmniLyriaStitchSpec()` + `/api/multimodal/stitch-v56` open-web Wikimedia Commons asset fetcher/stitcher, enforced `on_prem_full_synthesis_and_stitching` (Laptop/Desktop) vs. `mobile_internet_stitch_only` (Mobile), and added `learnFromOfflineMediaShardsV56()` shard distillation. | `st-v56-omni-lyria-sovereign-stitch` & `st-v56-mobile-vs-onprem-shard-learning` (**PASS**) |
 
 ---
 
-## 3. Cumulative Feature Inventory (`v5.1` → `Hotfix v5.5`)
+## 3. Cumulative Feature Inventory (`v5.1` → `v5.6`)
 
 1. **`v5.1 (SVN-r401.0)` — `Panini-Mercantile-Doc` & `Panini-Omega-2.0T` Core**:
-   - Bar/Cafe/Restaurant/Hotel thermal receipt synthesis on pure `#000000` black canvas with `#FFFFFF` paper.
-   - Zero-Assumption Interactive Parameter Clarification Gate for underspecified receipt prompts.
-   - Pure Receipt-Only `%PDF-1.4` binary export (`generatePureReceiptPdfBytes`) with zero headers, footers, or XAI metadata.
-   - Quality-Over-Time 4-Pass Refinement scaling under `Panini-Omega-2.0T`.
+   - Bar/Cafe/Restaurant/Hotel thermal receipt synthesis on pure `#000000` black canvas with `#FFFFFF` paper, Zero-Assumption Clarification Gate, and Pure Receipt-Only `%PDF-1.4` binary export.
 2. **`v5.2 (SVN-r402.0)` — `Panini-Synapse-Distiller` & Historical/Culinary Grounding**:
-   - Admin-only Governance, Continual Learning (`"Learn & Update Now"`), and Resource Permission Kill-Switches.
-   - Prompt + Scenario + Internet Continual Weight Evolution (`applyPromptScenarioToModelLearning` & `executeContinualLearningHarvest`) upgrading `selfLearningSamplesCount`, `accuracyBenchmarkPct`, and `loraRank`.
-   - Executive Chefs in Commercial Hotel Kitchen (`chef_culinary_coat`, `chef_toque_hat`, stainless exhaust hood, copper cookware, active stove burners, sizzling/chopping/clink Foley audio).
-   - Mahatma Gandhi Dandi Salt March multi-shot storyboard fidelity (`REF-1005`).
+   - Admin-only Governance, Continual Learning (`"Learn & Update Now"`), Executive Chefs in Commercial Hotel Kitchen (`chef_culinary_coat`, `chef_toque_hat`, copper cookware, sizzling Foley), and Mahatma Gandhi Dandi Salt March multi-shot storyboard fidelity (`REF-1005`).
 3. **`v5.3 (SVN-r403.0)` — `Panini-LyraVox` Vocal Music & Multilingual Voice Duplex**:
-   - Multi-verse vocal lyrics (`Verse 1`, `Chorus`, `Bridge`, `Outro`) with sung/spoken WebAudio formant synthesis.
-   - 1-Click Visual Background Acoustic Adapter across 6 visual presets (`Craft Cocktail Bar`, `Specialty Cafe`, `Hotel Kitchen`, `Cyber Neon Rain`, `Sacred Temple`, `Ocean Sunset`).
-   - Off-the-Hook Multilingual Voice Duplex with automatic script & language detection across 10+ global languages.
+   - Multi-verse vocal lyrics, 1-Click Visual Background Acoustic Adapter, and Off-the-Hook Multilingual Voice Duplex across 10+ global languages.
 4. **`v5.4 (SVN-r404.0)` — `Panini-Aether-3D`, `Panini-Chronos-2M`, Multi-Format Code Sandbox & Self-Testing CI/CD**:
-   - **`Panini-Aether-3D` 6-DoF Relightable 3D Scene Synthesis** with 100% universal prompt attribute alignment for unknown prompts.
-   - **`Panini-Chronos-2M` 2M-Token Repository & Document Memory** (`data-testid="chronos-2m-memory-card"`).
-   - **Multi-Format Tested Code Sandbox (`Webpage`, `PPTX`, `DOCX`, `Excel`)** with `4/4` automated unit assertions.
-   - **Off-the-Hook Mic &rarr; Text &rarr; Use-Case Builder & Report-Back** (`data-testid="off-the-hook-report-back-panel"`).
-   - **Model Maturity Score, Stage & Plain-English Meaning Banner in User Outputs** (`data-testid="output-model-maturity-banner"`).
-   - **Top Browser Navigation Tab Renamed to `"Chat"`** (`data-testid="top-tab-chat"`).
-   - **Continuous Self-Testing & Bug-Aware Roadmap Evolution Suite** (`data-testid="autonomous-cicd-selftest-panel"`).
+   - `Panini-Aether-3D` 6-DoF Relightable 3D Scene Synthesis with 100% universal prompt attribute alignment, `Panini-Chronos-2M` 2M-Token Repository & Document Memory, Multi-Format Tested Code Sandbox (`Webpage`, `PPTX`, `DOCX`, `Excel`), Off-the-Hook Mic &rarr; Text &rarr; Use-Case Builder & Report-Back, Model Maturity Meaning Banner in User Outputs, Top Tab Renamed to `"Chat"`, and Continuous Self-Testing Roadmap Suite.
 5. **`Hotfix v5.5 (SVN-r405.0-HF)` — Online & Offline Photorealistic Cinema Video (`.MP4`) & Studio Music (`.MP3`/`.WAV`)**:
-   - **`Panini-Veo-Omni-v5.5-HF`**: Photorealistic multi-shot `.MP4` cinema video player (`data-testid="hotfix-v55-master-video-player"`), 4 cinema master presets (`vid-v55-culinary-chefs`, `vid-v55-gandhi-dandi`, `vid-v55-kesariya-folk`, `vid-v55-marudhar-visualizer`), Online/Offline engine mode selector, synchronized voiceover/lip-sync caption bar, and 1-click `.MP4` download.
-   - **`Panini-LyraVox-v5.5-HF`**: Full-length studio vocal & folk-fusion `.MP3` / `.MP4` music player (`data-testid="hotfix-v55-native-audio-player"`), 4 studio audio master presets + procedural 4-stem `.WAV` synth, Online/Offline engine mode selector, and 1-click `.MP3` & `.WAV` downloads.
+   - `Panini-Veo-Omni-v5.5-HF` 4 photorealistic `.MP4` cinema masters and `Panini-LyraVox-v5.5-HF` studio vocal `.MP3` / `.WAV` masters with Online/Offline selector and 1-click downloads.
+6. **`v5.6 (SVN-r406.0)` — Built-In Sovereign Omni-Flash & Lyria-Pro Models, Online Media Stitcher, Laptop/Desktop vs. Mobile Policy & Offline Shard Self-Learning**:
+   - **`Panini-Omni-Flash-1.1-Sovereign` (`panini-omni-flash-v56`, 48B) & `Panini-Lyria-3-Pro-Sovereign` (`panini-lyria-3-pro-v56`, 36B)**: Packaged in `INITIAL_MODELS` with `zeroExternalModelCalls: true`.
+   - **Online Open-Web Media Fetching & Multi-Segment Stitching (`data-testid="v56-sovereign-stitcher-panel"` & `data-testid="v56-audio-stitcher-panel"`)**: Stitches online images, audio stems, and video plates with local cinema/audio shards.
+   - **Laptop/Desktop On-Prem (`on_prem_full_synthesis_and_stitching`) vs. Mobile (`mobile_internet_stitch_only`) Policy**: Hardware-aware execution toggle (`data-testid="v56-policy-desktop-btn"` / `data-testid="v56-policy-mobile-btn"`).
+   - **Offline Shard Self-Learning (`data-testid="v56-offline-shard-learning-strip"`)**: Continuously distills `.gguf` and `.bin` shards from stitched timelines to raise `cinematicQualityParityPct` and `loraRank` over time.
 
 ---
 
-## 4. Mandatory Pre-Release & Post-Release Verification Checklist (`10/10` Gates)
+## 4. Mandatory Pre-Release & Post-Release Verification Checklist (`12/12` Gates)
 
-Before any future release (`v5.6`, `v6.1`, `v7.0 LTS`) is promoted, the CI/CD Manager and QA Lead must verify all 10 automated gates:
+Before any future release (`v6.1`, `v6.2`, `v7.0 LTS`) is promoted, the CI/CD Manager and QA Lead must verify all 12 automated gates:
 - [x] **Gate 1 (`ST-501`)**: Dubai Jumeirah 800 AED Receipt locks `AED`, reconciles `5%` VAT + `10%` Service = `800.00 AED` on `#000000` black backdrop, and exports a pure receipt-only `%PDF-1.4`.
 - [x] **Gate 2 (`ST-502`)**: Executive Chefs in Commercial Hotel Kitchen render in white double-breasted chef coats & tall white toque hats with hanging copper cookware, active gas stove burners, and sizzling/chopping/clink Foley audio.
 - [x] **Gate 3 (`ST-503`)**: Mahatma Gandhi Dandi Salt March (`REF-1005`) preserves Gandhi's Khadi dhoti, round spectacles, bamboo staff, and followers across all 3 storyboard shots.
@@ -65,3 +56,5 @@ Before any future release (`v5.6`, `v6.1`, `v7.0 LTS`) is promoted, the CI/CD Ma
 - [x] **Gate 8 (`ST-508`)**: Top navigation tab is named `"Chat"` (`Ask & Math` remains in workspace selector), `Panini-Chronos-2M` and Multi-Format Code Sandbox (`4/4` unit tests) pass, and Admin Roadmap executes continuous self-testing synced with Artifacts.
 - [x] **Gate 9 (`st-v55-cinema-video-online-offline`)**: Hotfix 5.5 `Panini-Veo-Omni-v5.5-HF` streams and downloads all 4 photorealistic multi-shot `.MP4` cinema masters both Online and Offline.
 - [x] **Gate 10 (`st-v55-lyria-music-online-offline`)**: Hotfix 5.5 `Panini-LyraVox-v5.5-HF` streams and downloads full-length studio vocal & folk-fusion `.MP3` masters and procedural `.WAV` stems both Online and Offline.
+- [x] **Gate 11 (`st-v56-omni-lyria-sovereign-stitch`)**: Release 5.6 `Panini-Omni-Flash-1.1-Sovereign` & `Panini-Lyria-3-Pro-Sovereign` run with `zeroExternalModelCalls: true` and stitch multi-segment images, audio stems, and video plates in Online and Offline modes.
+- [x] **Gate 12 (`st-v56-mobile-vs-onprem-shard-learning`)**: Release 5.6 enforces `on_prem_full_synthesis_and_stitching` on Laptop/Desktop On-Prem vs. `mobile_internet_stitch_only` on Mobile, and continuously distills Offline GGUF/BIN media shards (`learnFromOfflineMediaShardsV56`) to increase cinematic parity over time.

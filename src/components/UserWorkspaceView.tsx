@@ -2613,6 +2613,135 @@ const RealisticMediaCanvas: React.FC<{
                 ))}
               </div>
             </div>
+
+            {/* Release v5.6 (SVN-r406.0): Sovereign Panini-Omni-Flash-1.1 & Panini-Lyria-3-Pro Media Stitcher, Hardware Policy (Laptop/Desktop On-Prem vs Mobile Internet-Stitch) & Offline Shard Self-Learner */}
+            {veoSceneSpec.v56OmniLyriaStitchSpec && (
+              <div
+                data-testid="v56-sovereign-stitcher-panel"
+                className="rounded-lg border border-cyan-500/40 bg-slate-950/95 p-2.5 space-y-2 text-[11px]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/40">
+                      RELEASE v5.6 (SVN-r406.0) · {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignVideoModelName} +{' '}
+                      {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignAudioModelName}
+                    </span>
+                    <span
+                      data-testid="v56-zero-external-calls-badge"
+                      className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                    >
+                      ✓ Zero External Model Calls (Sovereign Built-In Engine)
+                    </span>
+                  </div>
+
+                  {/* Hardware Execution Policy Toggle: Laptop/Desktop On-Prem vs. Mobile Internet-Stitch-Only */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div
+                      data-testid="v56-hardware-policy-toggle"
+                      className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
+                    >
+                      <button
+                        type="button"
+                        data-testid="v56-policy-desktop-btn"
+                        onClick={() =>
+                          setVideoOverrides((prev) => ({
+                            ...prev,
+                            v56HardwareFormFactor: 'desktop_laptop_onprem',
+                          }))
+                        }
+                        className={`px-2 py-0.5 rounded transition ${
+                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor ===
+                          'desktop_laptop_onprem'
+                            ? 'bg-cyan-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        Laptop/Desktop On-Prem (Full Synthesis + Stitch)
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="v56-policy-mobile-btn"
+                        onClick={() =>
+                          setVideoOverrides((prev) => ({
+                            ...prev,
+                            v56HardwareFormFactor: 'mobile_edge',
+                          }))
+                        }
+                        className={`px-2 py-0.5 rounded transition ${
+                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor === 'mobile_edge'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        Mobile Mode (Internet Data Stitch Only)
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="v56-stitch-and-learn-btn"
+                      onClick={() =>
+                        setVideoOverrides((prev) => ({
+                          ...prev,
+                          v56AdditionalLearnedShards: (prev.v56AdditionalLearnedShards || 0) + 1,
+                        }))
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-mono text-[10px] font-bold hover:bg-emerald-400 transition"
+                    >
+                      + Stitch Online/Shard Media &amp; Distill Offline Shard
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  data-testid="v56-device-policy-explanation"
+                  className="font-mono text-[10px] text-slate-200 bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1"
+                >
+                  {veoSceneSpec.v56OmniLyriaStitchSpec.devicePolicyExplanation}
+                </div>
+
+                {/* Stitched Multi-Segment Timeline (Fetched Online Images/Audio/Video + Sovereign Shards) */}
+                <div
+                  data-testid="v56-stitched-segments-list"
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5"
+                >
+                  {veoSceneSpec.v56OmniLyriaStitchSpec.stitchedMediaSegments.map((seg) => (
+                    <div
+                      key={seg.segmentIndex}
+                      className="rounded bg-slate-900/80 border border-slate-800 px-2 py-1.5 text-[10px] font-mono space-y-0.5"
+                    >
+                      <div className="flex items-center justify-between text-cyan-300 font-bold">
+                        <span>
+                          Seg {seg.segmentIndex} ({seg.timecodeRange})
+                        </span>
+                        <span className="text-[9px] text-amber-300">{seg.mediaKind}</span>
+                      </div>
+                      <div className="text-[9px] text-emerald-300 truncate">{seg.sourceOrigin}</div>
+                      <div className="text-[10px] font-sans text-slate-300 line-clamp-2">
+                        {seg.visualOrAcousticSummary}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Offline Shard Self-Learning Progression Strip */}
+                <div
+                  data-testid="v56-offline-shard-learning-strip"
+                  className="rounded bg-indigo-950/25 border border-indigo-500/35 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]"
+                >
+                  <span className="text-indigo-200">
+                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.offlineAutonomousSummary}
+                  </span>
+                  <span
+                    data-testid="v56-learned-shards-count-badge"
+                    className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40 shrink-0"
+                  >
+                    Learned Shards: {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.learnedMediaShardsCount} · Parity:{' '}
+                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.cinematicQualityProgressionPct}%
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
