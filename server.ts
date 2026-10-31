@@ -111,6 +111,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       authorsOrInstitution: string;
       publicationOrSource: string;
       year: number;
+      url: string;
       doiOrUrl: string;
       snippet: string;
       sourceEngine: string;
@@ -130,14 +131,16 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
           content_urls?: { desktop?: { page?: string } };
         };
         if (summaryJson?.extract && summaryJson?.title) {
+          const pageUrl =
+            summaryJson.content_urls?.desktop?.page ||
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(summaryJson.title.replace(/\s+/g, '_'))}`;
           results.push({
             title: `${summaryJson.title} — Wikipedia Encyclopedia Summary`,
             authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
             publicationOrSource: 'Wikipedia Live Knowledge Graph',
             year: 2026,
-            doiOrUrl:
-              summaryJson.content_urls?.desktop?.page ||
-              `https://en.wikipedia.org/wiki/${encodeURIComponent(summaryJson.title.replace(/\s+/g, '_'))}`,
+            url: pageUrl,
+            doiOrUrl: pageUrl,
             snippet: summaryJson.extract,
             sourceEngine: 'Wikipedia Live REST Engine',
           });
@@ -160,6 +163,40 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
           };
         };
         const items = wikiJson?.query?.search || [];
+        // If step 1a didn't match an exact page title, fetch the full REST summary of the top search hit
+        if (results.length === 0 && items[0]?.title) {
+          try {
+            const topTitle = encodeURIComponent(items[0].title.replace(/\s+/g, '_'));
+            const topSumRes = await fetch(
+              `https://en.wikipedia.org/api/rest_v1/page/summary/${topTitle}`,
+              { signal: AbortSignal.timeout(2200) }
+            );
+            if (topSumRes.ok) {
+              const topSumJson = (await topSumRes.json()) as {
+                title?: string;
+                extract?: string;
+                content_urls?: { desktop?: { page?: string } };
+              };
+              if (topSumJson?.extract && topSumJson?.title) {
+                const topUrl =
+                  topSumJson.content_urls?.desktop?.page ||
+                  `https://en.wikipedia.org/wiki/${encodeURIComponent(topSumJson.title.replace(/\s+/g, '_'))}`;
+                results.push({
+                  title: `${topSumJson.title} — Wikipedia Encyclopedia Summary`,
+                  authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
+                  publicationOrSource: 'Wikipedia Live Knowledge Graph',
+                  year: 2026,
+                  url: topUrl,
+                  doiOrUrl: topUrl,
+                  snippet: topSumJson.extract,
+                  sourceEngine: 'Wikipedia Live REST Engine',
+                });
+              }
+            }
+          } catch {
+            // Fall through to search snippets
+          }
+        }
         for (const item of items.slice(0, 2)) {
           const cleanSnippet = item.snippet.replace(/<[^>]+>/g, '').trim();
           const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/\s+/g, '_'))}`;
@@ -169,6 +206,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
               publicationOrSource: 'Wikipedia Live Knowledge Graph',
               year: 2026,
+              url,
               doiOrUrl: url,
               snippet: cleanSnippet || `Verified live internet entry for ${item.title}.`,
               sourceEngine: 'Wikipedia Live REST Engine',
@@ -208,12 +246,14 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               .join(', ') || 'OpenAlex Research Consortium';
           const venue =
             w.primary_location?.source?.display_name || 'OpenAlex Peer-Reviewed Index';
+          const workUrl = w.doi || w.id || `https://openalex.org/works?search=${encoded}`;
           results.push({
             title: w.display_name,
             authorsOrInstitution: authors,
             publicationOrSource: venue,
             year: w.publication_year || 2025,
-            doiOrUrl: w.doi || w.id || `https://openalex.org/works?search=${encoded}`,
+            url: workUrl,
+            doiOrUrl: workUrl,
             snippet: `Live peer-reviewed scholarly work indexed via OpenAlex for "${cleanQ}": ${w.display_name} (${authors}, ${w.publication_year || 2025}).`,
             sourceEngine: 'OpenAlex Scholarly Index',
           });
@@ -294,6 +334,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       res.json({
         ok: true,
         query: rawQuery,
+        sources: liveSources,
         liveSources,
       });
     } catch (err) {

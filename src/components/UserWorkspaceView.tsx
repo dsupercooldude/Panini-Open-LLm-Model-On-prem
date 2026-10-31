@@ -1744,11 +1744,13 @@ const RealisticMediaCanvas: React.FC<{
   const [selectedV55VideoMasterId, setSelectedV55VideoMasterId] = useState<
     SovereignReferenceVideoMasterV55['id']
   >(veoSceneSpec.hotfixV55VideoMaster?.id || 'vid-v55-culinary-chefs');
+  const [userSelectedMasterPreset, setUserSelectedMasterPreset] = useState<boolean>(false);
   const [videoEngineNetworkMode, setVideoEngineNetworkMode] = useState<
     'hybrid_online_offline' | 'online_cloud' | 'offline_airgap'
   >('hybrid_online_offline');
 
   useEffect(() => {
+    setUserSelectedMasterPreset(false);
     if (veoSceneSpec.hotfixV55VideoMaster?.id) {
       setSelectedV55VideoMasterId(veoSceneSpec.hotfixV55VideoMaster.id);
     }
@@ -2470,281 +2472,7 @@ const RealisticMediaCanvas: React.FC<{
         </div>
       )}
 
-      {/* Hotfix 5.5 (SVN-r405.0-HF): Online & Offline Photorealistic Cinema Master Video Player + Multi-Shot Switcher */}
-      {media.modality === 'Video' &&
-        veoSceneSpec.primarySubjectArchetype !== 'commercial_receipt_pos' &&
-        activeV55VideoMaster && (
-          <div
-            data-testid="hotfix-v55-video-master-panel"
-            className="rounded-xl border border-amber-500/40 bg-[#070b14] p-3 space-y-2.5 shadow-xl"
-          >
-            {/* Top Header: Hotfix 5.5 Badge + Online/Offline Dual-Engine Selector + 1-Click MP4 Download */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/40">
-                  HOTFIX 5.5 (SVN-r405.0-HF) · Panini-Veo-Omni-v5.5-HF Cinema Master
-                </span>
-                <span
-                  data-testid="hotfix-v55-video-active-mode-badge"
-                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
-                >
-                  {videoEngineNetworkMode === 'online_cloud'
-                    ? 'ONLINE CLOUD: Gemini Omni 1.1 Flash + Veo 3.1 Master Stream'
-                    : videoEngineNetworkMode === 'offline_airgap'
-                    ? 'OFFLINE AIR-GAP: Local Sovereign Cinema MP4 + 6-DoF Aether-3D'
-                    : 'ONLINE + OFFLINE HYBRID READY (Zero-Latency Local MP4 + Cloud Sync)'}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div
-                  data-testid="hotfix-v55-video-engine-mode-group"
-                  className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
-                >
-                  {(
-                    [
-                      { id: 'hybrid_online_offline', label: 'Online+Offline Auto' },
-                      { id: 'online_cloud', label: 'Online Cloud' },
-                      { id: 'offline_airgap', label: 'Offline Air-Gap' },
-                    ] as const
-                  ).map((modeOpt) => (
-                    <button
-                      key={modeOpt.id}
-                      type="button"
-                      data-testid={`hotfix-v55-video-mode-${modeOpt.id}`}
-                      onClick={() => setVideoEngineNetworkMode(modeOpt.id)}
-                      className={`px-2 py-0.5 rounded transition ${
-                        videoEngineNetworkMode === modeOpt.id
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      {modeOpt.label}
-                    </button>
-                  ))}
-                </div>
-
-                <a
-                  href={activeV55VideoMaster.masterVideoUrl}
-                  download={`panini-v55-${activeV55VideoMaster.id}.mp4`}
-                  data-testid="hotfix-v55-download-mp4-btn"
-                  className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-mono font-bold text-slate-950 hover:bg-amber-400 transition"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>.MP4 Master ({activeV55VideoMaster.durationSec}s)</span>
-                </a>
-              </div>
-            </div>
-
-            {/* 1-Click Reference Cinema Video Master Preset Switcher (All 4 Photorealistic AI Video Archetypes) */}
-            <div
-              data-testid="hotfix-v55-video-preset-bar"
-              className="flex flex-wrap items-center gap-1.5 pt-0.5"
-            >
-              <span className="text-[10px] font-mono text-slate-400 mr-1">
-                Cinema Masters (Online &amp; Offline):
-              </span>
-              {SOVEREIGN_VIDEO_MASTERS_V55.map((preset) => {
-                const isSelected = preset.id === activeV55VideoMaster.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    data-testid={`hotfix-v55-video-preset-${preset.id}`}
-                    onClick={() => setSelectedV55VideoMasterId(preset.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition flex items-center gap-1 ${
-                      isSelected
-                        ? 'bg-sky-500 text-slate-950 font-bold shadow-sm'
-                        : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-sky-500/40 hover:text-white'
-                    }`}
-                  >
-                    <Film className="w-3 h-3 shrink-0" />
-                    <span>{preset.title.split('(')[0].trim()}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Native HTML5 Photorealistic Cinema Master Video Stream (Works Online & Offline) */}
-            <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black shadow-lg">
-              <video
-                key={activeV55VideoMaster.masterVideoUrl}
-                data-testid="hotfix-v55-master-video-player"
-                src={activeV55VideoMaster.masterVideoUrl}
-                controls
-                playsInline
-                loop
-                preload="auto"
-                className="w-full max-h-[440px] object-contain bg-black block mx-auto"
-              />
-            </div>
-
-            {/* Synchronized Voiceover / Lip-Sync Lyrics / Multi-Shot Timecode Breakdown Bar */}
-            <div
-              data-testid="hotfix-v55-video-voiceover-caption"
-              className="rounded-lg border border-slate-800 bg-slate-950/90 p-2.5 space-y-1.5 text-[11px]"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]">
-                <span className="text-amber-300 font-bold">
-                  {activeV55VideoMaster.title} · {activeV55VideoMaster.resolutionLabel} ·{' '}
-                  {activeV55VideoMaster.fps} FPS
-                </span>
-                <span className="text-sky-300">{activeV55VideoMaster.acousticProfileSummary}</span>
-              </div>
-              {activeV55VideoMaster.synchronizedVoiceoverOrLyrics && (
-                <div className="text-emerald-300 font-mono text-[11px] bg-emerald-950/25 border border-emerald-500/30 rounded px-2.5 py-1">
-                  Synchronized Voice / Lyrics: {activeV55VideoMaster.synchronizedVoiceoverOrLyrics}
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 pt-0.5">
-                {activeV55VideoMaster.shotBreakdown.map((shotItem) => (
-                  <div
-                    key={shotItem.shotNumber}
-                    className="rounded bg-slate-900/90 border border-slate-800 px-2 py-1.5 text-[10px] font-mono text-slate-300 space-y-0.5"
-                  >
-                    <div className="text-sky-300 font-bold">
-                      Shot {shotItem.shotNumber} ({shotItem.timecodeRange})
-                    </div>
-                    <div className="text-slate-200 font-sans text-[10px] leading-snug">
-                      {shotItem.visualDescription}
-                    </div>
-                    <div className="text-amber-300/90 text-[9px]">{shotItem.audioSyncDetail}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Release v5.6 (SVN-r406.0): Sovereign Panini-Omni-Flash-1.1 & Panini-Lyria-3-Pro Media Stitcher, Hardware Policy (Laptop/Desktop On-Prem vs Mobile Internet-Stitch) & Offline Shard Self-Learner */}
-            {veoSceneSpec.v56OmniLyriaStitchSpec && (
-              <div
-                data-testid="v56-sovereign-stitcher-panel"
-                className="rounded-lg border border-cyan-500/40 bg-slate-950/95 p-2.5 space-y-2 text-[11px]"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/40">
-                      RELEASE v5.6 (SVN-r406.0) · {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignVideoModelName} +{' '}
-                      {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignAudioModelName}
-                    </span>
-                    <span
-                      data-testid="v56-zero-external-calls-badge"
-                      className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
-                    >
-                      ✓ Zero External Model Calls (Sovereign Built-In Engine)
-                    </span>
-                  </div>
-
-                  {/* Hardware Execution Policy Toggle: Laptop/Desktop On-Prem vs. Mobile Internet-Stitch-Only */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <div
-                      data-testid="v56-hardware-policy-toggle"
-                      className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
-                    >
-                      <button
-                        type="button"
-                        data-testid="v56-policy-desktop-btn"
-                        onClick={() =>
-                          setVideoOverrides((prev) => ({
-                            ...prev,
-                            v56HardwareFormFactor: 'desktop_laptop_onprem',
-                          }))
-                        }
-                        className={`px-2 py-0.5 rounded transition ${
-                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor ===
-                          'desktop_laptop_onprem'
-                            ? 'bg-cyan-500 text-slate-950 font-bold'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        Laptop/Desktop On-Prem (Full Synthesis + Stitch)
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="v56-policy-mobile-btn"
-                        onClick={() =>
-                          setVideoOverrides((prev) => ({
-                            ...prev,
-                            v56HardwareFormFactor: 'mobile_edge',
-                          }))
-                        }
-                        className={`px-2 py-0.5 rounded transition ${
-                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor === 'mobile_edge'
-                            ? 'bg-amber-500 text-slate-950 font-bold'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        Mobile Mode (Internet Data Stitch Only)
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      data-testid="v56-stitch-and-learn-btn"
-                      onClick={() =>
-                        setVideoOverrides((prev) => ({
-                          ...prev,
-                          v56AdditionalLearnedShards: (prev.v56AdditionalLearnedShards || 0) + 1,
-                        }))
-                      }
-                      className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-mono text-[10px] font-bold hover:bg-emerald-400 transition"
-                    >
-                      + Stitch Online/Shard Media &amp; Distill Offline Shard
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  data-testid="v56-device-policy-explanation"
-                  className="font-mono text-[10px] text-slate-200 bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1"
-                >
-                  {veoSceneSpec.v56OmniLyriaStitchSpec.devicePolicyExplanation}
-                </div>
-
-                {/* Stitched Multi-Segment Timeline (Fetched Online Images/Audio/Video + Sovereign Shards) */}
-                <div
-                  data-testid="v56-stitched-segments-list"
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5"
-                >
-                  {veoSceneSpec.v56OmniLyriaStitchSpec.stitchedMediaSegments.map((seg) => (
-                    <div
-                      key={seg.segmentIndex}
-                      className="rounded bg-slate-900/80 border border-slate-800 px-2 py-1.5 text-[10px] font-mono space-y-0.5"
-                    >
-                      <div className="flex items-center justify-between text-cyan-300 font-bold">
-                        <span>
-                          Seg {seg.segmentIndex} ({seg.timecodeRange})
-                        </span>
-                        <span className="text-[9px] text-amber-300">{seg.mediaKind}</span>
-                      </div>
-                      <div className="text-[9px] text-emerald-300 truncate">{seg.sourceOrigin}</div>
-                      <div className="text-[10px] font-sans text-slate-300 line-clamp-2">
-                        {seg.visualOrAcousticSummary}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Offline Shard Self-Learning Progression Strip */}
-                <div
-                  data-testid="v56-offline-shard-learning-strip"
-                  className="rounded bg-indigo-950/25 border border-indigo-500/35 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]"
-                >
-                  <span className="text-indigo-200">
-                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.offlineAutonomousSummary}
-                  </span>
-                  <span
-                    data-testid="v56-learned-shards-count-badge"
-                    className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40 shrink-0"
-                  >
-                    Learned Shards: {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.learnedMediaShardsCount} · Parity:{' '}
-                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.cinematicQualityProgressionPct}%
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
+      {/* PRIMARY PROMPT-SYNTHESIZED VIDEO / IMAGE CANVAS — ALWAYS RENDERED FIRST (Never after pre-stored video) */}
       <div
         className={`relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-md ${
           activeAspectRatio === '9:16' ? 'max-w-[340px] mx-auto' : 'w-full'
@@ -2931,6 +2659,292 @@ const RealisticMediaCanvas: React.FC<{
                 />
               </label>
             </div>
+          </div>
+        )}
+
+      {/* Hotfix 5.5 & v5.6: Online & Offline Sovereign Stitcher + Optional Reference Cinema Master Switcher (Rendered AFTER the synthesized video canvas) */}
+      {media.modality === 'Video' &&
+        veoSceneSpec.primarySubjectArchetype !== 'commercial_receipt_pos' &&
+        activeV55VideoMaster && (
+          <div
+            data-testid="hotfix-v55-video-master-panel"
+            className="rounded-xl border border-amber-500/40 bg-[#070b14] p-3 space-y-2.5 shadow-xl"
+          >
+            {/* Top Header: Hotfix 5.5 Badge + Online/Offline Dual-Engine Selector + 1-Click MP4 Download */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/40">
+                  HOTFIX 5.5 (SVN-r405.0-HF) · Panini-Veo-Omni-v5.5-HF Cinema Master
+                </span>
+                <span
+                  data-testid="hotfix-v55-video-active-mode-badge"
+                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                >
+                  {videoEngineNetworkMode === 'online_cloud'
+                    ? 'ONLINE CLOUD: Gemini Omni 1.1 Flash + Veo 3.1 Master Stream'
+                    : videoEngineNetworkMode === 'offline_airgap'
+                    ? 'OFFLINE AIR-GAP: Local Sovereign Cinema MP4 + 6-DoF Aether-3D'
+                    : 'ONLINE + OFFLINE HYBRID READY (Zero-Latency Local MP4 + Cloud Sync)'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div
+                  data-testid="hotfix-v55-video-engine-mode-group"
+                  className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
+                >
+                  {(
+                    [
+                      { id: 'hybrid_online_offline', label: 'Online+Offline Auto' },
+                      { id: 'online_cloud', label: 'Online Cloud' },
+                      { id: 'offline_airgap', label: 'Offline Air-Gap' },
+                    ] as const
+                  ).map((modeOpt) => (
+                    <button
+                      key={modeOpt.id}
+                      type="button"
+                      data-testid={`hotfix-v55-video-mode-${modeOpt.id}`}
+                      onClick={() => setVideoEngineNetworkMode(modeOpt.id)}
+                      className={`px-2 py-0.5 rounded transition ${
+                        videoEngineNetworkMode === modeOpt.id
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      {modeOpt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {Boolean(veoSceneSpec.hasExactReferenceVideoMatch || userSelectedMasterPreset) && (
+                  <a
+                    href={activeV55VideoMaster.masterVideoUrl}
+                    download={`panini-v55-${activeV55VideoMaster.id}.mp4`}
+                    data-testid="hotfix-v55-download-mp4-btn"
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-mono font-bold text-slate-950 hover:bg-amber-400 transition"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>.MP4 Master ({activeV55VideoMaster.durationSec}s)</span>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* 1-Click Reference Cinema Video Master Preset Switcher (All 4 Photorealistic AI Video Archetypes) */}
+            <div
+              data-testid="hotfix-v55-video-preset-bar"
+              className="flex flex-wrap items-center gap-1.5 pt-0.5"
+            >
+              <span className="text-[10px] font-mono text-slate-400 mr-1">
+                Reference Cinema Masters (Click to Load):
+              </span>
+              {SOVEREIGN_VIDEO_MASTERS_V55.map((preset) => {
+                const isSelected =
+                  Boolean(veoSceneSpec.hasExactReferenceVideoMatch || userSelectedMasterPreset) &&
+                  preset.id === activeV55VideoMaster.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`hotfix-v55-video-preset-${preset.id}`}
+                    onClick={() => {
+                      setSelectedV55VideoMasterId(preset.id);
+                      setUserSelectedMasterPreset(true);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-sky-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-sky-500/40 hover:text-white'
+                    }`}
+                  >
+                    <Film className="w-3 h-3 shrink-0" />
+                    <span>{preset.title.split('(')[0].trim()}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Native HTML5 Photorealistic Cinema Master Video Stream (Only rendered when prompt matches a reference master or user explicitly clicks a reference preset) */}
+            {Boolean(veoSceneSpec.hasExactReferenceVideoMatch || userSelectedMasterPreset) && (
+              <>
+                <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black shadow-lg">
+                  <video
+                    key={activeV55VideoMaster.masterVideoUrl}
+                    data-testid="hotfix-v55-master-video-player"
+                    src={activeV55VideoMaster.masterVideoUrl}
+                    controls
+                    playsInline
+                    loop
+                    preload="auto"
+                    className="w-full max-h-[440px] object-contain bg-black block mx-auto"
+                  />
+                </div>
+
+                {/* Synchronized Voiceover / Lip-Sync Lyrics / Multi-Shot Timecode Breakdown Bar */}
+                <div
+                  data-testid="hotfix-v55-video-voiceover-caption"
+                  className="rounded-lg border border-slate-800 bg-slate-950/90 p-2.5 space-y-1.5 text-[11px]"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]">
+                    <span className="text-amber-300 font-bold">
+                      {activeV55VideoMaster.title} · {activeV55VideoMaster.resolutionLabel} ·{' '}
+                      {activeV55VideoMaster.fps} FPS
+                    </span>
+                    <span className="text-sky-300">{activeV55VideoMaster.acousticProfileSummary}</span>
+                  </div>
+                  {activeV55VideoMaster.synchronizedVoiceoverOrLyrics && (
+                    <div className="text-emerald-300 font-mono text-[11px] bg-emerald-950/25 border border-emerald-500/30 rounded px-2.5 py-1">
+                      Synchronized Voice / Lyrics: {activeV55VideoMaster.synchronizedVoiceoverOrLyrics}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 pt-0.5">
+                    {activeV55VideoMaster.shotBreakdown.map((shotItem) => (
+                      <div
+                        key={shotItem.shotNumber}
+                        className="rounded bg-slate-900/90 border border-slate-800 px-2 py-1.5 text-[10px] font-mono text-slate-300 space-y-0.5"
+                      >
+                        <div className="text-sky-300 font-bold">
+                          Shot {shotItem.shotNumber} ({shotItem.timecodeRange})
+                        </div>
+                        <div className="text-slate-200 font-sans text-[10px] leading-snug">
+                          {shotItem.visualDescription}
+                        </div>
+                        <div className="text-amber-300/90 text-[9px]">{shotItem.audioSyncDetail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Release v5.6 (SVN-r406.0): Sovereign Panini-Omni-Flash-1.1 & Panini-Lyria-3-Pro Media Stitcher, Hardware Policy (Laptop/Desktop On-Prem vs Mobile Internet-Stitch) & Offline Shard Self-Learner */}
+            {veoSceneSpec.v56OmniLyriaStitchSpec && (
+              <div
+                data-testid="v56-sovereign-stitcher-panel"
+                className="rounded-lg border border-cyan-500/40 bg-slate-950/95 p-2.5 space-y-2 text-[11px]"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/40">
+                      RELEASE v5.6 (SVN-r406.0) · {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignVideoModelName} +{' '}
+                      {veoSceneSpec.v56OmniLyriaStitchSpec.sovereignAudioModelName}
+                    </span>
+                    <span
+                      data-testid="v56-zero-external-calls-badge"
+                      className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
+                    >
+                      ✓ Zero External Model Calls (Sovereign Built-In Engine)
+                    </span>
+                  </div>
+
+                  {/* Hardware Execution Policy Toggle: Laptop/Desktop On-Prem vs. Mobile Internet-Stitch-Only */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div
+                      data-testid="v56-hardware-policy-toggle"
+                      className="flex items-center gap-1 rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[10px] font-mono"
+                    >
+                      <button
+                        type="button"
+                        data-testid="v56-policy-desktop-btn"
+                        onClick={() =>
+                          setVideoOverrides((prev) => ({
+                            ...prev,
+                            v56HardwareFormFactor: 'desktop_laptop_onprem',
+                          }))
+                        }
+                        className={`px-2 py-0.5 rounded transition ${
+                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor ===
+                          'desktop_laptop_onprem'
+                            ? 'bg-cyan-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        Laptop/Desktop On-Prem (Full Synthesis + Stitch)
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="v56-policy-mobile-btn"
+                        onClick={() =>
+                          setVideoOverrides((prev) => ({
+                            ...prev,
+                            v56HardwareFormFactor: 'mobile_edge',
+                          }))
+                        }
+                        className={`px-2 py-0.5 rounded transition ${
+                          veoSceneSpec.v56OmniLyriaStitchSpec.hardwareFormFactor === 'mobile_edge'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        Mobile Mode (Internet Data Stitch Only)
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="v56-stitch-and-learn-btn"
+                      onClick={() =>
+                        setVideoOverrides((prev) => ({
+                          ...prev,
+                          v56AdditionalLearnedShards: (prev.v56AdditionalLearnedShards || 0) + 1,
+                        }))
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-mono text-[10px] font-bold hover:bg-emerald-400 transition"
+                    >
+                      + Stitch Online/Shard Media &amp; Distill Offline Shard
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  data-testid="v56-device-policy-explanation"
+                  className="font-mono text-[10px] text-slate-200 bg-slate-900/90 border border-slate-800 rounded px-2.5 py-1"
+                >
+                  {veoSceneSpec.v56OmniLyriaStitchSpec.devicePolicyExplanation}
+                </div>
+
+                {/* Stitched Multi-Segment Timeline (Fetched Online Images/Audio/Video + Sovereign Shards) */}
+                <div
+                  data-testid="v56-stitched-segments-list"
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5"
+                >
+                  {veoSceneSpec.v56OmniLyriaStitchSpec.stitchedMediaSegments.map((seg) => (
+                    <div
+                      key={seg.segmentIndex}
+                      className="rounded bg-slate-900/80 border border-slate-800 px-2 py-1.5 text-[10px] font-mono space-y-0.5"
+                    >
+                      <div className="flex items-center justify-between text-cyan-300 font-bold">
+                        <span>
+                          Seg {seg.segmentIndex} ({seg.timecodeRange})
+                        </span>
+                        <span className="text-[9px] text-amber-300">{seg.mediaKind}</span>
+                      </div>
+                      <div className="text-[9px] text-emerald-300 truncate">{seg.sourceOrigin}</div>
+                      <div className="text-[10px] font-sans text-slate-300 line-clamp-2">
+                        {seg.visualOrAcousticSummary}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Offline Shard Self-Learning Progression Strip */}
+                <div
+                  data-testid="v56-offline-shard-learning-strip"
+                  className="rounded bg-indigo-950/25 border border-indigo-500/35 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]"
+                >
+                  <span className="text-indigo-200">
+                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.offlineAutonomousSummary}
+                  </span>
+                  <span
+                    data-testid="v56-learned-shards-count-badge"
+                    className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40 shrink-0"
+                  >
+                    Learned Shards: {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.learnedMediaShardsCount} · Parity:{' '}
+                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.cinematicQualityProgressionPct}%
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3596,10 +3610,19 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
         trimmed
       );
 
+    const isPureFactualOrMathQuestionWithoutVisualIntent =
+      !hasExplicitVisualMediaIntent &&
+      !/\b(video|image|photo|picture|clip|animate|render|draw|cinema)\b/i.test(trimmed) &&
+      (/\?$/.test(trimmed) ||
+        /^(what|who|where|when|why|how|which|is|are|can|does|do|did|calculate|solve|compute|evaluate|explain|define|summarize|compare|list)\b/i.test(
+          trimmed
+        ));
+
     if (
-      chatCapability === 'image_gen' ||
-      chatCapability === 'video_gen' ||
-      hasExplicitVisualMediaIntent
+      (chatCapability === 'image_gen' ||
+        chatCapability === 'video_gen' ||
+        hasExplicitVisualMediaIntent) &&
+      !isPureFactualOrMathQuestionWithoutVisualIntent
     ) {
       const visualPrompt =
         trimmed ||
@@ -4681,6 +4704,10 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                     ) : isPureImageMsg || isPureVideoMsg || isPureAudioMsg ? (
                       isDetailsExpanded ? (
                         renderFormattedMessage(msg.content, isDark)
+                      ) : msg.simpleAnswerMarkdown ? (
+                        <div data-testid="ask-math-quick-answer-view">
+                          {renderFormattedMessage(msg.simpleAnswerMarkdown, isDark)}
+                        </div>
                       ) : null
                     ) : isCodingMsg && !isDetailsExpanded ? (
                       /* CODE DEFAULT: Show ONLY pure code + multi-format tabs/exports without prose explanation */
@@ -5455,7 +5482,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       })()}
 
                     {/* PROGRESSIVE DISCLOSURE ("Show more" / "Show less") + EXPORT ACTIONS */}
-                    {!isUser && !isPureImageMsg && !isPureVideoMsg && !isPureAudioMsg && (
+                    {!isUser && (
                       <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/40">
                         <button
                           type="button"

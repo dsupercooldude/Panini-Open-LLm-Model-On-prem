@@ -767,19 +767,17 @@ export default function App() {
     const resolvedOpt = ambiguityCheck.resolvedOption;
     const synthesisPrompt = resolvedOpt ? resolvedOpt.expandedPrompt : effectivePrompt;
 
-    // Automatically fetch Wikipedia & online grounding when Online Mode is active OR when querying an encyclopedic/historical entity
+    // Automatically fetch Wikipedia & online grounding for all user questions and encyclopedic/entity queries
     const qLower = synthesisPrompt.toLowerCase();
-    const isEntityOrBiographicalQuery =
-      qLower.includes('tell me about') ||
-      qLower.includes('who is') ||
-      qLower.includes('who was') ||
-      qLower.includes('biography') ||
-      qLower.includes('history of') ||
-      qLower.includes('mahatma') ||
-      qLower.includes('gandhi');
+    const isQuestionOrEntityQuery =
+      isOnlineLearning ||
+      qLower.includes('?') ||
+      /\b(what|who|where|when|why|how|tell|explain|describe|define|history|biography|capital|meaning|solve|calculate|mahatma|gandhi)\b/.test(
+        qLower
+      );
 
     let liveOnlineSources: LiveOnlineSearchSource[] | undefined;
-    if (isOnlineLearning || isEntityOrBiographicalQuery) {
+    if (isQuestionOrEntityQuery) {
       try {
         const res = await fetch('/api/search/online', {
           method: 'POST',
@@ -788,8 +786,21 @@ export default function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data?.sources) && data.sources.length > 0) {
-            liveOnlineSources = data.sources;
+          const rawSources = Array.isArray(data?.sources)
+            ? data.sources
+            : Array.isArray(data?.liveSources)
+            ? data.liveSources
+            : [];
+          if (rawSources.length > 0) {
+            liveOnlineSources = rawSources.map((s: Record<string, unknown>) => ({
+              title: String(s.title || ''),
+              snippet: String(s.snippet || ''),
+              url: String(s.url || s.doiOrUrl || 'https://en.wikipedia.org'),
+              publicationOrSource: String(
+                s.publicationOrSource || 'Wikipedia Live Knowledge Graph'
+              ),
+              year: Number(s.year || 2026),
+            }));
           }
         }
         // Also ingest online spatial/search grounding into Panini's local offline shard vault
@@ -803,6 +814,7 @@ export default function App() {
           if (gData?.mapsGrounding && gData?.searchGrounding) {
             savePaniniKnowledgeShard(synthesisPrompt, {
               syncedFromOnline: true,
+              cachedWikipediaSources: liveOnlineSources,
               mapsGrounding: {
                 ...gData.mapsGrounding,
                 modelUsed: 'Panini-Spatial-Atlas',
@@ -1564,6 +1576,13 @@ export default function App() {
     const sceneSpec = buildPromptConstructedScene(cleanPrompt, aspectRatio, sourcePhotoDataUrl);
     const isFailedGeneration = !sceneSpec.validationReport.isValidated;
     const isReceiptScene = sceneSpec.primarySubjectArchetype === 'commercial_receipt_pos';
+    const groundedKnowledgeForMedia = generateOfflineKnowledgeResponse(
+      cleanPrompt,
+      undefined,
+      targetVer.quantType,
+      targetModel.selfLearningSamplesCount + 1,
+      isOnlineLearning
+    );
 
     const assistantMsg: ChatMessage = {
       id: `msg-med-a-${Date.now() + 1}`,
@@ -1574,17 +1593,17 @@ export default function App() {
         ? `Panini-Flux.1-Dev-12B (Nano-Banana Open-Source Still Studio · ${qualityTier})`
         : `Panini-Wan2.1-14B (Veo-3 Open-Source Cinema Video + Foley Studio · ${qualityTier})`,
       timestamp: '08:35 UTC',
-      domain: 'Science',
+      domain: groundedKnowledgeForMedia.detectedDomain || 'Science',
       simpleAnswerMarkdown: isFailedGeneration
         ? `### ⚠️ ${modality} Generation Failed
 - **Reason:** ${sceneSpec.validationReport.contextMatchStatus}
 - **Strict Zero-Default-Fallback Policy:** Default human/sun fallback rendering has been disabled. When a prompt cannot be grounded to a recognizable visual subject, person, place, building, brand, food, vehicle, animal, or object, generation halts and reports **${modality} generation failed**.`
         : modality === 'Image'
-        ? `### Everyday Simple Guide: Your Open-Source Nano-Banana Still Image
+        ? `${groundedKnowledgeForMedia.simpleAnswerMarkdown || ''}\n\n---\n### Everyday Simple Guide: Your Open-Source Nano-Banana Still Image
 **How Your Still Image Was Synthesized:**
 - **Open-Source Rectified-Flow DiT Architecture:** Synthesized using **Panini-Flux.1-Dev-12B (Rectified Flow DiT)** with 16-Channel Latent VAE, per-pixel volumetric raymarching, Fractional Brownian Motion (fBm) textures, and ACES Filmic tone mapping.
 - **Interactive Editing & Split Comparison:** Use the **Inpaint Target** selector, **Scene Typography** input, or **Split Compare (Before / After)** slider below to refine lighting, atmosphere, or text overlays!`
-        : `### Everyday Simple Guide: Your Open-Source Veo-3 Multi-Shot Video & Synchronized Foley
+        : `${groundedKnowledgeForMedia.simpleAnswerMarkdown || ''}\n\n---\n### Everyday Simple Guide: Your Open-Source Veo-3 Multi-Shot Video & Synchronized Foley
 **How Your Prompt Was Animated Step-by-Step:**
 Instead of rendering a single fixed scene, we broke your prompt into **${visualNlp.storyboardShots?.length || 3} sequential Storyboard Shots** using **Panini-Wan2.1-14B (3D Spatio-Temporal DiT)** and synthesized a native **16-bit PCM Foley & Ambient Audio Track** (${sceneSpec.veo3AudioSpec?.ambientSoundscape || 'Binaural Foley'}):
 
@@ -1596,7 +1615,7 @@ ${storyboardBullets}
         ? `### ✗ ${modality} Generation Failed (Zero Default Fallback)
 - **Status:** \`${modality} generation failed\`
 - **Diagnostic Detail:** \`${sceneSpec.validationReport.contextMatchStatus}\``
-        : `### Live ${qualityTier} ${modality} Synthesis (${
+        : `${groundedKnowledgeForMedia.answerMarkdown}\n\n---\n### Live ${qualityTier} ${modality} Synthesis (${
             isOnlineLearning ? 'Online Grounded + Open-Source DiT' : '100% Offline Open-Source DiT'
           })
 - **Open-Source Architecture Routed:** \`${
@@ -1609,6 +1628,8 @@ ${storyboardBullets}
 - **Character & Scene Engine:** \`${visualNlp.characterArchetype}\` (${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics})${
             liveWebContextNote ? `\n- **Live Online Visual Grounding:** \`${liveWebContextNote}\`` : ''
           }`,
+      verifiedFacts: groundedKnowledgeForMedia.verifiedFacts,
+      bibliographyReferences: groundedKnowledgeForMedia.bibliographyReferences,
       generatedMedia:
         !isReceiptScene && (modality === 'Video' || /\b(video|animate|clip)\b/i.test(cleanPrompt))
           ? { ...newItem, modality: 'Video' }

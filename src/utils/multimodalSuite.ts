@@ -998,6 +998,7 @@ export interface PromptConstructedSceneSpec {
   qualityMultiPassSpec?: QualityMultiPassSpec;
   aether3DSpec: Aether3DRelightableSceneSpec;
   hotfixV55VideoMaster: SovereignReferenceVideoMasterV55;
+  hasExactReferenceVideoMatch?: boolean;
   v56OmniLyriaStitchSpec: SovereignV56OmniLyriaStitchSpec;
   commercialReceiptSpec?: CommercialReceiptSpec;
   promptDecomposition: PromptDecompositionSpec;
@@ -1376,6 +1377,34 @@ export const SOVEREIGN_AUDIO_MASTERS_V55: SovereignReferenceAudioMasterV55[] = [
   },
 ];
 
+export function isExactReferenceVideoMasterMatch(prompt: string): boolean {
+  const q = (prompt || '').toLowerCase();
+  if (
+    /\b(executive\s*chefs?|commercial\s*hotel\s*kitchen|hotel\s*kitchen|copper\s*cookware|copper\s*skillet|seared\s*scallops?|filet\s*mignon)\b/.test(
+      q
+    ) ||
+    (/\b(chefs?)\b/.test(q) && /\b(kitchen|plating|copper|sizzling|dishes)\b/.test(q))
+  ) {
+    return true;
+  }
+  if (/\b(gandhi|mahatma|dandi|salt\s*march|satyagraha|sabarmati)\b/.test(q)) {
+    return true;
+  }
+  if (
+    /\b(rajasthan|rajasthani|kesariya|balam|padharo|kalbelia|ravanahatha|dholak|khartal)\b/.test(q)
+  ) {
+    return true;
+  }
+  if (
+    /\b(marudhar|megh\s*suhavno|dharti\s*mitti|chandni\s*raat|music\s*visualizer|album\s*art.*visualizer)\b/.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Hotfix 5.5 (SVN-r405.0-HF) Dual Online & Offline Cinema Video Resolver:
  * Matches any prompt to the closest high-bitrate reference cinema master (.mp4) while configuring
@@ -1401,13 +1430,13 @@ export function resolveHotfixV55VideoMaster(
   const q = (prompt || '').toLowerCase();
   let chosen = SOVEREIGN_VIDEO_MASTERS_V55[0];
 
-  if (/\b(gandhi|mahatma|dandi|salt\s*march|satyagraha|sabarmati|non-violence|nonviolence|freedom|empire|history|historical|coast|beach|ocean|sea)\b/.test(q)) {
+  if (/\b(gandhi|mahatma|dandi|salt\s*march|satyagraha|sabarmati)\b/.test(q)) {
     chosen = SOVEREIGN_VIDEO_MASTERS_V55[1]; // Gandhi Dandi Salt March + Voiceover
-  } else if (/\b(visualizer|album|marudhar|full\s*song|moon|crescent|night\s*sky|ballad)\b/.test(q)) {
+  } else if (/\b(visualizer|album|marudhar|megh\s*suhavno|dharti\s*mitti|chandni\s*raat)\b/.test(q)) {
     chosen = SOVEREIGN_VIDEO_MASTERS_V55[3]; // Mhāro Marudhar Desh 2m43s Visualizer
-  } else if (/\b(rajasthan|rajasthani|kesariya|balam|padharo|folk|kalbelia|dancer|dancing|dance|desert|thar|dune|ravanahatha|dholak|khartal|turban|singer|singing|music|song|temple|cultural|indian|traditional)\b/.test(q)) {
+  } else if (/\b(rajasthan|rajasthani|kesariya|balam|padharo|folk|kalbelia|ravanahatha|dholak|khartal)\b/.test(q)) {
     chosen = SOVEREIGN_VIDEO_MASTERS_V55[2]; // Kesariya Balam Folk Musicians & Dancer
-  } else if (/\b(chef|chefs|cook|cooking|kitchen|culinary|food|dish|dishes|plate|plating|copper|cookware|skillet|pan|steak|scallop|sizzle|sizzling|hotel|restaurant|panini)\b/.test(q)) {
+  } else if (/\b(chef|chefs|cook|cooking|kitchen|culinary|copper|cookware|skillet|scallop|sizzle|sizzling)\b/.test(q)) {
     chosen = SOVEREIGN_VIDEO_MASTERS_V55[0]; // Culinary Chefs & Copper Skillet Sizzle
   }
 
@@ -1574,39 +1603,50 @@ export function buildSovereignV56OmniLyriaStitchSpec(
       ? 'On-Prem Neural Synthesis Pass'
       : 'Local Sovereign Cinema Shard (.GGUF/.MP4/.MP3)';
 
+  const hasExactRefMatch = isExactReferenceVideoMasterMatch(clean);
+
   const stitchedMediaSegments: SovereignV56StitchedSegment[] = [
     {
       segmentIndex: 1,
-      timecodeRange: videoMaster.shotBreakdown[0]?.timecodeRange || '00:00–00:03',
+      timecodeRange: hasExactRefMatch
+        ? videoMaster.shotBreakdown[0]?.timecodeRange || '00:00–00:03'
+        : '00:00–00:03',
       mediaKind: 'video_plate',
       sourceOrigin: primaryOnlineOrigin,
       assetUrl: onlineFetchedList[0]?.url || videoMaster.masterVideoUrl,
       transitionStyle: 'Anamorphic Cross-Dissolve (24fps)',
-      visualOrAcousticSummary:
-        videoMaster.shotBreakdown[0]?.visualDescription ||
-        `Opening stitched cinema plate for "${clean.slice(0, 60)}"`,
+      visualOrAcousticSummary: hasExactRefMatch
+        ? videoMaster.shotBreakdown[0]?.visualDescription ||
+          `Opening stitched cinema plate for "${clean.slice(0, 60)}"`
+        : `Shot 1 Wide Establishing Plate: ${clean.slice(0, 80)}`,
     },
     {
       segmentIndex: 2,
-      timecodeRange: videoMaster.shotBreakdown[1]?.timecodeRange || '00:03–00:06',
+      timecodeRange: hasExactRefMatch
+        ? videoMaster.shotBreakdown[1]?.timecodeRange || '00:03–00:06'
+        : '00:03–00:06',
       mediaKind: 'image_ken_burns',
       sourceOrigin: secondarySynthesisOrigin,
       assetUrl: onlineFetchedList[1]?.url || videoMaster.masterVideoUrl,
       transitionStyle: '6-DoF Depth Parallax Stitch',
-      visualOrAcousticSummary:
-        videoMaster.shotBreakdown[1]?.visualDescription ||
-        `6-DoF relightable mid-shot parallax stitch for "${clean.slice(0, 60)}"`,
+      visualOrAcousticSummary: hasExactRefMatch
+        ? videoMaster.shotBreakdown[1]?.visualDescription ||
+          `6-DoF relightable mid-shot parallax stitch for "${clean.slice(0, 60)}"`
+        : `Shot 2 6-DoF Volumetric Mid-Action Parallax: ${clean.slice(0, 80)}`,
     },
     {
       segmentIndex: 3,
-      timecodeRange: videoMaster.shotBreakdown[2]?.timecodeRange || '00:06–00:09',
+      timecodeRange: hasExactRefMatch
+        ? videoMaster.shotBreakdown[2]?.timecodeRange || '00:06–00:09'
+        : '00:06–00:09',
       mediaKind: 'video_plate',
       sourceOrigin: primaryOnlineOrigin,
       assetUrl: videoMaster.masterVideoUrl,
       transitionStyle: 'Anamorphic Cross-Dissolve (24fps)',
-      visualOrAcousticSummary:
-        videoMaster.shotBreakdown[2]?.visualDescription ||
-        `Climax multi-shot cinema stitch for "${clean.slice(0, 60)}"`,
+      visualOrAcousticSummary: hasExactRefMatch
+        ? videoMaster.shotBreakdown[2]?.visualDescription ||
+          `Climax multi-shot cinema stitch for "${clean.slice(0, 60)}"`
+        : `Shot 3 Close-Up Optical Focus & Relighting: ${clean.slice(0, 80)}`,
     },
     {
       segmentIndex: 4,
@@ -1615,7 +1655,9 @@ export function buildSovereignV56OmniLyriaStitchSpec(
       sourceOrigin: primaryOnlineOrigin,
       assetUrl: audioMaster.masterAudioUrl,
       transitionStyle: 'Phase-Locked Audio Stem Crossfade',
-      visualOrAcousticSummary: `${audioMaster.title} (${audioMaster.vocalLeadStyle} · ${audioMaster.bpm} BPM)`,
+      visualOrAcousticSummary: hasExactRefMatch
+        ? `${audioMaster.title} (${audioMaster.vocalLeadStyle} · ${audioMaster.bpm} BPM)`
+        : `Synchronized Acoustic & Foley Stem for "${clean.slice(0, 60)}" (48kHz Stereo)`,
     },
   ];
 
@@ -4050,6 +4092,7 @@ export function buildPromptConstructedScene(
     universalAttributeAlignment,
   };
 
+  const hasExactReferenceVideoMatch = isExactReferenceVideoMasterMatch(clean);
   const hotfixV55VideoMaster = resolveHotfixV55VideoMaster(
     clean,
     Boolean(overrides?.isOnlineMode)
@@ -4100,6 +4143,7 @@ export function buildPromptConstructedScene(
     qualityMultiPassSpec,
     aether3DSpec,
     hotfixV55VideoMaster,
+    hasExactReferenceVideoMatch,
     v56OmniLyriaStitchSpec,
     commercialReceiptSpec: promptDecomposition.commercialReceiptSpec,
     promptDecomposition,
