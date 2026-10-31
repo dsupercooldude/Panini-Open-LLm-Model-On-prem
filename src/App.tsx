@@ -784,6 +784,9 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: effectivePrompt }),
         });
+        if (!res.ok) {
+          throw new Error(`Live search returned HTTP ${res.status}`);
+        }
         if (res.ok) {
           const data = await res.json();
           const rawSources = Array.isArray(data?.sources)
@@ -799,7 +802,10 @@ export default function App() {
               publicationOrSource: String(
                 s.publicationOrSource || 'Wikipedia Live Knowledge Graph'
               ),
-              year: Number(s.year || 2026),
+              year: Number(s.year || 0),
+              sourceEngine: String(
+                s.sourceEngine || s.publicationOrSource || 'Live Web Index'
+              ),
             }));
           }
         }
@@ -809,6 +815,13 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: effectivePrompt }),
         });
+        if (!groundingRes.ok) {
+          appendLog(
+            'WARN',
+            'QuantEngine',
+            `Spatial grounding returned HTTP ${groundingRes.status}; continuing with retrieved search sources.`
+          );
+        }
         if (groundingRes.ok) {
           const gData = await groundingRes.json();
           if (gData?.mapsGrounding && gData?.searchGrounding) {
@@ -826,8 +839,12 @@ export default function App() {
             });
           }
         }
-      } catch {
-        // Fallback to deterministic local encyclopedic & multi-engine stream if offline
+      } catch (error) {
+        appendLog(
+          'WARN',
+          'QuantEngine',
+          `Live search unavailable; continuing with local synthesis. ${String(error)}`
+        );
       }
     }
 
@@ -1137,10 +1154,6 @@ export default function App() {
       setActiveModelId(modelValidation.selectedModel.id);
     }
     const targetModel = modelValidation.selectedModel;
-    const targetVer =
-      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
-      targetModel.versions[0];
-
     // 1. Check if the research topic is ambiguous (e.g., "Panini")
     const ambiguityCheck = explicitSenseOption
       ? { isAmbiguous: false, resolvedOption: explicitSenseOption }
@@ -1211,48 +1224,12 @@ export default function App() {
         ? steps
         : generateDeepResearchPlan(resolvedTopic, nextCtx);
 
-    const nextOffset = customScenarios.length + 1;
-    let liveCrawledData: LiveCrawledResearchPayload | undefined;
-    try {
-      const res = await fetch('/api/research/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: resolvedTopic,
-          steps: proposedSteps,
-          isOnline: isOnlineLearning,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        liveCrawledData = {
-          references: data.references,
-          liveStageSnippets: data.liveStageSnippets,
-          isOnlineInternetFetched: data.isOnlineInternetFetched,
-        };
-      }
-    } catch {
-      // Offline air-gapped fallback
-    }
-
-    const report = executeDeepResearchPlan(
-      resolvedTopic,
-      proposedSteps,
-      isOnlineLearning,
-      targetVer.quantType,
-      nextOffset,
-      liveCrawledData
-    );
-
-    const newUseCase = translateNlpToUseCase(resolvedTopic, nextOffset);
-    setCustomScenarios((prev) => [newUseCase, ...prev]);
-
     const userMsg: ChatMessage = {
       id: `msg-dr-plan-u-${Date.now()}`,
       role: 'user',
       authorName: activeProfile.name,
       timestamp: '08:34 UTC',
-      domain: report.detectedDomain || nextCtx.activeDomain || 'Science',
+      domain: nextCtx.activeDomain || 'Science',
       content: `Deep Research: ${resolvedOpt ? resolvedOpt.label : effectiveTopic}`,
       autoCorrectedFrom: autoCorrect.wasCorrected ? topic : undefined,
     };
@@ -1261,32 +1238,26 @@ export default function App() {
     const assistantPlanMsg: ChatMessage = {
       id: planMsgId,
       role: 'assistant',
-      authorName: `${targetModel.name} (Deep Research · ${
+      authorName: `${targetModel.name} (Deep Research Plan · ${
         isOnlineLearning ? 'Live Internet Grounded' : 'Offline Shards'
       })`,
       timestamp: '08:34 UTC',
-      domain: report.detectedDomain || nextCtx.activeDomain || 'Science',
-      subDomain: report.detectedSubDomain || nextCtx.activeSubDomain,
-      content: report.answerMarkdown,
-      simpleAnswerMarkdown: report.simpleAnswerMarkdown,
+      domain: nextCtx.activeDomain || 'Science',
+      subDomain: nextCtx.activeSubDomain,
+      content: `### Research plan ready: ${resolvedTopic}\n\nReview the proposed stages below. No search has run and no report has been generated yet. Approve the plan to execute it.`,
+      simpleAnswerMarkdown: `Review the proposed stages for **${resolvedTopic}** below. Approve the plan to run research.`,
       pendingResearchPlan: {
         topic: resolvedTopic,
         resolvedSenseLabel: resolvedOpt?.label || nextCtx.resolvedSenseLabel,
+        detectedDomain: nextCtx.activeDomain,
         steps: proposedSteps,
-        status: 'completed',
+        status: 'awaiting_approval',
       },
-      selectedExpert: report.selectedExpert,
-      alternativeExperts: report.alternativeExperts,
-      contrastingOpinions: report.contrastingOpinions,
-      matchedScenario: report.matchedScenario || newUseCase,
-      verifiedFacts: [modelValidation.validationReason, ...report.verifiedFacts],
-      bibliographyReferences: report.bibliographyReferences,
-      deepResearchTuning: report.deepResearchTuning,
-      multiEngineStream: isOnlineLearning ? report.multiEngineStream : undefined,
-      followUpQuestions: report.followUpQuestions,
-      glassBox: report.glassBox,
-      synthesizedUseCase: newUseCase,
-      selfLearningCommitted: true,
+      verifiedFacts: [
+        modelValidation.validationReason,
+        'Plan drafted only; research and online searches have not started.',
+      ],
+      selfLearningCommitted: false,
     };
 
     appendMessagesToThread(
@@ -1313,9 +1284,17 @@ export default function App() {
       activeModel
     );
     const targetModel = modelValidation.selectedModel;
+    if (modelValidation.autoSwitched) {
+      setActiveModelId(targetModel.id);
+    }
     const targetVer =
       targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
       targetModel.versions[0];
+
+    const planMessage = chatHistory.find((message) => message.id === planMessageId);
+    if (planMessage?.pendingResearchPlan?.status !== 'awaiting_approval') {
+      return;
+    }
 
     // Mark plan card as 'executing'
     setChatHistory((prev) =>
@@ -1344,16 +1323,24 @@ export default function App() {
           isOnline: isOnlineLearning,
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        liveCrawledData = {
-          references: data.references,
-          liveStageSnippets: data.liveStageSnippets,
-          isOnlineInternetFetched: data.isOnlineInternetFetched,
-        };
+      if (!res.ok) {
+        throw new Error(`Research crawler returned HTTP ${res.status}`);
       }
-    } catch {
-      // Offline air-gapped fallback
+      const data = await res.json();
+      liveCrawledData = {
+        references: Array.isArray(data.references) ? data.references : [],
+        liveStageSnippets:
+          data.liveStageSnippets && typeof data.liveStageSnippets === 'object'
+            ? data.liveStageSnippets
+            : {},
+        isOnlineInternetFetched: Boolean(data.isOnlineInternetFetched),
+      };
+    } catch (error) {
+      appendLog(
+        'WARN',
+        'QuantEngine',
+        `Research sources unavailable; continuing with local synthesis. ${String(error)}`
+      );
     }
 
     const report = executeDeepResearchPlan(
@@ -1367,18 +1354,6 @@ export default function App() {
 
     const newUseCase = translateNlpToUseCase(approvedTopic, nextOffset);
     setCustomScenarios((prev) => [newUseCase, ...prev]);
-
-    const crawledSamplesAdded = report.bibliographyReferences?.length || 4;
-    setModels((prev) =>
-      prev.map((m) =>
-        m.id === targetModel.id
-          ? {
-              ...m,
-              selfLearningSamplesCount: m.selfLearningSamplesCount + crawledSamplesAdded,
-            }
-          : m
-      )
-    );
 
     setChatHistory((prev) => {
       const updated = prev.map((m) =>
@@ -1628,7 +1603,6 @@ ${storyboardBullets}
 - **Character & Scene Engine:** \`${visualNlp.characterArchetype}\` (${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics})${
             liveWebContextNote ? `\n- **Live Online Visual Grounding:** \`${liveWebContextNote}\`` : ''
           }`,
-      verifiedFacts: groundedKnowledgeForMedia.verifiedFacts,
       bibliographyReferences: groundedKnowledgeForMedia.bibliographyReferences,
       generatedMedia:
         !isReceiptScene && (modality === 'Video' || /\b(video|animate|clip)\b/i.test(cleanPrompt))
@@ -1653,6 +1627,7 @@ ${storyboardBullets}
             }
           : undefined,
       verifiedFacts: [
+        ...groundedKnowledgeForMedia.verifiedFacts,
         modelValidation.validationReason,
         `Data Validation: ${visualNlp.dataValidationStatus}`,
         ...(liveWebContextNote ? [`Live Internet Visual Grounding: ${liveWebContextNote}`] : []),

@@ -202,15 +202,62 @@ test('Sacred & Religious Studies and Astrology use cases activate ONLY when expl
   assert.ok(astroRes.answerMarkdown.includes('Tarot'));
 });
 
-test('Multi-Engine Online Search streams across 4 independent search engines with zero 3rd-party AI models referenced', () => {
-  const stream = streamMultiEngineOnlineSearch(
+test('Online search telemetry reports only retrieved providers and never fabricates results', () => {
+  const emptyStream = streamMultiEngineOnlineSearch(
     'Subduction zone eclogite seismic velocity inversion',
     'Geology'
   );
-  assert.equal(stream.activeEnginesCount, 4);
-  assert.equal(stream.engines.length, 4);
+  assert.equal(emptyStream.activeEnginesCount, 0);
+  assert.equal(emptyStream.engines.length, 0);
+  assert.match(emptyStream.inferenceEnginePolicy, /No live search sources returned/);
+
+  const stream = streamMultiEngineOnlineSearch('Water temperature microbial growth', 'Science', [
+    {
+      title: 'Bacterial growth',
+      authorsOrInstitution: 'Wikimedia Foundation',
+      publicationOrSource: 'Wikipedia',
+      year: 0,
+      url: 'https://en.wikipedia.org/wiki/Bacterial_growth',
+      snippet: 'Description of bacterial population growth.',
+      sourceEngine: 'Wikipedia Live REST API',
+    },
+    {
+      title: 'Thermal effects on microbial growth',
+      authorsOrInstitution: 'Research authors',
+      publicationOrSource: 'OpenAlex',
+      year: 2024,
+      url: 'https://openalex.org/works/W123',
+      snippet: 'A retrieved scholarly record.',
+      sourceEngine: 'OpenAlex Scholarly Index',
+    },
+  ]);
+  assert.equal(stream.activeEnginesCount, 2);
+  assert.equal(stream.engines.length, 2);
   assert.equal(stream.zeroThirdPartyAiModelsUsed, true);
-  assert.ok(stream.engines.every((e) => e.matchedScenarioId.startsWith('SCN-')));
+  assert.deepEqual(
+    stream.engines.map((engine) => engine.sourceUrl),
+    ['https://en.wikipedia.org/wiki/Bacterial_growth', 'https://openalex.org/works/W123']
+  );
+  assert.ok(stream.engines.every((engine) => engine.sourceCount === 1));
+});
+
+test('Scenario verification prefers relevant matches in the detected domain', () => {
+  const relevantScenario = translateNlpToUseCase(
+    'Build a TypeScript package for API request retries with exponential backoff',
+    1
+  );
+  const unrelatedScenario = translateNlpToUseCase(
+    'Analyze Mughal-era trade routes and historical tax records',
+    2
+  );
+  const verification = verifyExistingUseCaseMatch(
+    'Build a TypeScript package for API request retries with exponential backoff',
+    [unrelatedScenario, relevantScenario]
+  );
+
+  assert.equal(verification.matches[0]?.scenario.id, relevantScenario.id);
+  assert.ok(verification.matches.every((match) => match.scenario.domain === verification.detectedDomain));
+  assert.ok(verification.similarityScorePct >= 80);
 });
 
 test('Deep Research generates tailored multi-stage plans for specific contexts and produces detailed stage matrix, valid HTTPS bibliography links, and model tuning', () => {
@@ -255,11 +302,7 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
   assert.ok(!everydayReport.answerMarkdown.includes('Kyber'));
   assert.ok(!everydayReport.deepResearchTuning?.qloraAdapterRank.includes('QLoRA'));
   assert.ok(!everydayReport.glassBox.kvCacheCompressionRatio.includes('FP8 KV'));
-  assert.ok(
-    everydayReport.multiEngineStream?.engines.every(
-      (eng) => !eng.streamedSnippet.includes('Hamiltonian') && !eng.engineName.includes('RFC')
-    )
-  );
+  assert.equal(everydayReport.multiEngineStream, undefined);
 
   const plan = generateDeepResearchPlan('Post-Quantum Kyber-1024 Hybrid TLS Architecture');
   assert.equal(plan.length, 4);
@@ -326,7 +369,7 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
   assert.ok(report.answerMarkdown.includes('Evaluate custom hardware lattice NTT throughput and memory bounds.'));
   assert.ok(report.answerMarkdown.includes('Live stage finding: Hardware NTT acceleration reduces Kyber-1024 latency'));
   assert.ok(report.answerMarkdown.includes('Executive Summary & Multi-Stage Synthesis Matrix'));
-  assert.ok(report.answerMarkdown.includes('Verified Bibliography & Primary References'));
+  assert.ok(report.answerMarkdown.includes('Retrieved Sources'));
   assert.ok(!report.answerMarkdown.includes('Web Crawler Engine'));
   assert.ok(report.bibliographyReferences && report.bibliographyReferences.length >= 4);
   assert.ok(report.bibliographyReferences.some((ref) => ref.doiOrUrl === 'https://en.wikipedia.org/wiki/Kyber'));
@@ -334,7 +377,11 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
 
   assert.ok(report.deepResearchTuning);
   assert.ok(report.deepResearchTuning.useCaseScenarioId.startsWith('SCN-'));
-  assert.ok(report.deepResearchTuning.trainingTriplesExtracted >= 16);
+  assert.equal(report.deepResearchTuning.trainingTriplesExtracted, 0);
+  assert.equal(
+    report.deepResearchTuning.tuningStatus,
+    'Scenario Recorded; Model Weights Unchanged'
+  );
 
   const pdfBytes = generatePdfDocumentBytes(
     'Deep Research Report',
@@ -1649,4 +1696,3 @@ test('Release v5.6 (SVN-r406.0): Packaged Sovereign Panini-Omni-Flash-1.1-Sovere
   assert.ok(learnStep5.distilledVisualPrimitives.length >= 3);
   assert.ok(learnStep5.distilledAcousticFormants.length >= 3);
 });
-

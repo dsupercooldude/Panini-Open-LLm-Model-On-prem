@@ -3774,7 +3774,11 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
             .join('\n')
         : '';
     const xaiSection = msg.glassBox
-      ? `\n\n---\nExplainable AI (ELI12): ${msg.glassBox.explainableAi.eli12Explanation}\nConfidence: ${msg.glassBox.explainableAi.confidenceScorePct}%\nKnowledge Source: ${msg.glassBox.explainableAi.knowledgeSourceMode}\n`
+      ? `\n\n---\nExplainable AI (ELI12): ${msg.glassBox.explainableAi.eli12Explanation}\n      Confidence: ${
+              msg.glassBox.explainableAi.confidenceScorePct === undefined
+                ? 'Not calibrated'
+                : `${msg.glassBox.explainableAi.confidenceScorePct}%`
+            }\nKnowledge Source: ${msg.glassBox.explainableAi.knowledgeSourceMode}\n`
       : '';
     const fullText = `# ${msg.authorName} (${msg.domain})\nTimestamp: ${msg.timestamp}\n\n${msg.content}${bibSection}${xaiSection}`;
     const blob = new Blob([fullText], { type: 'text/markdown;charset=utf-8' });
@@ -4948,15 +4952,17 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                           <span className={`font-semibold flex items-center gap-1.5 ${headingText}`}>
                             <Globe className="w-3.5 h-3.5 text-emerald-400" />
                             <span>
-                              Multi-Engine Online Search Stream ({msg.multiEngineStream.activeEnginesCount}{' '}
-                              Independent Engines)
+                              Live Search Providers ({msg.multiEngineStream.activeEnginesCount})
                             </span>
                           </span>
                           <span className="font-mono text-[11px] text-emerald-400">
                             Zero 3rd-Party Online AI Models Referenced
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {msg.multiEngineStream.engines.length === 0 ? (
+                          <p className={mutedText}>{msg.multiEngineStream.inferenceEnginePolicy}</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {msg.multiEngineStream.engines.map((eng) => (
                             <div
                               key={eng.engineId}
@@ -4964,14 +4970,21 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             >
                               <div className="flex items-center justify-between font-mono">
                                 <span className="text-sky-400 font-semibold">{eng.engineName}</span>
-                                <span className={mutedText}>
-                                  {eng.latencyMs}ms · {eng.matchedScenarioId}
-                                </span>
+                                <span className={mutedText}>{eng.sourceCount} result(s)</span>
                               </div>
                               <p className={`truncate ${mutedText}`}>{eng.streamedSnippet}</p>
+                              <a
+                                href={eng.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-block text-sky-400 hover:underline"
+                              >
+                                Open source
+                              </a>
                             </div>
                           ))}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -4985,7 +4998,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                           <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
                             <Cpu className="w-3.5 h-3.5" />
                             <span>
-                              Deep Research Knowledge Saved to Model Memory &amp; Use-Case Library
+                              Research Scenario Saved
                             </span>
                           </span>
                           <span className="font-mono text-[11px] text-emerald-300">
@@ -4993,9 +5006,8 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                           </span>
                         </div>
                         <div className={`text-[11px] font-mono ${mutedText}`}>
-                          Use Case Saved: {msg.deepResearchTuning.useCaseScenarioId} · Learned{' '}
-                          {msg.deepResearchTuning.trainingTriplesExtracted} Verified Topic Facts from{' '}
-                          {msg.deepResearchTuning.crawledSourcesCount} Cited Sources ·{' '}
+                          Use Case: {msg.deepResearchTuning.useCaseScenarioId} · Retrieved{' '}
+                          {msg.deepResearchTuning.crawledSourcesCount} source(s) ·{' '}
                           {msg.deepResearchTuning.qloraAdapterRank}
                         </div>
                       </div>
@@ -5013,8 +5025,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             <span className={`font-semibold flex items-center gap-1.5 ${headingText}`}>
                               <BookOpen className="w-3.5 h-3.5 text-sky-400" />
                               <span>
-                                Verified Research Bibliography ({msg.bibliographyReferences.length}{' '}
-                                Valid Cited Sources)
+                                Retrieved Research Sources ({msg.bibliographyReferences.length})
                               </span>
                             </span>
                             <button
@@ -5041,7 +5052,8 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                                   <span className="font-mono text-sky-400 font-semibold mr-1.5">
                                     [{ref.refNumber}]
                                   </span>
-                                  <span className="font-semibold">{ref.title}</span> ({ref.year})
+                                  <span className="font-semibold">{ref.title}</span>
+                                  {ref.year > 0 ? ` (${ref.year})` : ''}
                                 </div>
                                 <div className={mutedText}>
                                   {ref.authorsOrInstitution} · {ref.publicationOrSource}
@@ -5144,7 +5156,9 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       )}
 
                     {/* MULTI-STAGE DEEP RESEARCH FLOW / METHODOLOGY (Hidden by default; shown when Show more is clicked) */}
-                    {isDetailsExpanded && msg.pendingResearchPlan && (
+                    {(isDetailsExpanded ||
+                      msg.pendingResearchPlan?.status === 'awaiting_approval') &&
+                      msg.pendingResearchPlan && (
                       <div
                         data-testid="deep-research-plan-approval-card"
                         className={`mt-2 p-4 rounded-xl border border-indigo-500/50 ${
@@ -5158,10 +5172,12 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                               Multi-Stage Deep Research Flow ({msg.pendingResearchPlan.steps.length} Topic-Focused Stages · Plain-English Thresholds)
                             </span>
                           </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
                             {msg.pendingResearchPlan.status === 'completed'
-                              ? 'Executed & Verified'
-                              : 'Ready'}
+                              ? 'Completed'
+                              : msg.pendingResearchPlan.status === 'executing'
+                              ? 'Executing'
+                              : 'Awaiting Approval'}
                           </span>
                         </div>
 
@@ -5221,6 +5237,32 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             </div>
                           ))}
                         </div>
+                        {msg.pendingResearchPlan.status === 'awaiting_approval' &&
+                          onApproveDeepResearchPlan && (
+                            <button
+                              type="button"
+                              data-testid="approve-deep-research-plan-btn"
+                              onClick={() =>
+                                onApproveDeepResearchPlan(
+                                  msg.id,
+                                  msg.pendingResearchPlan!.topic,
+                                  msg.pendingResearchPlan!.steps
+                                )
+                              }
+                              className="px-4 py-2 rounded-lg bg-indigo-500 text-white font-semibold hover:bg-indigo-400 transition-colors"
+                            >
+                              Approve Plan &amp; Run Deep Research
+                            </button>
+                          )}
+                        {msg.pendingResearchPlan.status === 'executing' && (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-4 py-2 rounded-lg bg-indigo-500/40 text-white/70 font-semibold cursor-wait"
+                          >
+                            Research in progress…
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -5337,7 +5379,10 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                                   : `${borderClass} ${surfaceClass} ${mutedText}`
                               }`}
                             >
-                              Technical Pathway ({msg.glassBox.explainableAi.confidenceScorePct}%)
+                              Technical Pathway (
+                              {msg.glassBox.explainableAi.confidenceScorePct === undefined
+                                ? 'Confidence not calibrated'
+                                : `${msg.glassBox.explainableAi.confidenceScorePct}%`})
                             </button>
                           </div>
                         </div>
@@ -6026,7 +6071,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                   {chatCapability === 'coding'
                     ? 'Synthesize Code'
                     : chatCapability === 'deep_research'
-                    ? 'Run Deep Research'
+                    ? 'Analyze Plan'
                     : chatCapability === 'image_gen'
                     ? 'Synthesize Image'
                     : chatCapability === 'video_gen'

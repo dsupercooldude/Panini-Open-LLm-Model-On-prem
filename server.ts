@@ -138,7 +138,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             title: `${summaryJson.title} — Wikipedia Encyclopedia Summary`,
             authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
             publicationOrSource: 'Wikipedia Live Knowledge Graph',
-            year: 2026,
+            year: 0,
             url: pageUrl,
             doiOrUrl: pageUrl,
             snippet: summaryJson.extract,
@@ -185,7 +185,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
                   title: `${topSumJson.title} — Wikipedia Encyclopedia Summary`,
                   authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
                   publicationOrSource: 'Wikipedia Live Knowledge Graph',
-                  year: 2026,
+                  year: 0,
                   url: topUrl,
                   doiOrUrl: topUrl,
                   snippet: topSumJson.extract,
@@ -205,10 +205,10 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               title: `${item.title} — Live Encyclopedia & Empirical Reference`,
               authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
               publicationOrSource: 'Wikipedia Live Knowledge Graph',
-              year: 2026,
+              year: 0,
               url,
               doiOrUrl: url,
-              snippet: cleanSnippet || `Verified live internet entry for ${item.title}.`,
+              snippet: cleanSnippet || `Wikipedia search result: ${item.title}.`,
               sourceEngine: 'Wikipedia Live REST Engine',
             });
           }
@@ -243,7 +243,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               ?.slice(0, 3)
               .map((a) => a.author?.display_name)
               .filter(Boolean)
-              .join(', ') || 'OpenAlex Research Consortium';
+              .join(', ') || 'Author not listed';
           const venue =
             w.primary_location?.source?.display_name || 'OpenAlex Peer-Reviewed Index';
           const workUrl = w.doi || w.id || `https://openalex.org/works?search=${encoded}`;
@@ -251,19 +251,75 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             title: w.display_name,
             authorsOrInstitution: authors,
             publicationOrSource: venue,
-            year: w.publication_year || 2025,
+            year: w.publication_year || 0,
             url: workUrl,
             doiOrUrl: workUrl,
-            snippet: `Live peer-reviewed scholarly work indexed via OpenAlex for "${cleanQ}": ${w.display_name} (${authors}, ${w.publication_year || 2025}).`,
+            snippet: w.display_name,
             sourceEngine: 'OpenAlex Scholarly Index',
           });
         }
       }
     } catch {
-      // Fallback handled below
+      // Other live providers may still return usable results.
     }
 
-    return results.slice(0, maxResults);
+    try {
+      const crossrefRes = await fetch(
+        `https://api.crossref.org/works?query.bibliographic=${encoded}&rows=3&select=title,author,published,URL,DOI,abstract`,
+        {
+          signal: AbortSignal.timeout(2800),
+          headers: { 'User-Agent': 'PaniniOpenLLMStudio/1.0' },
+        }
+      );
+      if (crossrefRes.ok) {
+        const crossrefJson = (await crossrefRes.json()) as {
+          message?: {
+            items?: Array<{
+              title?: string[];
+              author?: Array<{ given?: string; family?: string }>;
+              published?: { 'date-parts'?: number[][] };
+              URL?: string;
+              DOI?: string;
+              abstract?: string;
+            }>;
+          };
+        };
+        for (const work of crossrefJson.message?.items || []) {
+          const title = work.title?.[0]?.trim();
+          const url = work.URL || (work.DOI ? `https://doi.org/${work.DOI}` : '');
+          if (!title || !url) continue;
+          const authors =
+            work.author
+              ?.slice(0, 3)
+              .map((author) => [author.given, author.family].filter(Boolean).join(' '))
+              .filter(Boolean)
+              .join(', ') || 'Crossref-indexed authors';
+          const snippet = (work.abstract || `Crossref record for "${title}".`)
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          results.push({
+            title,
+            authorsOrInstitution: authors,
+            publicationOrSource: 'Crossref Works API',
+            year: work.published?.['date-parts']?.[0]?.[0] || 0,
+            url,
+            doiOrUrl: url,
+            snippet,
+            sourceEngine: 'Crossref Works API',
+          });
+        }
+      }
+    } catch {
+      // Other live providers may still return usable results.
+    }
+
+    const uniqueResults = new Map<string, (typeof results)[number]>();
+    for (const result of results) {
+      const key = result.url.toLowerCase();
+      if (key && !uniqueResults.has(key)) uniqueResults.set(key, result);
+    }
+    return Array.from(uniqueResults.values()).slice(0, maxResults);
   }
 
   // Backend endpoint: Deep Research Crawler Engine (fetches real internet data in Online mode and honors custom stages)
@@ -316,7 +372,8 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       res.json({
         ok: true,
         topic: rawTopic,
-        isOnlineInternetFetched: isOnline,
+        isOnlineInternetFetched:
+          isOnline && (baseReferences.length > 0 || Object.keys(liveStageSnippets).length > 0),
         stagesValidated: steps.length,
         references: numberedRefs,
         liveStageSnippets,

@@ -263,7 +263,7 @@ export interface UseCaseScenario {
 }
 
 export interface ExplainableAiSummary {
-  confidenceScorePct: number;
+  confidenceScorePct?: number;
   decisionPathway: string[];
   keyFeatureAttributions: { feature: string; weightPct: number }[];
   safetyAndBiasCheck: string;
@@ -370,8 +370,7 @@ export interface OnlineSearchEngineNode {
     | 'Standards & Thresholds'
     | 'Empirical & Archival'
     | 'Live Web & Scenario Graph';
-  latencyMs: number;
-  matchedScenarioId: string;
+  sourceCount: number;
   streamedSnippet: string;
   sourceUrl: string;
 }
@@ -402,7 +401,7 @@ export interface DeepResearchTuningResult {
   trainingTriplesExtracted: number;
   qloraAdapterRank: string;
   perplexityImprovementDelta: string;
-  tuningStatus: 'Committed to Model Weights & Use-Case Catalog';
+  tuningStatus: 'Scenario Recorded; Model Weights Unchanged';
 }
 
 export type ContentSafetyMode = 'Safe Mode' | 'Child Mode' | 'NSFW Mode';
@@ -2742,39 +2741,64 @@ export function verifyExistingUseCaseMatch(
 ): UseCaseVerificationResult {
   const clean = nlpDescription.trim();
   const suggestedNewScenario = translateNlpToUseCase(clean, customScenarios.length + 1);
-  const tokens = clean
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 3 && !['create', 'build', 'make', 'case', 'with', 'from', 'that', 'this', 'analyze'].includes(w));
+  const stopWords = new Set([
+    'about',
+    'after',
+    'also',
+    'analyze',
+    'and',
+    'case',
+    'create',
+    'design',
+    'explain',
+    'from',
+    'generate',
+    'make',
+    'provide',
+    'solve',
+    'step',
+    'that',
+    'the',
+    'this',
+    'using',
+    'with',
+  ]);
+  const tokenize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .map((word) => word.length > 5 && word.endsWith('s') ? word.slice(0, -1) : word)
+      .filter((word) => word.length > 2 && !stopWords.has(word));
+  const queryTokens = new Set(tokenize(clean));
 
   const matches: UseCaseVerificationMatch[] = [];
-  const candidates: UseCaseScenario[] = [...customScenarios];
-  for (let i = 1; i <= 180; i++) {
-    candidates.push(getPretrainedScenarioByIndex(i));
+  const domainIndex = ALL_DOMAINS.indexOf(suggestedNewScenario.domain);
+  const candidates: UseCaseScenario[] = customScenarios.filter(
+    (scenario) => scenario.domain === suggestedNewScenario.domain
+  );
+  if (domainIndex >= 0) {
+    for (let index = domainIndex + 1; index <= TOTAL_PRETRAINED_SCENARIOS; index += ALL_DOMAINS.length) {
+      candidates.push(getPretrainedScenarioByIndex(index));
+    }
   }
 
   for (const cand of candidates) {
-    const hay = `${cand.title} ${cand.starterPrompt} ${cand.domain}`.toLowerCase();
-    let hitCount = 0;
-    for (const tok of tokens) {
-      if (hay.includes(tok)) hitCount++;
-    }
-    const domainBonus = cand.domain === suggestedNewScenario.domain ? 1 : 0;
-    const score =
-      tokens.length > 0
-        ? Math.min(98, Math.round(((hitCount + domainBonus * 0.75) / Math.max(1, tokens.length)) * 100))
-        : cand.domain === suggestedNewScenario.domain
-        ? 65
-        : 0;
+    const candidateTokens = new Set(tokenize(cand.isCustom ? `${cand.title} ${cand.starterPrompt}` : cand.title));
+    const hitCount = Array.from(queryTokens).filter((token) => candidateTokens.has(token)).length;
+    const minHits = Math.min(2, queryTokens.size);
+    if (hitCount < minHits || queryTokens.size === 0 || candidateTokens.size === 0) continue;
+    const queryCoverage = hitCount / queryTokens.size;
+    const candidateCoverage = hitCount / candidateTokens.size;
+    const score = Math.round(100 * (queryCoverage * 0.8 + candidateCoverage * 0.2));
 
-    if (score >= 45) {
+    if (score >= 35) {
       matches.push({
         scenario: cand,
         similarityScorePct: score,
-        matchType: score >= 82 ? 'Exact Match' : 'Close Match',
+        matchType: score >= 80 ? 'Exact Match' : 'Close Match',
         reason:
-          score >= 82
+          score >= 80
             ? `Fulfils your exact ${cand.domain} requirements (${cand.recommendedQuant} · ${cand.activeExperts.join(', ')}).`
             : `Close match in ${cand.domain} — can be used directly or cloned & edited.`,
       });
@@ -4254,7 +4278,7 @@ Think of this **${lang}** program like a well-organized express lane at a grocer
       attentionEntropy: 1.34,
       kvCacheCompressionRatio: '2.4x (FP8 KV)',
       tokenGenerationMs: 24,
-      selfLearningAdapterApplied: true,
+      selfLearningAdapterApplied: false,
       adapterRankDelta: 'QLoRA r=16 (Polyglot Code Verifier)',
       explainableAi: {
         confidenceScorePct: 99.4,
@@ -4614,76 +4638,48 @@ export function generateDeepResearchPlan(
  */
 export function streamMultiEngineOnlineSearch(
   query: string,
-  domain: DomainCategory
+  domain: DomainCategory,
+  sources: SearchSourceMetadata[] = []
 ): MultiEngineSearchStream {
   const cleanQuery = query.trim() || `${domain} scenario verification`;
-  const allowMathOrCyber = isExplicitMathOrCyberQuery(cleanQuery, domain);
-  const slug = cleanQuery
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 38);
-
-  const normalizedDomain: DomainCategory =
-    domain === 'Sacred Texts & Theology'
-      ? 'Sacred & Religious Studies'
-      : domain === 'Astrology & Divination'
-      ? 'Astrology (Vedic, Tarot & Sidereal)'
-      : domain;
-
-  const baseIdx = Math.max(1, ALL_DOMAINS.indexOf(normalizedDomain) + 1);
-  const domainStride = ALL_DOMAINS.length;
-  const scn1 = getPretrainedScenarioByIndex(baseIdx);
-  const scn2 = getPretrainedScenarioByIndex(baseIdx + domainStride);
-  const scn3 = getPretrainedScenarioByIndex(baseIdx + domainStride * 2);
-  const scn4 = getPretrainedScenarioByIndex(baseIdx + domainStride * 3);
+  const groupedSources = new Map<string, SearchSourceMetadata[]>();
+  for (const source of sources) {
+    const provider = source.sourceEngine || source.publicationOrSource || 'Live Web Index';
+    const existing = groupedSources.get(provider) || [];
+    existing.push(source);
+    groupedSources.set(provider, existing);
+  }
+  const engines = Array.from(groupedSources.entries()).map(([provider, providerSources]) => {
+    const providerKey = provider.toLowerCase();
+    const indexCategory: OnlineSearchEngineNode['indexCategory'] =
+      /openalex|crossref|scholar|doi/.test(providerKey)
+        ? 'Scholarly & DOI'
+        : /nist|usgs|standard|archive/.test(providerKey)
+        ? 'Empirical & Archival'
+        : 'Live Web & Scenario Graph';
+    const firstSource = providerSources[0];
+    return {
+      engineId: providerKey.replace(/[^a-z0-9]+/g, '-'),
+      engineName: provider,
+      indexCategory,
+      sourceCount: providerSources.length,
+      streamedSnippet: providerSources
+        .slice(0, 2)
+        .map((source) => `${source.title}: ${source.snippet}`)
+        .join(' · ')
+        .slice(0, 500),
+      sourceUrl: firstSource.url,
+    };
+  });
 
   return {
     query: cleanQuery,
-    activeEnginesCount: 4,
+    activeEnginesCount: engines.length,
     zeroThirdPartyAiModelsUsed: true,
-    inferenceEnginePolicy:
-      'Multi-Engine Online Search Stream Only · Zero Third-Party Online AI Models Referenced · 100% Topic-Focused Panini Synthesis',
-    engines: [
-      {
-        engineId: 'eng-scholar-doi',
-        engineName: 'OpenAlex & Crossref DOI Crawler',
-        indexCategory: 'Scholarly & DOI',
-        latencyMs: 42,
-        matchedScenarioId: scn1.id,
-        streamedSnippet: `Matched peer-reviewed primary literature & plain-English examples for "${cleanQuery.slice(0, 56)}" -> mapped to ${normalizedDomain} scenario ${scn1.id}.`,
-        sourceUrl: `https://doi.org/10.1038/panini.${slug}.2026`,
-      },
-      {
-        engineId: 'eng-tech-rfc',
-        engineName: allowMathOrCyber
-          ? 'IETF / IEEE / ArXiv Technical Index'
-          : `Applied ${normalizedDomain} Standards & Threshold Index`,
-        indexCategory: allowMathOrCyber ? 'Technical & RFC' : 'Standards & Thresholds',
-        latencyMs: 38,
-        matchedScenarioId: scn2.id,
-        streamedSnippet: `Verified plain-English threshold rules & real-world tipping points in ${normalizedDomain} -> grounded scenario ${scn2.id}.`,
-        sourceUrl: `https://openalex.org/works?search=${encodeURIComponent(slug)}`,
-      },
-      {
-        engineId: 'eng-archival-data',
-        engineName: 'NIST / USGS / Classical Archival Concordance',
-        indexCategory: 'Empirical & Archival',
-        latencyMs: 51,
-        matchedScenarioId: scn3.id,
-        streamedSnippet: `Verified real-world measurements, primary archival corpora, and baseline datasets in ${normalizedDomain} -> grounded scenario ${scn3.id}.`,
-        sourceUrl: `https://data.nist.gov/panini-index/${slug}`,
-      },
-      {
-        engineId: 'eng-live-web',
-        engineName: 'Distributed Live Web & Scenario Graph Crawler',
-        indexCategory: 'Live Web & Scenario Graph',
-        latencyMs: 47,
-        matchedScenarioId: scn4.id,
-        streamedSnippet: `Cross-checked live multi-engine web search telemetry in ${normalizedDomain} with zero external LLM calls -> linked scenario ${scn4.id}.`,
-        sourceUrl: `https://search-index.paniniquant.org/scenarios/${scn4.id.toLowerCase()}`,
-      },
-    ],
+    inferenceEnginePolicy: engines.length
+      ? 'Live public search sources retrieved; no third-party AI models used.'
+      : 'No live search sources returned; no online results are presented as verified.',
+    engines,
   };
 }
 
@@ -4695,69 +4691,7 @@ export function crawlWebForDeepResearch(
   topic: string,
   steps: DeepResearchPlanStep[]
 ): BibliographyReference[] {
-  const domain = detectQueryDomain(topic);
-  const encodedQuery = encodeURIComponent(topic.trim().slice(0, 64));
-
-  const baseRefs: BibliographyReference[] = [
-    {
-      refNumber: 1,
-      title: `Foundational Principles, Plain-English Models & Primary Corpus of ${topic.slice(0, 68)}`,
-      authorsOrInstitution: 'Lindholm, C., Vance, M., & International Consortium for Applied Sciences',
-      publicationOrSource: `OpenAlex Peer-Reviewed Corpus & ${domain} Research Archive`,
-      year: 2026,
-      doiOrUrl: `https://openalex.org/works?search=${encodedQuery}`,
-      crawlerEngine: 'Backend Academic Index',
-      relevanceSummary: `Establishes core definitions, primary mechanisms, and baseline reference measurements for Stage 1 of "${topic.slice(0, 48)}".`,
-    },
-    {
-      refNumber: 2,
-      title: `Critical Thresholds, Tipping Points & Operational Boundaries in ${topic.slice(0, 60)}`,
-      authorsOrInstitution: 'Takahashi, S., Nair, P., & Applied Systems Verification Lab',
-      publicationOrSource: `Journal of ${domain} Threshold Analysis & Empirical Benchmarks`,
-      year: 2026,
-      doiOrUrl: `https://www.semanticscholar.org/search?q=${encodedQuery}+thresholds`,
-      crawlerEngine: 'Backend Threshold Index',
-      relevanceSummary: `Defines the exact lower, optimal, and upper thresholds for "${topic.slice(0, 48)}" in plain English, contrasting below-threshold stability with above-threshold state transitions.`,
-    },
-    {
-      refNumber: 3,
-      title: `Real-World Case Studies & Practical Applications for ${topic.slice(0, 54)}`,
-      authorsOrInstitution: 'NIST & Global Archival Standards Working Group',
-      publicationOrSource: 'Semantic Scholar & Practical Field Standards Repository',
-      year: 2025,
-      doiOrUrl: `https://www.semanticscholar.org/search?q=${encodedQuery}`,
-      crawlerEngine: 'Backend Standards Index',
-      relevanceSummary: `Documents concrete real-world examples, everyday analogies, and field-tested operating ranges for "${topic.slice(0, 48)}".`,
-    },
-    {
-      refNumber: 4,
-      title: `Longitudinal Evidence & Decision Guidelines: ${topic.slice(0, 58)}`,
-      authorsOrInstitution: 'Cambridge & Max Planck Institute Joint Archival Initiative',
-      publicationOrSource: `Crossref DOI Registry & Annual Review of ${domain}`,
-      year: 2026,
-      doiOrUrl: `https://search.crossref.org/?q=${encodedQuery}&from_ui=yes`,
-      crawlerEngine: 'Backend DOI Resolver',
-      relevanceSummary: `Supplies longitudinal dataset series across 14,800 verified real-world observations and clear decision rules for "${topic.slice(0, 48)}".`,
-    },
-  ];
-
-  steps.forEach((step, idx) => {
-    if (idx >= 2) {
-      const stepEncoded = encodeURIComponent(`${topic.slice(0, 32)} ${step.title.slice(0, 32)}`);
-      baseRefs.push({
-        refNumber: baseRefs.length + 1,
-        title: `${step.title}: Verification Protocol & Practical Benchmarks`,
-        authorsOrInstitution: `International ${domain} Verification Consortium`,
-        publicationOrSource: `Google Scholar & ${domain} Symposium Proceedings`,
-        year: 2026,
-        doiOrUrl: `https://scholar.google.com/scholar?q=${stepEncoded}`,
-        crawlerEngine: 'Backend Scholarly Index',
-        relevanceSummary: `Directly substantiates Stage ${idx + 1} objective: "${step.objective.slice(0, 80)}".`,
-      });
-    }
-  });
-
-  return baseRefs;
+  return [];
 }
 
 export interface LiveCrawledResearchPayload {
@@ -4820,81 +4754,91 @@ export function executeDeepResearchPlan(
   });
 
   const fallbackBibliography = crawlWebForDeepResearch(topic, normalizedSteps);
+  const hasLiveReferences = Boolean(
+    liveCrawledData?.references && liveCrawledData.references.length > 0
+  );
   const bibliography =
     liveCrawledData?.references && liveCrawledData.references.length > 0
       ? liveCrawledData.references
+      : isOnlineDynamicLearning
+      ? []
       : fallbackBibliography;
 
-  const multiEngineStream = streamMultiEngineOnlineSearch(topic, domain);
-  if (liveCrawledData?.references && liveCrawledData.references.length > 0) {
-    liveCrawledData.references.slice(0, 4).forEach((ref, idx) => {
-      if (multiEngineStream.engines[idx]) {
-        multiEngineStream.engines[idx].streamedSnippet = `Live Internet Grounding (${ref.publicationOrSource}): "${ref.title}" — ${ref.relevanceSummary}`;
-        multiEngineStream.engines[idx].sourceUrl = ref.doiOrUrl;
-      }
-    });
-  }
+  const multiEngineSources = bibliography.map((ref) => ({
+    title: ref.title,
+    authorsOrInstitution: ref.authorsOrInstitution,
+    publicationOrSource: ref.publicationOrSource,
+    year: ref.year,
+    url: ref.doiOrUrl,
+    snippet: ref.relevanceSummary,
+    sourceEngine: ref.crawlerEngine,
+  }));
+  const multiEngineStream = hasLiveReferences
+    ? streamMultiEngineOnlineSearch(topic, domain, multiEngineSources)
+    : undefined;
 
   const thresholdComparisonTable = allowMathOrCyber
     ? `| Threshold Zone | What Happens in Plain English | Technical / Measurable Indicator | Everyday Real-World Example for "${topic}" |
 | :--- | :--- | :--- | :--- |
 | **1. Below Threshold (Sub-Critical / Safe Baseline)** | The system stays in its normal resting state; small changes do not trigger a major reaction. | Signal remains below activation cutoff (\`< T_min\`); baseline stability holds. | Like water below 100°C warming up in a kettle without boiling yet. |
-| **2. At the Critical Threshold (Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Critical transition boundary (\`T = T_crit\`, **99.5% confidence**). | Like a thermostat clicking on at 72°F or cheese beginning to melt smoothly at **60°C**. |
+| **2. At the Critical Threshold (Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Critical transition boundary (\`T = T_crit\`). | Like a thermostat clicking on at 72°F or cheese beginning to melt smoothly at **60°C**. |
 | **3. Above Threshold (Active / Saturation Regime)** | The new state is fully active; going far past the upper limit requires safety or cooling controls. | Sustained active response (\`> T_crit\`); upper ceiling monitored to prevent overload. | Like a kettle at a full rolling boil or a highway reaching maximum traffic capacity. |`
     : `| Threshold Zone | What Happens in Plain English | Clear Measurable Indicator | Everyday Real-World Example for "${topic}" |
 | :--- | :--- | :--- | :--- |
 | **1. Below the Threshold (Normal / Quiet Zone)** | The system stays in its normal resting state; small everyday changes do not trigger a major reaction. | Stays below the starting trigger level; normal everyday baseline holds steady. | Like water below **100°C** warming up in a kettle without boiling yet, or mozzarella staying firm below **58°C**. |
-| **2. At the Threshold (Exact Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Reaches the exact trigger point where the change begins (**99.5% verified consistency**). | Like a home thermostat clicking on at **72°F**, an automatic porch light turning on at dusk, or cheese melting smoothly at **60°C**. |
+| **2. At the Threshold (Exact Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Reaches the trigger point where the change begins. | Like a home thermostat clicking on at **72°F**, an automatic porch light turning on at dusk, or cheese melting smoothly at **60°C**. |
 | **3. Above the Threshold (Active / Full-Effect Zone)** | The new state is fully active; going far past the upper safety limit triggers protective controls. | Operates above the trigger point; upper safety limit keeps the process balanced. | Like a kettle at a full rolling boil or a **15-Amp** home circuit breaker clicking off to prevent overheating. |`;
 
   const stepSections = normalizedSteps
     .map((s, idx) => {
-      const refA = bibliography[idx % bibliography.length]?.refNumber || 1;
-      const refB = bibliography[(idx + 1) % bibliography.length]?.refNumber || 2;
+      const refA = bibliography.length
+        ? bibliography[idx % bibliography.length]?.refNumber
+        : undefined;
+      const refB = bibliography.length
+        ? bibliography[(idx + 1) % bibliography.length]?.refNumber
+        : undefined;
       const liveSnippet =
         liveCrawledData?.liveStageSnippets?.[s.id] ||
         liveCrawledData?.liveStageSnippets?.[`step-${idx + 1}`] ||
         bibliography[idx % bibliography.length]?.relevanceSummary;
 
-      const recordCount = 1640 + idx * 520;
-      const empiricalLine = allowMathOrCyber
-        ? `Cross-referencing \`n = ${recordCount}\` verified records in **${domain}** confirms **99.${4 + (idx % 5)}%** concordance \`[${refA}, ${refB}]\`.`
-        : `Verified across **${recordCount.toLocaleString()} real-world observations** in **${domain}** with **99.${4 + (idx % 5)}%** consistency \`[${refA}, ${refB}]\`.`;
+      const cite = (referenceNumber?: number) =>
+        referenceNumber === undefined ? '' : ` [${referenceNumber}]`;
 
       return `### Stage ${idx + 1}: ${s.title.replace(/^Stage \d+:\s*/i, '')} (${domain})
 **Stage Objective:** ${s.objective}
 ${
   liveSnippet
-    ? `> **Primary Evidence & Source Grounding \`[${refA}]\`:** ${liveSnippet}\n`
+    ? `> **Retrieved Source${cite(refA)}:** ${liveSnippet}\n`
     : ''
 }
-- **Plain-English Explanation:** In this stage of researching **${topic}**, we look at *${s.title.replace(/^Stage \d+:\s*/i, '')}* in clear, everyday terms. Instead of drifting into unrelated fields, this stage focuses 100% on how **${topic}** works in practice, what triggers changes, and how you can observe it in daily life \`[${refA}]\`.
+- **Plain-English Explanation:** In this stage of researching **${topic}**, we look at *${s.title.replace(/^Stage \d+:\s*/i, '')}* in clear, everyday terms. Instead of drifting into unrelated fields, this stage focuses on how **${topic}** works in practice, what triggers changes, and how you can observe it in daily life.${cite(refA)}
 - **Plain-English Threshold Breakdown for Stage ${idx + 1}:**
   1. **What the Threshold Is:** ${s.thresholdSummary}
   2. **Below the Threshold (Normal State):** ${s.belowThresholdBehavior}
   3. **At & Above the Threshold (Active State):** ${s.aboveThresholdBehavior}
-  4. **Everyday Real-World Example:** ${s.realWorldExample} \`[${refA}, ${refB}]\`
-- **Empirical Findings (${domain}):** ${empiricalLine}`;
+  4. **Everyday Real-World Example:** ${s.realWorldExample}${cite(refB)}
+- **Source Status:** ${liveSnippet ? 'Retrieved source information is shown above.' : 'No source was retrieved for this stage; treat this as an unverified local synthesis.'}`;
     })
     .join('\n\n');
 
-  const stageSummaryTable = `| Stage # | Topic-Specific Research Stage | Domain Focus | Plain-English Threshold & Key Takeaway | Confidence |
+  const stageSummaryTable = `| Stage # | Topic-Specific Research Stage | Domain Focus | Plain-English Threshold & Key Takeaway | Source |
 | :--- | :--- | :--- | :--- | :--- |
 ${normalizedSteps
   .map(
     (s, i) =>
-      `| **Stage ${i + 1}** | ${s.title.replace(/^Stage \d+:\s*/i, '')} | \`${domain}\` | ${s.thresholdSummary} \`[${(i % bibliography.length) + 1}]\` | **99.${4 + (i % 5)}%** |`
+      `| **Stage ${i + 1}** | ${s.title.replace(/^Stage \d+:\s*/i, '')} | \`${domain}\` | ${s.thresholdSummary} | ${bibliography.length ? `[${bibliography[i % bibliography.length].refNumber}]` : 'Not retrieved'} |`
   )
   .join('\n')}`;
 
   const bibMarkdown = bibliography
     .map(
       (b) =>
-        `- **[${b.refNumber}]** ${b.authorsOrInstitution} (${b.year}). *${b.title}*. ${b.publicationOrSource}. [${b.doiOrUrl}](${b.doiOrUrl})`
+        `- **[${b.refNumber}]** ${b.authorsOrInstitution}${b.year > 0 ? ` (${b.year})` : ''}. *${b.title}*. ${b.publicationOrSource}. [${b.doiOrUrl}](${b.doiOrUrl})`
     )
     .join('\n');
 
-  const totalTriples = normalizedSteps.length * 24 + bibliography.length * 12;
+  const totalTriples = 0;
   const newScenario = translateNlpToUseCase(topic, customCountOffset);
 
   const tuningResult: DeepResearchTuningResult = {
@@ -4902,26 +4846,22 @@ ${normalizedSteps
     useCaseTitle: newScenario.title,
     crawledSourcesCount: bibliography.length,
     trainingTriplesExtracted: totalTriples,
-    qloraAdapterRank: allowMathOrCyber
-      ? `QLoRA r=32 (+${totalTriples} Dense Research Triples Tuned)`
-      : `Local Topic Memory Updated (+${totalTriples} Verified Topic Facts Learned)`,
-    perplexityImprovementDelta: allowMathOrCyber
-      ? '-0.14 PPL (Improved Domain Calibration)'
-      : 'Improved Topic Accuracy & Plain-English Clarity (+14% clearer)',
-    tuningStatus: 'Committed to Model Weights & Use-Case Catalog',
+    qloraAdapterRank: 'No model training runtime configured; model weights unchanged',
+    perplexityImprovementDelta: 'Not measured (no model training runtime configured)',
+    tuningStatus: 'Scenario Recorded; Model Weights Unchanged',
   };
 
   const modeBanner = isOnlineDynamicLearning
-    ? liveCrawledData?.isOnlineInternetFetched
-      ? 'Live Internet Grounded (Wikipedia + OpenAlex Peer-Reviewed Corpus)'
-      : 'Hybrid Online Multi-Engine Search Stream'
+    ? hasLiveReferences
+      ? 'Live Internet Grounded'
+      : 'Online search returned no sources; local synthesis only'
     : '100% Air-Gapped Local Panini Knowledge Shards';
 
   const body = `### Executed Multi-Stage Deep Research Report: ${topic}
-**Lead Research Specialist:** *${selectedExpert.name} (${selectedExpert.roleTitle})* · **Domain:** \`${domain}\` · **Execution Mode:** \`${modeBanner}\` · **Approved Plan:** \`${normalizedSteps.length} Topic-Specific Stages Verified\`
+**Lead Research Specialist:** *${selectedExpert.name} (${selectedExpert.roleTitle})* · **Domain:** \`${domain}\` · **Execution Mode:** \`${modeBanner}\` · **Plan:** \`${normalizedSteps.length} stages\`
 
 ### Executive Summary & Multi-Stage Synthesis Matrix
-Following approval of the **${normalizedSteps.length}-Stage Deep Research Plan**, the Panini Research Engine investigated **${topic}** strictly within **${domain}** \`[1, 2, 3, 4]\` with zero off-topic drift. Every stage below pairs a **Plain-English Explanation** with a structured **Plain-English Threshold Breakdown** (*Below Threshold* vs. *At/Above Threshold* + *Everyday Example*) and **Empirical Evidence**.
+The local research workflow organized **${topic}** into ${normalizedSteps.length} stages within **${domain}**. Each stage includes a plain-English explanation and threshold breakdown. Source links are included only when a live source was actually retrieved.
 
 ${stageSummaryTable}
 
@@ -4931,11 +4871,11 @@ ${thresholdComparisonTable}
 ${stepSections}
 
 ### Synthesis Conclusions & Actionable Takeaways
-- **100% Topic-Focused Closure:** All ${normalizedSteps.length} research stages remained strictly anchored to **${topic}** (${domain}) and explained every threshold in plain, everyday English \`[1, 2]\`.
-- **Continual Model Weight Enrichment:** Saved ${totalTriples} verified facts from this research run into local Use Case \`${newScenario.id}\` \`[3, 4]\`.
+- **Plan Coverage:** The ${normalizedSteps}-stage plan remained focused on **${topic}** (${domain}).
+- **Model Updates:** No model weights or training data were changed by this run.
 
-### Verified Bibliography & Primary References
-${bibMarkdown}`;
+### ${bibliography.length ? 'Retrieved Sources' : 'Sources'}
+${bibMarkdown || 'No sources were retrieved. This report is an unverified local synthesis, not a source-verified research report.'}`;
 
   const simpleResearchMarkdown = `### Simple Everyday Research Guide: ${topic}
 **What We Researched (In Plain English):**
@@ -4955,7 +4895,7 @@ ${normalizedSteps
   .join('\n\n')}
 
 ### Bottom-Line Takeaway
-You can switch between this **Simple View** for a quick, jargon-free explanation of every stage's thresholds and the **Expert View** tab for full bibliography links, data tables, and empirical records.`;
+You can switch between this **Simple View** for a quick, jargon-free explanation of every stage's thresholds and the **Expert View** tab for any sources actually retrieved.`;
 
   const followUpQuestions = [
     `Can you give me another everyday real-world example of the threshold in ${topic}?`,
@@ -4979,8 +4919,10 @@ You can switch between this **Simple View** for a quick, jargon-free explanation
     followUpQuestions,
     verifiedFacts: [
       `Executed ${normalizedSteps.length} strictly topic-specific research stages in ${domain}: ${normalizedSteps.map((s) => s.title).join(' -> ')}.`,
-      `Explained key thresholds for "${topic}" in plain English across every stage (Below Threshold vs. At Tipping Point vs. Above Threshold) with real-world examples.`,
-      `Indexed ${bibliography.length} verified bibliography references and saved ${totalTriples} facts to Use Case ${newScenario.id}.`,
+      bibliography.length
+        ? `Retrieved ${bibliography.length} source(s) during this run.`
+        : 'No sources were retrieved; this report is local synthesis and has not been independently verified.',
+      'No model weights were changed; no training was run.',
     ],
     glassBox: {
       quantizationUsed: quantType,
@@ -4995,20 +4937,18 @@ You can switch between this **Simple View** for a quick, jargon-free explanation
       selfLearningAdapterApplied: true,
       adapterRankDelta: tuningResult.qloraAdapterRank,
       explainableAi: {
-        confidenceScorePct: 99.6,
-        eli12Explanation: `After you approved the ${normalizedSteps.length}-stage research plan for "${topic.slice(0, 48)}", our research engine investigated every stage strictly within ${domain}, explained the thresholds in plain everyday English with real-world examples, and saved ${totalTriples} new facts into the model's permanent memory!`,
+        eli12Explanation: `After you approved the ${normalizedSteps.length}-stage research plan for "${topic.slice(0, 48)}", the local research workflow organized the topic into focused stages. It retrieved ${bibliography.length} sources and did not update model weights.`,
         decisionPathway: [
           `1. User reviewed and approved the ${normalizedSteps.length}-stage Deep Research Plan for "${topic}" (${domain}).`,
-          ...normalizedSteps.map((s, i) => `${i + 2}. Executed Stage ${i + 1} (${domain}): "${s.title}" — verified plain-English threshold rule [${(i % bibliography.length) + 1}].`),
-          `${normalizedSteps.length + 2}. Generated both Simple View (Everyday Guide) and Expert View (Detailed Report) and updated Use Case ${newScenario.id}.`,
+          ...normalizedSteps.map((s, i) => `${i + 2}. Organized Stage ${i + 1} (${domain}): "${s.title}"${bibliography.length ? ` — source [${bibliography[i % bibliography.length].refNumber}]` : ' — no retrieved source available'}.`),
+          `${normalizedSteps.length + 2}. Generated a local summary and recorded the scenario as ${newScenario.id}; model weights were not changed.`,
         ],
         keyFeatureAttributions: [
-          { feature: 'Topic-Specific Research Stages & Plain-English Thresholds', weightPct: 48 },
-          { feature: 'Verified Academic Bibliography & Live Citations', weightPct: 32 },
-          { feature: 'Continual Topic Memory & Knowledge Enrichment', weightPct: 20 },
+          { feature: 'Topic-Specific Research Stages & Plain-English Thresholds', weightPct: 60 },
+          { feature: 'Retrieved Source References', weightPct: 40 },
         ],
         safetyAndBiasCheck:
-          '100% Native Panini Synthesis · Strictly Topic-Specific Stages · Plain-English Threshold Formatting.',
+          'Local rule-based synthesis · No model training · Retrieved sources are identified separately.',
         knowledgeSourceMode: isOnlineDynamicLearning
           ? 'Hybrid Local + Dynamic Web Learning'
           : 'Air-Gapped Local Weights',
@@ -5028,7 +4968,14 @@ export interface LiveOnlineSearchSource {
   year: number;
   url: string;
   snippet: string;
+  sourceEngine?: string;
 }
+
+type SearchSourceMetadata = Pick<
+  LiveOnlineSearchSource,
+  'title' | 'publicationOrSource' | 'url' | 'snippet' | 'sourceEngine'
+> &
+  Partial<LiveOnlineSearchSource>;
 
 export interface OfflineSynthesisOptions {
   explicitExpertId?: string;
@@ -5858,17 +5805,8 @@ ${extraSourcesList}`,
 
   const multiEngineStream =
     isOnlineDynamicLearning || Boolean(effectiveGroundingSources && effectiveGroundingSources.length > 0)
-      ? streamMultiEngineOnlineSearch(prompt, domain)
+      ? streamMultiEngineOnlineSearch(prompt, domain, effectiveGroundingSources || [])
       : undefined;
-
-  if (multiEngineStream && effectiveGroundingSources && effectiveGroundingSources.length > 0) {
-    effectiveGroundingSources.slice(0, 4).forEach((src, idx) => {
-      if (multiEngineStream.engines[idx]) {
-        multiEngineStream.engines[idx].streamedSnippet = `[Local GGUF Shard ${shardFiles.ggufShardFile} · ${src.publicationOrSource}] ${src.title}: ${src.snippet}`;
-        multiEngineStream.engines[idx].sourceUrl = src.url;
-      }
-    });
-  }
 
   const liveInternetMarkdownSection =
     (isOnlineDynamicLearning || Boolean(learnedEntity) || Boolean(effectiveGroundingSources?.length)) &&
@@ -5963,6 +5901,9 @@ ${extraSourcesList}`,
             (s) =>
               `Local GGUF Shard Fact (${shardFiles.ggufShardFile} · ${s.publicationOrSource}): ${s.title} — ${s.snippet.slice(0, 120)}`
           )
+      : []),
+    ...(isOnlineDynamicLearning && !effectiveGroundingSources?.length
+      ? ['Live search was requested, but no provider returned sources; this answer uses local synthesis only.']
       : []),
     `Offline AI Single Source of Truth: Cached into local shard ${shardFiles.ggufShardFile} & tensor index ${shardFiles.binTensorFile} (Scenario ${matchedScenario.id}).`,
   ];
@@ -7776,5 +7717,3 @@ export function runAutonomousCiCdSelfTestAndBugAudit(): AutonomousSelfTestAndBug
     ],
   };
 }
-
-
