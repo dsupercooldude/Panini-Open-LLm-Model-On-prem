@@ -12,7 +12,7 @@ import {
   CodingLanguageResolution,
   MultiEngineSearchStream,
   BibliographyReference,
-  DeepResearchTuningResult,
+  DeepResearchMetadata,
   SubDomainExpert,
   SubDomainExpertOpinion,
   LearnedEntityKnowledge,
@@ -51,7 +51,7 @@ export interface ChatMessage {
   codingResolution?: CodingLanguageResolution;
   multiEngineStream?: MultiEngineSearchStream;
   bibliographyReferences?: BibliographyReference[];
-  deepResearchTuning?: DeepResearchTuningResult;
+  deepResearchMetadata?: DeepResearchMetadata;
   selectedExpert?: SubDomainExpert;
   alternativeExperts?: SubDomainExpert[];
   contrastingOpinions?: SubDomainExpertOpinion[];
@@ -70,6 +70,9 @@ export interface ChatMessage {
     options: AmbiguityClarificationOption[];
   };
   pendingResearchPlan?: PendingDeepResearchPlan;
+  researchWarning?: string;
+  researchError?: string;
+  searchWarning?: string;
   followUpQuestions?: string[];
   contextInheritedFrom?: string;
   attachedFile?: UploadedAttachment;
@@ -473,11 +476,11 @@ export const INITIAL_MODELS: StoredModel[] = [
     minStorageGb: 22,
     supportedDeployments: ['Air-Gapped Local', 'On-Premises Cluster', 'Cloud Elastic Node'],
     xaiArchitectureSummary:
-      'Sovereign v5.6 multi-shot cinema video & online/offline media-stitching architecture (built-in equivalent to Gemini-Omni-1.1-Flash with zero external model calls). Performs full on-prem synthesis + multi-segment stitching on Laptop/Desktop, internet-data-only stitching on Mobile, and continuous offline shard self-learning over time.',
+      'Unverified demo profile metadata for a proposed multi-shot media workflow. This build has no video-model runtime; local scene previews use deterministic procedural templates and do not provide model inference or training.',
     primaryUseCasesSummary: [
-      'Multi-Shot 4K/8K Cinema Video Synthesis & Online Image/Audio/Video Stitching',
-      'Hardware-Aware Execution: Full On-Prem Synthesis (Laptop/Desktop) vs. Internet-Data Stitching (Mobile)',
-      'Continuous Offline Shard Self-Learning (Distills Local GGUF/BIN Media Shards Over Time)',
+      'Deterministic procedural storyboard previews',
+      'Local media preview and export controls',
+      'No model training or weight updates are available in this build',
     ],
     accuracyBenchmarkPct: 99.4,
     avgLatencyMs: 21,
@@ -495,9 +498,9 @@ export const INITIAL_MODELS: StoredModel[] = [
         moeTotalExperts: 8,
         contextLength: 131072,
         systemDirective:
-          'Synthesize and stitch multi-shot cinema video with synchronized voiceover/Foley online and offline without calling external proprietary models. On laptop/desktop run full on-prem synthesis + stitching; on mobile stitch internet media only; offline learn from local shards.',
+          'Demo profile metadata only; no video model is installed or executed by this build.',
         loraRank: 32,
-        notes: 'Release v5.6 (SVN-r406.0) Sovereign Cinema Video & Media Stitcher.',
+        notes: 'Unverified demo profile metadata; not an installed model release.',
       },
     ],
   },
@@ -518,11 +521,11 @@ export const INITIAL_MODELS: StoredModel[] = [
     minStorageGb: 18,
     supportedDeployments: ['Air-Gapped Local', 'On-Premises Cluster', 'Cloud Elastic Node'],
     xaiArchitectureSummary:
-      'Sovereign v5.6 studio vocal & multi-stem acoustic synthesizer and audio stitcher (built-in equivalent to Lyria-3-Pro-Preview with zero external model calls). Fetches and crossfades online audio/stems, synthesizes full-length vocal/instrumental tracks on-prem for Laptop/Desktop, stitches internet audio on Mobile, and self-learns acoustic formants from offline shards.',
+      'Unverified demo profile metadata for a proposed audio workflow. This build has no audio-model runtime; local audio previews use deterministic browser-side synthesis and do not provide model inference or training.',
     primaryUseCasesSummary: [
-      'Full-Length Studio Vocal & Instrumental Music Synthesis (.MP3 / .WAV)',
-      'Phase-Locked Multi-Stem Audio Stitching & Visual Background Acoustic Adaptation',
-      'Offline Acoustic Shard Self-Learning for Air-Gapped Studio Mastering',
+      'Deterministic browser-side audio previews',
+      'Audio preview and export controls',
+      'No model training or weight updates are available in this build',
     ],
     accuracyBenchmarkPct: 99.3,
     avgLatencyMs: 18,
@@ -540,9 +543,9 @@ export const INITIAL_MODELS: StoredModel[] = [
         moeTotalExperts: 8,
         contextLength: 65536,
         systemDirective:
-          'Synthesize and stitch studio-grade vocal lyrics, multi-stem instrumentation, and binaural Foley online and offline with zero external model calls.',
+          'Demo profile metadata only; no audio model is installed or executed by this build.',
         loraRank: 32,
-        notes: 'Release v5.6 (SVN-r406.0) Sovereign Vocal & Multi-Stem Audio Stitcher.',
+        notes: 'Unverified demo profile metadata; not an installed model release.',
       },
     ],
   },
@@ -777,7 +780,7 @@ We created a multi-shot animated video based on your prompt, showing:
     referenceId: 'REF-1003',
     workspaceMode: 'deep_research',
     title: 'Deep Research: Thresholds & Systems',
-    subtitle: 'Deep Research · 6 Validated Refs · Tuned',
+    subtitle: 'Deep Research · 6 Retrieved Records · Not Verified',
     updatedAt: '12m ago',
     messages: [
       {
@@ -792,7 +795,7 @@ We created a multi-shot animated video based on your prompt, showing:
       {
         id: 'msg-dr-seed-a',
         role: 'assistant',
-        authorName: 'Panini-400B-MoE-Flagship',
+        authorName: 'Local Deep Research Template',
         timestamp: '08:02 UTC',
         domain: sampleDeepResearchResult.detectedDomain,
         simpleAnswerMarkdown: sampleDeepResearchResult.simpleAnswerMarkdown,
@@ -801,8 +804,8 @@ We created a multi-shot animated video based on your prompt, showing:
         glassBox: sampleDeepResearchResult.glassBox,
         multiEngineStream: sampleDeepResearchResult.multiEngineStream,
         bibliographyReferences: sampleDeepResearchResult.bibliographyReferences,
-        deepResearchTuning: sampleDeepResearchResult.deepResearchTuning,
-        selfLearningCommitted: true,
+        deepResearchMetadata: sampleDeepResearchResult.deepResearchMetadata,
+        selfLearningCommitted: false,
       },
     ],
   },
@@ -924,8 +927,8 @@ Instead of using a fixed static background, the video player below breaks your p
     id: 'thread-ref-1006-threshold-research',
     referenceId: 'REF-1006',
     workspaceMode: 'deep_research',
-    title: 'Deep Research: Thresholds Explained Simply',
-    subtitle: 'REF-1006 · 100% On-Topic · Plain-English Thresholds',
+    title: 'Deep Research Sample: Thresholds Explained',
+    subtitle: 'REF-1006 · Deterministic Sample · Unverified Sources',
     updatedAt: '1m ago',
     messages: [
       {
@@ -940,11 +943,11 @@ Instead of using a fixed static background, the video player below breaks your p
       {
         id: 'msg-1006-a1',
         role: 'assistant',
-        authorName: 'Panini-400B-MoE-Flagship (Deep Research Engine)',
+        authorName: 'Local Deep Research Template',
         timestamp: '09:08 UTC',
         domain: 'Science',
         subDomain: 'Applied Systems & Everyday Science Communication',
-        simpleAnswerMarkdown: `### Simple Everyday Research Guide: How Thresholds Work (\`REF-1006\`)
+        simpleAnswerMarkdown: `### Deterministic Sample Guide: How Thresholds Work (\`REF-1006\`)
 **What Is a Threshold? (In Plain English):**
 A **threshold** is simply a **tipping point or trigger line**. Nothing dramatic happens while you stay below the line—but the moment you cross it, a clear, noticeable change kicks in right away.
 
@@ -959,24 +962,24 @@ A **threshold** is simply a **tipping point or trigger line**. Nothing dramatic 
    - **Below 15 Amps:** Your toaster and coffee maker run normally.
    - **Above 15 Amps (Upper Safety Threshold):** The breaker clicks off immediately to prevent the wires from overheating.
 
-### Why All 4 Research Stages Stayed 100% On-Topic
-- **No Unrelated Drift:** Every stage in this research report focuses strictly on **Thresholds, Tipping Points & Real-World Examples**—never wandering into unrelated Cybersecurity or abstract Math topics.`,
+### Research Status
+- This seeded example uses deterministic local text. Its stages are proposed topics, not verified findings; retrieved source records are not independently verified.`,
         content: sampleDeepResearchResult.answerMarkdown,
         verifiedFacts: [
-          '100% Topic-Specific Research Stages: All 4 stages focus directly on Thresholds & Tipping Points without drifting into unrelated Cybersecurity or Math stages.',
-          'Includes a clear 3-Zone Plain-English Threshold Table (Below Threshold, At the Critical Tipping Point, and Above Threshold) with everyday examples.',
-          'Provides both a Simple Everyday Research Guide tab and a full Expert Technical Report tab with verified citations.',
+          'This seeded sample is a deterministic outline; its stages are proposed topics, not research findings.',
+          'Retrieved source records are presented as provided and are not independently verified.',
+          'No LLM inference or model training was performed for this sample.',
         ],
         glassBox: sampleDeepResearchResult.glassBox,
         multiEngineStream: sampleDeepResearchResult.multiEngineStream,
         bibliographyReferences: sampleDeepResearchResult.bibliographyReferences,
-        deepResearchTuning: sampleDeepResearchResult.deepResearchTuning,
+        deepResearchMetadata: sampleDeepResearchResult.deepResearchMetadata,
         followUpQuestions: [
           'How do temperature thresholds work when melting cheese and crisping bread in an Italian panini?',
           'What is the difference between a reversible threshold (like a thermostat) and an irreversible tipping point?',
           'Generate a 3-shot storyboard video showing water warming below threshold, reaching its boiling tipping point, and powering a steam turbine.',
         ],
-        selfLearningCommitted: true,
+        selfLearningCommitted: false,
       },
     ],
   },
@@ -1175,30 +1178,14 @@ export const INITIAL_CUSTOM_SCENARIOS: UseCaseScenario[] = [
   ),
   translateNlpToUseCase(
     'Generate a receipt for 800 AED for Dubai Hotel in Jumeirah area with black background, white receipt paper, real Jumeirah location, 5% UAE VAT, 10% service charge, and pure PDF export',
-    6,
-    {
-      learnedSource: 'User Prompt Telemetry',
-      maturitySyncCadence: 'daily',
-      learnedTimestamp: '2026-10-30 10:15 UTC',
-    }
+    6
   ),
   translateNlpToUseCase(
     'Compose vocal music and soundscapes with sung words, multi-verse lyrics, and dynamic adaptation to visual backgrounds and images',
-    7,
-    {
-      learnedSource: 'Sovereign Peer Distillation',
-      maturitySyncCadence: 'daily',
-      learnedTimestamp: '2026-10-30 10:20 UTC',
-    }
+    7
   ),
   translateNlpToUseCase(
     'Execute Off-the-Hook hands-free multilingual voice duplex auto-detecting Hindi, Punjabi, Spanish, French, Arabic, Mandarin, and English with spoken audio synthesis',
-    8,
-    {
-      learnedSource: 'Scheduled Internet Sync',
-      maturitySyncCadence: 'weekly',
-      learnedTimestamp: '2026-10-30 10:25 UTC',
-    }
+    8
   ),
 ];
-

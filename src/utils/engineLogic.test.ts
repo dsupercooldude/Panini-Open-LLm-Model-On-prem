@@ -12,18 +12,18 @@ import {
   generateDeepResearchPlan,
   executeDeepResearchPlan,
   streamMultiEngineOnlineSearch,
+  buildRetrievedSearchStream,
   analyzeNlpVisualPrompt,
   evaluateRbacPermission,
   applyVersionRollback,
   verifyExistingUseCaseMatch,
   generatePdfDocumentBytes,
+  summarizeUploadedAttachment,
   validateAndSelectOptimalModel,
   getCompatibleModelsForHardware,
   parsePromptIntoStoryboardShots,
-  calculateModelMaturityAndSchedule,
   executeContinualLearningHarvest,
   generatePureLearningLedgerPdfBytes,
-  applyPromptScenarioToModelLearning,
   translateNlpToUseCase,
   synthesizeChronos2MRepositoryMemory,
   runAutonomousCiCdSelfTestAndBugAudit,
@@ -55,10 +55,11 @@ import {
   learnFromOfflineMediaShardsV56,
 } from './multimodalSuite';
 
-test('Panini model registry honors Maharshi Panini and 400B quantized footprint fits in 16GB Mobile RAM using IQ1_S and MoE flash offload', () => {
+test('Demo model profiles and hypothetical footprint estimates do not imply an installed runtime', () => {
   assert.ok(INITIAL_MODELS[0].name.startsWith('Panini-400B'));
   assert.ok(INITIAL_MODELS.every((m) => m.name.startsWith('Panini-')));
 
+  // This is a hypothetical quantized-footprint estimate, not a loaded model measurement.
   const mobile = HARDWARE_PROFILES['mobile-arm64'];
   const footprint = calculateQuantizedFootprint(400, 37, 'IQ1_S', 8192, mobile);
 
@@ -66,6 +67,17 @@ test('Panini model registry honors Maharshi Panini and 400B quantized footprint 
   assert.equal(footprint.fitsInMemoryWithFlashOffload, true);
   assert.ok(footprint.activeResidentRamGb < mobile.ramGb);
   assert.ok(footprint.flashStreamedGb > 60);
+
+  const modelResponse = generateOfflineKnowledgeResponse(
+    'Explain the Panini 400B model profiles',
+    undefined,
+    'Q4_K_M',
+    0,
+    false
+  );
+  assert.ok(modelResponse.answerMarkdown.includes('does not include model weights or an LLM inference runtime'));
+  assert.ok(!modelResponse.answerMarkdown.includes('QLoRA'));
+  assert.ok(!modelResponse.answerMarkdown.includes('37.2 Billion active parameters'));
 });
 
 test('Default workspace starts with zero query or output unless asked, Reference IDs on threads (including REF-1007), and zero pre-suggestions when input is empty', () => {
@@ -202,65 +214,54 @@ test('Sacred & Religious Studies and Astrology use cases activate ONLY when expl
   assert.ok(astroRes.answerMarkdown.includes('Tarot'));
 });
 
-test('Online search telemetry reports only retrieved providers and never fabricates results', () => {
-  const emptyStream = streamMultiEngineOnlineSearch(
+test('Online search telemetry reports only retrieved sources and never invents search providers', () => {
+  const stream = streamMultiEngineOnlineSearch(
     'Subduction zone eclogite seismic velocity inversion',
     'Geology'
   );
-  assert.equal(emptyStream.activeEnginesCount, 0);
-  assert.equal(emptyStream.engines.length, 0);
-  assert.match(emptyStream.inferenceEnginePolicy, /No live search sources returned/);
+  assert.equal(stream.activeEnginesCount, 0);
+  assert.equal(stream.engines.length, 0);
+  assert.equal(stream.zeroThirdPartyAiModelsUsed, true);
 
-  const stream = streamMultiEngineOnlineSearch('Water temperature microbial growth', 'Science', [
+  const retrievedStream = streamMultiEngineOnlineSearch('urban tree canopy', 'Science', [
     {
-      title: 'Bacterial growth',
-      authorsOrInstitution: 'Wikimedia Foundation',
+      title: 'Wikipedia record',
+      snippet: 'Retrieved encyclopedia excerpt',
+      url: 'https://en.wikipedia.org/wiki/Urban_forestry',
       publicationOrSource: 'Wikipedia',
-      year: 0,
-      url: 'https://en.wikipedia.org/wiki/Bacterial_growth',
-      snippet: 'Description of bacterial population growth.',
-      sourceEngine: 'Wikipedia Live REST API',
+      sourceEngine: 'Wikipedia Live REST Engine',
+    },
+  ]);
+  assert.equal(retrievedStream.activeEnginesCount, 1);
+  assert.equal(retrievedStream.engines[0].engineName, 'Wikipedia Live REST Engine');
+  assert.equal(
+    retrievedStream.engines[0].sourceUrl,
+    'https://en.wikipedia.org/wiki/Urban_forestry'
+  );
+  assert.equal(retrievedStream.engines[0].latencyMs, undefined);
+
+  const liveStream = buildRetrievedSearchStream('urban tree canopy', [
+    {
+      title: 'Wikipedia record',
+      snippet: 'Retrieved encyclopedia excerpt',
+      url: 'https://en.wikipedia.org/wiki/Urban_forestry',
+      publicationOrSource: 'Wikipedia',
+      sourceEngine: 'Wikipedia Live REST Engine',
     },
     {
-      title: 'Thermal effects on microbial growth',
-      authorsOrInstitution: 'Research authors',
-      publicationOrSource: 'OpenAlex',
-      year: 2024,
-      url: 'https://openalex.org/works/W123',
-      snippet: 'A retrieved scholarly record.',
+      title: 'OpenAlex record',
+      snippet: 'Retrieved scholarly record',
+      url: 'https://openalex.org/W123',
+      publicationOrSource: 'Journal',
       sourceEngine: 'OpenAlex Scholarly Index',
     },
   ]);
-  assert.equal(stream.activeEnginesCount, 2);
-  assert.equal(stream.engines.length, 2);
-  assert.equal(stream.zeroThirdPartyAiModelsUsed, true);
-  assert.deepEqual(
-    stream.engines.map((engine) => engine.sourceUrl),
-    ['https://en.wikipedia.org/wiki/Bacterial_growth', 'https://openalex.org/works/W123']
-  );
-  assert.ok(stream.engines.every((engine) => engine.sourceCount === 1));
+  assert.equal(liveStream.activeEnginesCount, 2);
+  assert.equal(liveStream.engines.length, 2);
+  assert.ok(liveStream.engines.every((engine) => engine.latencyMs === undefined));
 });
 
-test('Scenario verification prefers relevant matches in the detected domain', () => {
-  const relevantScenario = translateNlpToUseCase(
-    'Build a TypeScript package for API request retries with exponential backoff',
-    1
-  );
-  const unrelatedScenario = translateNlpToUseCase(
-    'Analyze Mughal-era trade routes and historical tax records',
-    2
-  );
-  const verification = verifyExistingUseCaseMatch(
-    'Build a TypeScript package for API request retries with exponential backoff',
-    [unrelatedScenario, relevantScenario]
-  );
-
-  assert.equal(verification.matches[0]?.scenario.id, relevantScenario.id);
-  assert.ok(verification.matches.every((match) => match.scenario.domain === verification.detectedDomain));
-  assert.ok(verification.similarityScorePct >= 80);
-});
-
-test('Deep Research generates tailored multi-stage plans for specific contexts and produces detailed stage matrix, valid HTTPS bibliography links, and model tuning', () => {
+test('Deep Research creates focused research plans and cites only retrieved HTTPS sources without tuning weights', () => {
   const rishiPlan = generateDeepResearchPlan('Maharshi Panini Ashtadhyayi sutras');
   assert.equal(rishiPlan.length, 4);
   assert.ok(rishiPlan[0].title.includes('Gandhara Shalatura'));
@@ -290,19 +291,27 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
     'Q4_K_M',
     10
   );
-  assert.ok(everydayReport.answerMarkdown.includes('Plain-English Threshold Breakdown for Stage 1:'));
-  assert.ok(everydayReport.answerMarkdown.includes('Plain-English Threshold Breakdown for Stage 2:'));
-  assert.ok(everydayReport.answerMarkdown.includes('Plain-English Threshold Breakdown for Stage 3:'));
-  assert.ok(everydayReport.answerMarkdown.includes('Plain-English Threshold Breakdown for Stage 4:'));
+  assert.ok(everydayReport.answerMarkdown.includes('Suggested research focus (not a finding):'));
+  assert.ok(everydayReport.answerMarkdown.includes('Evidence Review Checklist'));
+  assert.ok(everydayReport.answerMarkdown.includes('Research Plan & Evidence Matrix'));
   assert.ok(!everydayReport.answerMarkdown.includes('T_crit'));
   assert.ok(!everydayReport.answerMarkdown.includes('T_min'));
   assert.ok(!everydayReport.answerMarkdown.includes('Hamiltonian'));
   assert.ok(!everydayReport.answerMarkdown.includes('Lindblad'));
   assert.ok(!everydayReport.answerMarkdown.includes('Cybersecurity'));
   assert.ok(!everydayReport.answerMarkdown.includes('Kyber'));
-  assert.ok(!everydayReport.deepResearchTuning?.qloraAdapterRank.includes('QLoRA'));
-  assert.ok(!everydayReport.glassBox.kvCacheCompressionRatio.includes('FP8 KV'));
-  assert.equal(everydayReport.multiEngineStream, undefined);
+  assert.ok(!everydayReport.answerMarkdown.includes('100°C'));
+  assert.ok(!everydayReport.answerMarkdown.includes('15-Amp'));
+  assert.ok(!everydayReport.answerMarkdown.includes('Verified Summary'));
+  assert.ok(everydayReport.simpleAnswerMarkdown?.includes('prompts are not findings'));
+  assert.equal(everydayReport.deepResearchMetadata?.sourceRecordsRetrieved, 0);
+  assert.equal(everydayReport.glassBox.kvCacheCompressionRatio, undefined);
+  assert.equal(everydayReport.glassBox.selfLearningAdapterApplied, undefined);
+  assert.equal(everydayReport.glassBox.activeParametersBillions, undefined);
+  assert.equal(everydayReport.bibliographyReferences?.length || 0, 0);
+  assert.ok(everydayReport.answerMarkdown.includes('No external sources were retrieved'));
+  assert.ok(!everydayReport.answerMarkdown.includes('verified real-world observations'));
+  assert.equal(everydayReport.multiEngineStream?.activeEnginesCount, 0);
 
   const plan = generateDeepResearchPlan('Post-Quantum Kyber-1024 Hybrid TLS Architecture');
   assert.equal(plan.length, 4);
@@ -368,19 +377,18 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
   assert.ok(report.answerMarkdown.includes('Custom User-Edited Cryptographic Lattice Bound Analysis'));
   assert.ok(report.answerMarkdown.includes('Evaluate custom hardware lattice NTT throughput and memory bounds.'));
   assert.ok(report.answerMarkdown.includes('Live stage finding: Hardware NTT acceleration reduces Kyber-1024 latency'));
-  assert.ok(report.answerMarkdown.includes('Executive Summary & Multi-Stage Synthesis Matrix'));
-  assert.ok(report.answerMarkdown.includes('Retrieved Sources'));
+  assert.ok(report.answerMarkdown.includes('Research Plan & Evidence Matrix'));
+  assert.ok(report.answerMarkdown.includes('Retrieved Sources (Not Independently Verified)'));
   assert.ok(!report.answerMarkdown.includes('Web Crawler Engine'));
   assert.ok(report.bibliographyReferences && report.bibliographyReferences.length >= 4);
   assert.ok(report.bibliographyReferences.some((ref) => ref.doiOrUrl === 'https://en.wikipedia.org/wiki/Kyber'));
   assert.ok(report.bibliographyReferences.every((ref) => ref.doiOrUrl.startsWith('https://')));
 
-  assert.ok(report.deepResearchTuning);
-  assert.ok(report.deepResearchTuning.useCaseScenarioId.startsWith('SCN-'));
-  assert.equal(report.deepResearchTuning.trainingTriplesExtracted, 0);
+  assert.ok(report.deepResearchMetadata);
+  assert.ok(report.deepResearchMetadata.scenarioId.startsWith('SCN-'));
   assert.equal(
-    report.deepResearchTuning.tuningStatus,
-    'Scenario Recorded; Model Weights Unchanged'
+    report.deepResearchMetadata.sourceRecordsRetrieved,
+    report.bibliographyReferences.length
   );
 
   const pdfBytes = generatePdfDocumentBytes(
@@ -393,7 +401,8 @@ test('Deep Research generates tailored multi-stage plans for specific contexts a
   );
   const pdfString = new TextDecoder().decode(pdfBytes);
   assert.ok(pdfString.startsWith('%PDF-1.4'));
-  assert.ok(pdfString.includes('BIBLIOGRAPHY'));
+  assert.ok(pdfString.includes('RETRIEVED SOURCES \\(NOT INDEPENDENTLY VERIFIED\\)'));
+  assert.ok(!pdfString.includes('MODEL TRAINING'));
 });
 
 test('Coding synthesis runs pre-generation bug checks, static verification, and produces live output preview', () => {
@@ -408,6 +417,22 @@ test('Coding synthesis runs pre-generation bug checks, static verification, and 
   assert.ok(explicitRust.answerMarkdown.includes('```rust'));
   assert.ok(explicitRust.codingResolution?.bugChecks && explicitRust.codingResolution.bugChecks.length >= 3);
   assert.ok(explicitRust.codingResolution?.executionPreviewOutput?.includes('0 bugs detected'));
+  assert.equal(explicitRust.glassBox.activeParametersBillions, undefined);
+  assert.equal(explicitRust.glassBox.explainableAi.confidenceScorePct, undefined);
+
+  const imagePreview = summarizeUploadedAttachment(
+    {
+      id: 'test-image',
+      name: 'sample.png',
+      mimeType: 'image/png',
+      sizeKb: 128,
+      kind: 'image',
+    },
+    'Describe the image'
+  );
+  assert.ok(imagePreview.answerMarkdown.includes('does not inspect image pixels'));
+  assert.equal(imagePreview.glassBox.totalParametersBillions, undefined);
+  assert.equal(imagePreview.glassBox.explainableAi.confidenceScorePct, undefined);
 });
 
 test('Use-case verification detects existing fulfillment or close match for Clone & Edit workflow', () => {
@@ -426,7 +451,8 @@ test('Model validation auto-routes smaller models to Panini-400B-MoE-Flagship fo
   const validation = validateAndSelectOptimalModel('video_gen', compatible, smallModel);
   assert.equal(validation.autoSwitched, true);
   assert.equal(validation.selectedModel.id, INITIAL_MODELS[0].id);
-  assert.ok(validation.validationReason.includes('Validated Video tensor pipeline'));
+  assert.ok(validation.validationReason.includes('Matched the Video capability to demo profile'));
+  assert.ok(validation.validationReason.includes('No model runtime is installed'));
 });
 
 test('8K Cinema Studio routes culinary panini prompts to culinary_studio, Maharshi Panini gurukul prompts to ancient_gurukul, and Studio Ghibli prompts to ghibli_meadow', () => {
@@ -473,7 +499,7 @@ test('8K Cinema Studio routes culinary panini prompts to culinary_studio, Mahars
   assert.equal(rolledBack.versions[0].isRollbackCommit, true);
 });
 
-test('Biographical and historical entity queries like "Tell me about Mahatma Gandhi" route to History, select the right Sub-Domain Expert & Pretrained Scenario, synthesize accurate biography, and produce a learnedEntity record for model weight tuning', () => {
+test('Biographical and historical entity queries route to a History expert and create a local research record', () => {
   const gandhiRes = generateOfflineKnowledgeResponse(
     'Tell me about Mahatma Gandhi',
     undefined,
@@ -503,9 +529,37 @@ test('Biographical and historical entity queries like "Tell me about Mahatma Gan
   assert.ok(gandhiRes.answerMarkdown.includes('Quit India Movement'));
   assert.ok(!gandhiRes.answerMarkdown.includes('Hamiltonian'));
 
-  // Verify learnedEntity is emitted to update pretrained model weights
-  assert.ok(gandhiRes.learnedEntity);
-  assert.ok(gandhiRes.learnedEntity.entityTitle.includes('Mahatma Gandhi'));
+  assert.equal(gandhiRes.learnedEntity, undefined);
+  assert.ok(!gandhiRes.answerMarkdown.includes('https://en.wikipedia.org/wiki/Mahatma_Gandhi'));
+
+  const sourceGroundedGandhiRes = generateOfflineKnowledgeResponse(
+    'Tell me about Mahatma Gandhi',
+    undefined,
+    'Q4_K_M',
+    12,
+    true,
+    [
+      {
+        title: 'Mahatma Gandhi',
+        authorsOrInstitution: 'Wikimedia Foundation',
+        publicationOrSource: 'Wikipedia',
+        year: 0,
+        url: 'https://en.wikipedia.org/wiki/Mahatma_Gandhi',
+        snippet: 'Retrieved biography excerpt',
+        sourceEngine: 'Wikipedia Live REST Engine',
+      },
+    ],
+    {
+      safetyMode: 'Safe Mode',
+      selectedExpertId: 'auto',
+      customScenarios: INITIAL_CUSTOM_SCENARIOS,
+    }
+  );
+  assert.equal(
+    sourceGroundedGandhiRes.learnedEntity?.sourceUrl,
+    'https://en.wikipedia.org/wiki/Mahatma_Gandhi'
+  );
+  assert.equal(sourceGroundedGandhiRes.learnedEntity?.summary, 'Retrieved biography excerpt');
 });
 
 test('News channel presenter video prompt selects news_studio environment, presenting_news human action, and broadcast_desk object', () => {
@@ -566,7 +620,7 @@ test('Multi-shot Storyboard parser splits multi-sentence prompts into dynamic sh
       (stg) => stg.domainFocus !== 'Cybersecurity' && stg.domainFocus !== 'Mathematics'
     )
   );
-  assert.ok(thresholdPlan[0].title.includes('Plain-English Definition'));
+  assert.ok(thresholdPlan[0].title.includes('Scope, Definitions & Context'));
 
   const thresholdReport = executeDeepResearchPlan(
     'Explain what a threshold is and how critical thresholds and tipping points work in everyday life, medicine, climate, and engineering',
@@ -576,9 +630,8 @@ test('Multi-shot Storyboard parser splits multi-sentence prompts into dynamic sh
     18
   );
   assert.ok(thresholdReport.simpleAnswerMarkdown);
-  assert.ok(thresholdReport.simpleAnswerMarkdown.includes('Below the Threshold'));
-  assert.ok(thresholdReport.simpleAnswerMarkdown.includes('Above the Threshold'));
-  assert.ok(thresholdReport.answerMarkdown.includes('Plain-English Concept & Threshold Guide'));
+  assert.ok(thresholdReport.simpleAnswerMarkdown.includes('Stage-by-Stage Research Prompts'));
+  assert.ok(thresholdReport.answerMarkdown.includes('Evidence Review Checklist'));
 
   // Verify REF-1001, REF-1005, and REF-1006 exist and include simpleAnswerMarkdown
   const ref1001 = INITIAL_CHAT_THREADS.find((t) => t.referenceId === 'REF-1001');
@@ -1282,7 +1335,7 @@ test('Sovereign Master v5.1..v6.0 LTS Suite: Bar/Cafe Receipt PDF, Zero-Assumpti
   assert.ok(!purePdfText.includes('Engine:'), 'Pure receipt PDF must NOT include Engine telemetry line');
 });
 
-test('Release v5.2 (SVN-r402.0) Panini-Synapse-Distiller: Maturity Schedule (Hourly/Daily/Weekly/Air-Gap), Zero-Assumption Learning Clarification Gate, Self-Updating Use-Case Library (SCN-10006..SCN-10008+), and Pure Ledger PDF Export', () => {
+test('Local scenario harvest, clarification gate, and local ledger PDF export', () => {
   // 1. Verify SCN-10006, SCN-10007, SCN-10008 are registered in INITIAL_CUSTOM_SCENARIOS with clean starterPrompts (zero XAI clutter)
   const scn6 = INITIAL_CUSTOM_SCENARIOS.find((s) => s.id === 'SCN-10006');
   const scn7 = INITIAL_CUSTOM_SCENARIOS.find((s) => s.id === 'SCN-10007');
@@ -1298,40 +1351,13 @@ test('Release v5.2 (SVN-r402.0) Panini-Synapse-Distiller: Maturity Schedule (Hou
   );
   assert.equal(scn7?.sovereignEngineModule, 'Panini-LyraVox');
   assert.equal(scn7?.targetCapability, 'audio_gen');
-  assert.equal(scn8?.learnedSource, 'Scheduled Internet Sync');
+  assert.ok(scn8?.starterPrompt.length > 0);
 
-  // 2. Verify Maturity Schedule Calculation across Hourly, Daily, Weekly, and Sovereign Air-Gap
-  const nascentModel = { ...INITIAL_MODELS[0], selfLearningSamplesCount: 1 };
-  const nascentMaturity = calculateModelMaturityAndSchedule(nascentModel, 1, 0);
-  assert.equal(nascentMaturity.recommendedCadence, 'hourly');
-  assert.equal(nascentMaturity.intervalHours, 1);
-
-  const developingMaturity = calculateModelMaturityAndSchedule(
-    INITIAL_MODELS[0],
-    INITIAL_CUSTOM_SCENARIOS.length,
-    4
-  );
-  assert.equal(developingMaturity.recommendedCadence, 'daily');
-  assert.equal(developingMaturity.intervalHours, 24);
-
-  const matureModel = { ...INITIAL_MODELS[1], selfLearningSamplesCount: 28 };
-  const matureEval = calculateModelMaturityAndSchedule(
-    matureModel,
-    INITIAL_CUSTOM_SCENARIOS.length,
-    6,
-    'weekly'
-  );
-  assert.equal(matureEval.activeCadence, 'weekly');
-  assert.equal(matureEval.intervalHours, 168);
-  assert.ok(matureEval.sovereignEquivalenceMatrix.length >= 4);
-
-  // 3. Zero-Assumption Clarification Gate for underspecified custom learning topics
+  // 2. Clarify underspecified scenario prompts
   const underspecifiedHarvest = executeContinualLearningHarvest({
     customLearningPrompt: 'receipt',
     clarificationConfirmed: false,
     existingScenarios: INITIAL_CUSTOM_SCENARIOS,
-    cadence: 'daily',
-    activeModel: INITIAL_MODELS[1],
   });
   assert.equal(
     underspecifiedHarvest.needsClarification,
@@ -1343,14 +1369,12 @@ test('Release v5.2 (SVN-r402.0) Panini-Synapse-Distiller: Maturity Schedule (Hou
       underspecifiedHarvest.suggestedClarificationPrompts.length >= 3
   );
 
-  // 4. Detailed or User-Telemetry Harvest registers SCN-10009 with exact parameters and clean starterPrompt
+  // 3. Detailed prompts register a scenario with a clean starter prompt
   const detailedHarvest = executeContinualLearningHarvest({
     customLearningPrompt:
       'Generate a receipt for 1250 SAR for Riyadh Luxury Hotel with black background, white receipt paper, and 15% VAT in SAR',
     clarificationConfirmed: false,
     existingScenarios: INITIAL_CUSTOM_SCENARIOS,
-    cadence: 'daily',
-    activeModel: INITIAL_MODELS[1],
     actorName: 'Dr. Elena Rostova',
   });
   assert.equal(detailedHarvest.needsClarification, false);
@@ -1362,21 +1386,22 @@ test('Release v5.2 (SVN-r402.0) Panini-Synapse-Distiller: Maturity Schedule (Hou
     'Harvested scenario starterPrompt must not contain unwanted XAI boilerplate'
   );
 
-  // 5. Pure Use-Case Ledger PDF Export contains ONLY the Use-Case Ledger (zero bibliography or XAI sections)
+  // 4. The ledger export contains no fabricated maturity or training claims
   const ledgerPdfBytes = generatePureLearningLedgerPdfBytes(
-    [detailedHarvest.newScenario!, ...INITIAL_CUSTOM_SCENARIOS],
-    matureEval
+    [detailedHarvest.newScenario!, ...INITIAL_CUSTOM_SCENARIOS]
   );
   const ledgerPdfText = new TextDecoder().decode(ledgerPdfBytes);
   assert.ok(ledgerPdfText.startsWith('%PDF-1.4'));
-  assert.ok(ledgerPdfText.includes('PANINI-SYNAPSE-DISTILLER'));
+  assert.ok(ledgerPdfText.includes('PANINI LOCAL SCENARIO LEDGER'));
   assert.ok(ledgerPdfText.includes('SCN-10009'));
   assert.ok(ledgerPdfText.includes('SCN-10006'));
   assert.ok(!ledgerPdfText.includes('VERIFIED BIBLIOGRAPHY'));
   assert.ok(!ledgerPdfText.includes('Explainable AI'));
+  assert.ok(!ledgerPdfText.includes('Maturity Score'));
+  assert.ok(!ledgerPdfText.includes('Scheduled Sync'));
 });
 
-test('Release v5.2.1 -> v5.3 (SVN-r403.0) Regression & Continual Model Evolution Gate: Executive Chefs in Commercial Hotel Kitchen, Mahatma Gandhi Dandi Salt March Multi-Shot Persona, and Prompt-Driven Model Weight Evolution', () => {
+test('Scenario construction regression: executive chefs and Mahatma Gandhi multi-shot persona', () => {
   // 1. Executive Chefs in Commercial Hotel Kitchen (must wear chef coats & chef toque hats, never business suits or orange Nike sneakers, in a commercial kitchen with copper cookware & sizzling foley)
   const chefPrompt =
     'Live Synthesize 8K Master Video: Two executive chefs plating artisanal dishes in a commercial hotel kitchen with rising steam, copper cookware, and synchronized sizzling foley audio';
@@ -1438,37 +1463,6 @@ test('Release v5.2.1 -> v5.3 (SVN-r403.0) Regression & Continual Model Evolution
   );
   assert.equal(shot2CombinedScene.promptDecomposition.humanAnatomy.hasRoundSpectacles, true);
 
-  // 3. Continual Model Weight Evolution across Prompts, Scenarios & Admin "Learn & Update Now"
-  const baseModel = INITIAL_MODELS[1]; // Panini-Omega-2.0T
-  const baseHeadVer = baseModel.versions[0];
-  const evolved1 = applyPromptScenarioToModelLearning(
-    baseModel,
-    chefPrompt,
-    'Live Prompt Execution',
-    'Dr. Elena Rostova',
-    2
-  );
-  assert.equal(
-    evolved1.updatedModel.selfLearningSamplesCount,
-    baseModel.selfLearningSamplesCount + 2
-  );
-  assert.ok(
-    evolved1.updatedModel.accuracyBenchmarkPct > baseModel.accuracyBenchmarkPct,
-    'Continual learning must progressively improve model accuracyBenchmarkPct'
-  );
-  assert.ok(
-    evolved1.updatedModel.versions[0].loraRank > baseHeadVer.loraRank,
-    'Continual learning must upgrade active QLoRA rank'
-  );
-  assert.ok(
-    evolved1.updatedModel.continualLearningHistory &&
-      evolved1.updatedModel.continualLearningHistory.length >= 3,
-    'Must append ModelContinualLearningUpgradeRecord to continualLearningHistory'
-  );
-  assert.equal(
-    evolved1.upgradeRecord.targetSubsystem,
-    'Panini-Kinesis-Cinema-8K (Culinary Brigade & Foley Physics)'
-  );
 });
 
 test('Release v5.4 (SVN-r404.0): Panini-Aether-3D 6-DoF Relightable 3D Scene + Unknown Prompt Attribute Alignment, Off-the-Hook Voice Use-Case Builder, Output Maturity Meaning, Panini-Chronos-2M & Continuous Self-Test Suite', () => {
@@ -1518,21 +1512,7 @@ test('Release v5.4 (SVN-r404.0): Panini-Aether-3D 6-DoF Relightable 3D Scene + U
   assert.ok(voiceBuiltScenario.title.length > 5);
   assert.ok(voiceBuiltScenario.starterPrompt.includes('BRCA1'));
 
-  // 3. Model Maturity & Continual Learning Meaning surfaced for User Outputs
-  const maturity = calculateModelMaturityAndSchedule(INITIAL_MODELS[1], 12, 8);
-  assert.ok(maturity.maturityScorePct >= 88);
-  assert.ok(
-    maturity.maturityMeaningSummary.length > 30,
-    'Maturity evaluation must include plain-English maturityMeaningSummary for user outputs'
-  );
-  assert.ok(
-    maturity.outputQualityCapabilitiesUnlocked.length >= 3,
-    'Maturity evaluation must list unlocked output quality capabilities'
-  );
-  assert.ok(maturity.promptLearnedSamplesCount > 0);
-  assert.ok(maturity.internetLearnedSourcesCount > 0);
-
-  // 4. Panini-Chronos-2M: 2,000,000-Token Repository & Document Memory
+  // 3. Panini-Chronos-2M: 2,000,000-Token Repository & Document Memory
   const chronos = synthesizeChronos2MRepositoryMemory(
     'Refactor full-stack TypeScript repository with 6-DoF 3D scene synthesis and multi-format code sandbox',
     'Computer Programming'

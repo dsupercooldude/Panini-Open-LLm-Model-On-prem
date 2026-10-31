@@ -109,7 +109,7 @@ export const AdminUseCasesView: React.FC<AdminUseCasesViewProps> = ({
             Backend NLP Use-Case Builder
           </h2>
           <p className={`text-xs ${mutedText} mt-0.5`}>
-            Manage the 10,000 pretrained domain scenarios and dynamically add new use cases using natural-language translation in the backend.
+            Browse 10,000 deterministic scenario-template variants and save new local scenarios from natural-language prompts.
           </p>
         </div>
 
@@ -141,19 +141,21 @@ export const AdminUseCasesView: React.FC<AdminUseCasesViewProps> = ({
         <div className={`border-2 border-sky-500/50 ${surfaceClass} rounded-xl p-5 space-y-4`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className={`text-sm font-semibold ${headingText}`}>
-              10,000+ Pretrained & Dynamic Use-Case Taxonomy Summary
+              Generated Scenario Templates & Local Scenarios
             </h3>
             <span className="text-xs font-mono text-sky-400">
-              {TOTAL_PRETRAINED_SCENARIOS.toLocaleString()} Pretrained + {customScenarios.length}{' '}
-              NLP/Search-Added Scenarios
+              {TOTAL_PRETRAINED_SCENARIOS.toLocaleString()} generated template variants + {customScenarios.length}{' '}
+              saved local scenarios
             </span>
           </div>
           <p className={`text-xs ${mutedText}`}>
-            These scenarios power the User Workspace&apos;s unified autocomplete suggestions, automatic domain routing, and multi-stage verification:
+            These deterministic template variants support autocomplete suggestions and scenario matching; they are not pretrained data or model knowledge.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             {ALL_DOMAINS.map((dom, idx) => {
-              const count = idx === 3 || idx === 4 || idx === 5 ? 1428 : 1429;
+              const count =
+                Math.floor(TOTAL_PRETRAINED_SCENARIOS / ALL_DOMAINS.length) +
+                (idx < TOTAL_PRETRAINED_SCENARIOS % ALL_DOMAINS.length ? 1 : 0);
               const customInDom = customScenarios.filter((c) => c.domain === dom).length;
               return (
                 <div
@@ -162,7 +164,8 @@ export const AdminUseCasesView: React.FC<AdminUseCasesViewProps> = ({
                 >
                   <div className={`font-semibold ${headingText}`}>{dom}</div>
                   <div className="font-mono text-sky-400">
-                    {count.toLocaleString()} Base {customInDom > 0 ? `+ ${customInDom} Custom` : ''}
+                    {count.toLocaleString()} template variants
+                    {customInDom > 0 ? ` + ${customInDom} local` : ''}
                   </div>
                   <div className={`text-[11px] ${mutedText}`}>
                     Auto-routes queries to {dom} specialist MoE experts & XAI verifiers.
@@ -326,7 +329,7 @@ export const AdminUseCasesView: React.FC<AdminUseCasesViewProps> = ({
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              placeholder="Search 10,000+ use cases..."
+              placeholder="Search generated scenario templates..."
               className={`w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
             />
           </div>

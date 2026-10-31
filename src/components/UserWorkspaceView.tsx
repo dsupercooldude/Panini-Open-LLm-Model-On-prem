@@ -27,8 +27,6 @@ import {
   autoCorrectUserQuery,
   generatePdfDocumentBytes,
   parsePromptIntoStoryboardShots,
-  calculateModelMaturityAndSchedule,
-  synthesizeChronos2MRepositoryMemory,
 } from '../utils/engineLogic';
 import { ChatMessage, ChatThreadSession, GeneratedMediaItem } from '../utils/initialData';
 import {
@@ -194,7 +192,6 @@ interface UserWorkspaceViewProps {
       fps: number;
     }>
   ) => void;
-  onCommitSelfLearning: (messageId: string) => void;
   onOpenAdminConsole: () => void;
   onOpenAdminInstallScripts: () => void;
   contentSafetyMode: ContentSafetyMode;
@@ -2927,20 +2924,13 @@ const RealisticMediaCanvas: React.FC<{
                   ))}
                 </div>
 
-                {/* Offline Shard Self-Learning Progression Strip */}
+                {/* Offline media cache disclosure */}
                 <div
                   data-testid="v56-offline-shard-learning-strip"
                   className="rounded bg-indigo-950/25 border border-indigo-500/35 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px]"
                 >
                   <span className="text-indigo-200">
-                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.offlineAutonomousSummary}
-                  </span>
-                  <span
-                    data-testid="v56-learned-shards-count-badge"
-                    className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40 shrink-0"
-                  >
-                    Learned Shards: {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.learnedMediaShardsCount} · Parity:{' '}
-                    {veoSceneSpec.v56OmniLyriaStitchSpec.offlineShardLearning.cinematicQualityProgressionPct}%
+                    Offline media metadata is cached locally; this build does not train models or load model weights.
                   </span>
                 </div>
               </div>
@@ -3280,7 +3270,6 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
   onClearThreadContext,
   onGenerateMediaInChat,
   onUpdateGeneratedMedia,
-  onCommitSelfLearning,
   onOpenAdminConsole,
   onOpenAdminInstallScripts: _onOpenAdminInstallScripts,
   contentSafetyMode,
@@ -3750,8 +3739,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
       msg.content,
       msg.domain,
       msg.glassBox?.explainableAi,
-      msg.bibliographyReferences,
-      msg.deepResearchTuning
+      msg.bibliographyReferences
     );
     const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
@@ -3765,20 +3753,16 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
   const handleDownloadTextMarkdown = (msg: ChatMessage) => {
     const bibSection =
       msg.bibliographyReferences && msg.bibliographyReferences.length > 0
-        ? `\n\n## Verified Bibliography\n` +
+        ? `\n\n## Retrieved Sources (Not Independently Verified)\n` +
           msg.bibliographyReferences
             .map(
               (r) =>
-                `[${r.refNumber}] ${r.authorsOrInstitution} (${r.year}). ${r.title}. ${r.publicationOrSource}. URL: ${r.doiOrUrl}`
+                `[${r.refNumber}] ${r.authorsOrInstitution}${r.year > 0 ? ` (${r.year})` : ''}. ${r.title}. ${r.publicationOrSource}. URL: ${r.doiOrUrl}`
             )
             .join('\n')
         : '';
     const xaiSection = msg.glassBox
-      ? `\n\n---\nExplainable AI (ELI12): ${msg.glassBox.explainableAi.eli12Explanation}\n      Confidence: ${
-              msg.glassBox.explainableAi.confidenceScorePct === undefined
-                ? 'Not calibrated'
-                : `${msg.glassBox.explainableAi.confidenceScorePct}%`
-            }\nKnowledge Source: ${msg.glassBox.explainableAi.knowledgeSourceMode}\n`
+      ? `\n\n---\nExplainable AI (ELI12): ${msg.glassBox.explainableAi.eli12Explanation}\nKnowledge Source: ${msg.glassBox.explainableAi.knowledgeSourceMode}\n`
       : '';
     const fullText = `# ${msg.authorName} (${msg.domain})\nTimestamp: ${msg.timestamp}\n\n${msg.content}${bibSection}${xaiSection}`;
     const blob = new Blob([fullText], { type: 'text/markdown;charset=utf-8' });
@@ -3816,15 +3800,15 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
     {
       id: 'coding',
       label: 'Coding',
-      subtitle: 'Pure Synthesized Code (Click Show more for Explanation & Sandbox)',
-      badge: 'Verified',
+      subtitle: 'Deterministic code draft (Show more for explanation & sandbox)',
+      badge: 'Draft',
       icon: <Code2 className="w-4 h-4 text-emerald-400" />,
     },
     {
       id: 'deep_research',
       label: 'Deep Research',
-      subtitle: 'Direct Research Findings (Click Show more for Stages & Citations)',
-      badge: 'Dense Report',
+      subtitle: 'Review proposed stages and source status; search only in Online mode',
+      badge: 'Evidence plan',
       icon: <Globe className="w-4 h-4 text-indigo-400" />,
     },
     {
@@ -4033,7 +4017,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       <WifiOff className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     )}
                     <span className="truncate">
-                      {isOnlineLearning ? 'Online · Live Internet' : 'Offline · Local Weights'}
+                      {isOnlineLearning ? 'Online · Source Lookup' : 'Offline · Deterministic Templates'}
                     </span>
                   </span>
                   <span className="text-[10px] font-mono uppercase shrink-0">
@@ -4045,7 +4029,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
               {/* Aesthetic Custom Active Panini Model Dropdown */}
               <div className={`pt-3 border-t ${borderClass} space-y-2 relative`}>
                 <div className="flex items-center justify-between text-xs">
-                  <span className={`font-semibold ${headingText}`}>Validated Model</span>
+                  <span className={`font-semibold ${headingText}`}>Demo Model Profile</span>
                   <button
                     type="button"
                     onClick={() => setShowActiveModelSummary(!showActiveModelSummary)}
@@ -4104,8 +4088,8 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                           <div className="truncate">
                             <div>{opt.model.name}</div>
                             <div className="text-[10px] font-mono text-slate-400">
-                              {opt.model.totalParamsBillions}B total ·{' '}
-                              {opt.model.activeParamsBillions}B active · {opt.model.accuracyBenchmarkPct}% acc
+                              Profile metadata: {opt.model.totalParamsBillions}B total ·{' '}
+                              {opt.model.activeParamsBillions}B active · {opt.model.accuracyBenchmarkPct}% unverified benchmark
                             </div>
                           </div>
                           {isSel && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />}
@@ -4116,8 +4100,14 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                 )}
 
                 <div className={`text-[11px] font-mono tabular-nums ${mutedText}`}>
-                  {activeHardware.shortLabel} · {telemetry.estimatedTokensPerSec} tok/s · Tuned:{' '}
-                  {activeModel.selfLearningSamplesCount}
+                  {activeHardware.shortLabel} · estimated {telemetry.estimatedTokensPerSec} tok/s
+                </div>
+                <div
+                  data-testid="model-runtime-disclaimer"
+                  className={`text-[10px] leading-relaxed ${mutedText}`}
+                >
+                  Profile routing only. No LLM weights or inference runtime are bundled; responses
+                  use deterministic local rules.
                 </div>
 
                 {showActiveModelSummary && (
@@ -4357,11 +4347,11 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                   <span>{contentSafetyMode}</span>
                 </span>
                 <span className={`px-2.5 py-0.5 rounded-full border ${borderClass} ${subSurfaceClass} ${mutedText}`}>
-                  {activeModel.name} · {activeModel.selfLearningSamplesCount} Tuned Samples
+                  {activeModel.name} · Demo profile (no model weights loaded)
                 </span>
                 {learnedEntities.length > 0 && (
                   <span className="px-2.5 py-0.5 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-300">
-                    +{learnedEntities.length} Wikipedia Entities Learned
+                    +{learnedEntities.length} Cached Research Records
                   </span>
                 )}
               </div>
@@ -4380,7 +4370,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                 !isUser &&
                 Boolean(
                   msg.bibliographyReferences ||
-                    msg.deepResearchTuning ||
+                    msg.deepResearchMetadata ||
                     msg.pendingResearchPlan
                 );
 
@@ -4538,7 +4528,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                         {msg.matchedScenario && (
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/60 text-[11px] font-mono">
                             <span className="text-emerald-400">
-                              Pretrained Scenario Matched: {msg.matchedScenario.id} —{' '}
+                              Scenario Template Matched: {msg.matchedScenario.id} —{' '}
                               {msg.matchedScenario.title}
                             </span>
                             <span className={mutedText}>
@@ -4584,7 +4574,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       </div>
                     )}
 
-                    {/* CONTINUOUS WIKIPEDIA & ONLINE ENTITY LEARNING MODEL WEIGHT UPDATE BADGE (Shown on Show more) */}
+                    {/* Cached online source record (Shown on Show more) */}
                     {!isUser && isDetailsExpanded && msg.learnedEntity && (
                       <div
                         data-testid="wikipedia-learned-entity-badge"
@@ -4593,12 +4583,12 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                         <div className="flex items-center gap-2">
                           <Database className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                           <span className="text-emerald-300 font-semibold">
-                            Pretrained Model Updated from Wikipedia/Web Grounding:{' '}
+                            Cached source record from {msg.learnedEntity.publicationOrSource}:{' '}
                             <span className="underline">{msg.learnedEntity.entityTitle}</span>
                           </span>
                         </div>
                         <span className="font-mono text-[11px] text-emerald-200">
-                          {activeModel.name} Weights Tuned (+1 Sample · {msg.learnedEntity.subDomain})
+                          No model weights changed · {msg.learnedEntity.subDomain}
                         </span>
                       </div>
                     )}
@@ -4700,6 +4690,34 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                         mapsGrounding={msg.mapsGrounding}
                         searchGrounding={msg.searchGrounding}
                       />
+                    )}
+
+                    {!isUser && msg.researchError && (
+                      <div
+                        role="alert"
+                        data-testid="deep-research-error"
+                        className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300"
+                      >
+                        {msg.researchError}
+                      </div>
+                    )}
+                    {!isUser && msg.researchWarning && (
+                      <div
+                        role="status"
+                        data-testid="deep-research-warning"
+                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                      >
+                        {msg.researchWarning}
+                      </div>
+                    )}
+                    {!isUser && msg.searchWarning && (
+                      <div
+                        role="status"
+                        data-testid="search-warning"
+                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                      >
+                        {msg.searchWarning}
+                      </div>
                     )}
 
                     {/* PRIMARY TEXT / CODE / RESEARCH / ASK-MATH CONTENT */}
@@ -4952,17 +4970,15 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                           <span className={`font-semibold flex items-center gap-1.5 ${headingText}`}>
                             <Globe className="w-3.5 h-3.5 text-emerald-400" />
                             <span>
-                              Live Search Providers ({msg.multiEngineStream.activeEnginesCount})
+                              Live Search Providers ({msg.multiEngineStream.activeEnginesCount}{' '}
+                              returned results)
                             </span>
                           </span>
                           <span className="font-mono text-[11px] text-emerald-400">
                             Zero 3rd-Party Online AI Models Referenced
                           </span>
                         </div>
-                        {msg.multiEngineStream.engines.length === 0 ? (
-                          <p className={mutedText}>{msg.multiEngineStream.inferenceEnginePolicy}</p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {msg.multiEngineStream.engines.map((eng) => (
                             <div
                               key={eng.engineId}
@@ -4970,45 +4986,34 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             >
                               <div className="flex items-center justify-between font-mono">
                                 <span className="text-sky-400 font-semibold">{eng.engineName}</span>
-                                <span className={mutedText}>{eng.sourceCount} result(s)</span>
+                                <span className={mutedText}>
+                                  {eng.latencyMs === undefined ? 'Live source' : `${eng.latencyMs}ms`}
+                                  {eng.matchedScenarioId ? ` · ${eng.matchedScenarioId}` : ''}
+                                </span>
                               </div>
                               <p className={`truncate ${mutedText}`}>{eng.streamedSnippet}</p>
-                              <a
-                                href={eng.sourceUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-block text-sky-400 hover:underline"
-                              >
-                                Open source
-                              </a>
                             </div>
                           ))}
-                          </div>
-                        )}
+                        </div>
                       </div>
                     )}
 
-                    {/* Deep Research Auto Model Knowledge Enrichment Banner (Shown on Show more) */}
-                    {isDetailsExpanded && msg.deepResearchTuning && (
+                    {/* Deep Research Scenario Registration (Shown on Show more) */}
+                    {isDetailsExpanded && msg.deepResearchMetadata && (
                       <div
-                        data-testid="deep-research-tuning-banner"
+                        data-testid="deep-research-scenario-metadata"
                         className={`p-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 space-y-1.5 text-xs`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
-                            <Cpu className="w-3.5 h-3.5" />
+                          <span className="font-semibold text-sky-400 flex items-center gap-1.5">
                             <span>
-                              Research Scenario Saved
+                              Scenario saved · model weights unchanged
                             </span>
-                          </span>
-                          <span className="font-mono text-[11px] text-emerald-300">
-                            {msg.deepResearchTuning.perplexityImprovementDelta}
                           </span>
                         </div>
                         <div className={`text-[11px] font-mono ${mutedText}`}>
-                          Use Case: {msg.deepResearchTuning.useCaseScenarioId} · Retrieved{' '}
-                          {msg.deepResearchTuning.crawledSourcesCount} source(s) ·{' '}
-                          {msg.deepResearchTuning.qloraAdapterRank}
+                          Scenario: {msg.deepResearchMetadata.scenarioId} · Retrieved{' '}
+                          {msg.deepResearchMetadata.sourceRecordsRetrieved} source records; these are not training data.
                         </div>
                       </div>
                     )}
@@ -5156,9 +5161,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       )}
 
                     {/* MULTI-STAGE DEEP RESEARCH FLOW / METHODOLOGY (Hidden by default; shown when Show more is clicked) */}
-                    {(isDetailsExpanded ||
-                      msg.pendingResearchPlan?.status === 'awaiting_approval') &&
-                      msg.pendingResearchPlan && (
+                    {isDetailsExpanded && msg.pendingResearchPlan && (
                       <div
                         data-testid="deep-research-plan-approval-card"
                         className={`mt-2 p-4 rounded-xl border border-indigo-500/50 ${
@@ -5176,8 +5179,10 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             {msg.pendingResearchPlan.status === 'completed'
                               ? 'Completed'
                               : msg.pendingResearchPlan.status === 'executing'
-                              ? 'Executing'
-                              : 'Awaiting Approval'}
+                              ? 'Searching'
+                              : msg.pendingResearchPlan.status === 'failed'
+                              ? 'Failed'
+                              : 'Awaiting approval'}
                           </span>
                         </div>
 
@@ -5237,32 +5242,6 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             </div>
                           ))}
                         </div>
-                        {msg.pendingResearchPlan.status === 'awaiting_approval' &&
-                          onApproveDeepResearchPlan && (
-                            <button
-                              type="button"
-                              data-testid="approve-deep-research-plan-btn"
-                              onClick={() =>
-                                onApproveDeepResearchPlan(
-                                  msg.id,
-                                  msg.pendingResearchPlan!.topic,
-                                  msg.pendingResearchPlan!.steps
-                                )
-                              }
-                              className="px-4 py-2 rounded-lg bg-indigo-500 text-white font-semibold hover:bg-indigo-400 transition-colors"
-                            >
-                              Approve Plan &amp; Run Deep Research
-                            </button>
-                          )}
-                        {msg.pendingResearchPlan.status === 'executing' && (
-                          <button
-                            type="button"
-                            disabled
-                            className="px-4 py-2 rounded-lg bg-indigo-500/40 text-white/70 font-semibold cursor-wait"
-                          >
-                            Research in progress…
-                          </button>
-                        )}
                       </div>
                     )}
 
@@ -5379,10 +5358,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                                   : `${borderClass} ${surfaceClass} ${mutedText}`
                               }`}
                             >
-                              Technical Pathway (
-                              {msg.glassBox.explainableAi.confidenceScorePct === undefined
-                                ? 'Confidence not calibrated'
-                                : `${msg.glassBox.explainableAi.confidenceScorePct}%`})
+                              Technical Pathway
                             </button>
                           </div>
                         </div>
@@ -5413,145 +5389,55 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       </div>
                     )}
 
-                    {/* MODEL MATURITY & CONTINUAL LEARNING (PROMPT + INTERNET) OUTPUT BANNER */}
-                    {!isUser &&
-                      (!isPureImageMsg && !isPureVideoMsg && !isPureAudioMsg
-                        ? true
-                        : isDetailsExpanded) &&
-                      (() => {
-                        const maturityInfo = calculateModelMaturityAndSchedule(
-                          activeModel,
-                          customScenarios.length,
-                          learnedEntities.length
-                        );
-                        return (
-                          <div
-                            data-testid="output-model-maturity-banner"
-                            className={`p-3 rounded-xl border text-xs space-y-2 ${
-                              isDark
-                                ? 'border-emerald-500/35 bg-emerald-950/15 text-slate-200'
-                                : 'border-emerald-300 bg-emerald-50/70 text-slate-800'
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  data-testid="output-maturity-stage-badge"
-                                  className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40"
-                                >
-                                  Model Maturity: {maturityInfo.maturityScorePct}% ({maturityInfo.maturityStageLabel})
-                                </span>
-                                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-semibold border border-cyan-500/30">
-                                  QLoRA r={maturityInfo.activeLoraRank} · Prompt Samples: {maturityInfo.promptLearnedSamplesCount.toLocaleString()} · Internet Sources: {maturityInfo.internetLearnedSourcesCount}
-                                </span>
-                              </div>
-                              <span className="font-mono text-[10px] text-amber-300">
-                                Continual Sync: {maturityInfo.recommendedCadence.toUpperCase()}
-                              </span>
-                            </div>
-
-                            <div
-                              data-testid="output-maturity-meaning-text"
-                              className="text-[11px] leading-relaxed"
-                            >
-                              <strong className="text-emerald-400">
-                                What {maturityInfo.maturityStageLabel} ({maturityInfo.maturityScorePct}%) Means for This Output:
-                              </strong>{' '}
-                              {maturityInfo.maturityMeaningSummary}
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                              {maturityInfo.outputQualityCapabilitiesUnlocked.map((cap, cIdx) => (
-                                <span
-                                  key={cIdx}
-                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700/80 font-mono text-[10px] text-slate-300"
-                                >
-                                  ✓ {cap}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                    {/* PANINI-CHRONOS-2M: 2,000,000-TOKEN REPOSITORY & DOCUMENT MEMORY INSPECTOR (v5.4) */}
-                    {!isUser &&
-                      (Boolean(msg.codingResolution) ||
-                        Boolean(msg.pendingResearchPlan) ||
-                        isDetailsExpanded) &&
-                      (() => {
-                        const chronosSpec = synthesizeChronos2MRepositoryMemory(
-                          msg.content,
-                          msg.domain
-                        );
-                        return (
-                          <div
-                            data-testid="chronos-2m-memory-card"
-                            className={`p-3 rounded-xl border text-xs space-y-2 ${
-                              isDark
-                                ? 'border-indigo-500/35 bg-indigo-950/15 text-slate-200'
-                                : 'border-indigo-300 bg-indigo-50/70 text-slate-800'
-                            }`}
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold border border-indigo-500/40">
-                                  {chronosSpec.sovereignEngineId} · 2,000,000-Token Context Window
-                                </span>
-                                <span className="font-mono text-[10px] text-emerald-300">
-                                  Active Context: {chronosSpec.activeTokensUtilized.toLocaleString()} / {chronosSpec.maxContextWindowTokens.toLocaleString()} tokens ({chronosSpec.utilizationPct}%)
-                                </span>
-                              </div>
-                              <span className="font-mono text-[10px] text-cyan-300">
-                                {chronosSpec.ringAttentionShards} Ring-Attention Shards · Needle Recall: {chronosSpec.needleInHaystackRecallPct}%
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                              {chronosSpec.repositoryNodes.slice(0, 4).map((node) => (
-                                <div
-                                  key={node.filePath}
-                                  className="rounded-lg border border-slate-800 bg-slate-950/80 px-2.5 py-1.5 font-mono text-[10px] flex items-center justify-between gap-2"
-                                >
-                                  <span className="text-indigo-200 truncate" title={node.filePath}>
-                                    {node.filePath}
-                                  </span>
-                                  <span className="text-emerald-400 shrink-0">
-                                    {(node.tokensIndexed / 1000).toFixed(0)}k tok · {node.lineRangeCitation}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
                     {/* PROGRESSIVE DISCLOSURE ("Show more" / "Show less") + EXPORT ACTIONS */}
                     {!isUser && (
                       <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/40">
-                        <button
-                          type="button"
-                          data-testid="message-show-more-btn"
-                          onClick={() =>
-                            setExpandedDetailsByMsg((prev) => ({
-                              ...prev,
-                              [msg.id]: !prev[msg.id],
-                            }))
-                          }
-                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-colors flex items-center gap-1.5"
-                        >
-                          {isDetailsExpanded ? (
-                            <>
-                              <ChevronUp className="w-3.5 h-3.5" />
-                              <span>Show less</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-3.5 h-3.5" />
-                              <span>Show more</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            data-testid="message-show-more-btn"
+                            onClick={() =>
+                              setExpandedDetailsByMsg((prev) => ({
+                                ...prev,
+                                [msg.id]: !prev[msg.id],
+                              }))
+                            }
+                            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-colors flex items-center gap-1.5"
+                          >
+                            {isDetailsExpanded ? (
+                              <>
+                                <ChevronUp className="w-3.5 h-3.5" />
+                                <span>Show less</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                                <span>Show more</span>
+                              </>
+                            )}
+                          </button>
+                          {msg.pendingResearchPlan &&
+                            (msg.pendingResearchPlan.status === 'awaiting_approval' ||
+                              msg.pendingResearchPlan.status === 'failed') &&
+                            onApproveDeepResearchPlan && (
+                              <button
+                                type="button"
+                                data-testid="approve-deep-research-plan-btn"
+                                onClick={() =>
+                                  onApproveDeepResearchPlan(
+                                    msg.id,
+                                    msg.pendingResearchPlan!.topic,
+                                    msg.pendingResearchPlan!.steps
+                                  )
+                                }
+                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-emerald-500/50 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
+                              >
+                                {msg.pendingResearchPlan.status === 'failed'
+                                  ? 'Retry Search & Run'
+                                  : 'Approve Plan & Run'}
+                              </button>
+                            )}
+                        </div>
 
                         {isDetailsExpanded && (
                           <div className="flex flex-wrap items-center gap-2">
@@ -5576,16 +5462,6 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                               <FileText className="w-3 h-3 text-emerald-400" />
                               <span>Export Markdown (.md)</span>
                             </button>
-
-                            {!msg.selfLearningCommitted && (
-                              <button
-                                type="button"
-                                onClick={() => onCommitSelfLearning(msg.id)}
-                                className={`px-2.5 py-1 text-[11px] font-medium rounded-md border ${borderClass} ${mutedText} hover:text-sky-400 transition-colors`}
-                              >
-                                + Commit to Model Tuning
-                              </button>
-                            )}
 
                             {msg.synthesizedUseCase && (
                               <span className={`text-[11px] font-mono ${mutedText}`}>
@@ -5674,9 +5550,9 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-indigo-400 shrink-0" />
                   <span className={`font-semibold ${headingText}`}>
-                    Deep Research ({researchSteps.length} Topic-Focused Stages · Plain-English Thresholds ·{' '}
+                    Deep Research ({researchSteps.length} proposed evidence-focused stages ·{' '}
                     {hasCustomizedSteps ? 'Custom Stages Active' : 'Auto-Synced with Topic'} ·{' '}
-                    {isOnlineLearning ? 'Live Internet Grounded' : 'Offline Corpus'})
+                    {isOnlineLearning ? 'Online source retrieval' : 'No external sources'})
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -6071,7 +5947,7 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                   {chatCapability === 'coding'
                     ? 'Synthesize Code'
                     : chatCapability === 'deep_research'
-                    ? 'Analyze Plan'
+                    ? 'Run Deep Research'
                     : chatCapability === 'image_gen'
                     ? 'Synthesize Image'
                     : chatCapability === 'video_gen'

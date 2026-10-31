@@ -23,7 +23,6 @@ import {
   StoredModel,
   UseCaseScenario,
   ContinualLearningHarvestResult,
-  calculateModelMaturityAndSchedule,
   generatePureLearningLedgerPdfBytes,
   runAutonomousCiCdSelfTestAndBugAudit,
 } from '../utils/engineLogic';
@@ -309,8 +308,6 @@ export interface AdminResourcePermissionPolicy {
   enableMultilingual: boolean;
   enableQualityMultiPass: boolean;
   enableStrictClarificationGate: boolean;
-  enableScheduledInternetSync: boolean;
-  maturityUpdateCadence: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked';
 }
 
 export interface DynamicallyDraftedReleaseItem {
@@ -324,8 +321,8 @@ export interface DynamicallyDraftedReleaseItem {
 }
 
 /**
- * 4-Persona Enterprise Governance, QA Tester (30+ Yrs), Multi-Role Roadmap, CCB Approver,
- * Admin Continual Learning ("Learn & Update Now" + Hourly/Daily/Weekly Maturity Sync),
+ * Enterprise Governance, QA Tester, Multi-Role Roadmap, CCB Approver,
+ * Manual local scenario drafting (without model training or scheduled sync),
  * Resource/Permission Kill-Switches & Dynamic Next-Release Roadmap Auto-Drafter Hub.
  * Strictly mounted in the Admin Console (NOT in User Workspace).
  */
@@ -338,7 +335,6 @@ export const EnterpriseGovernanceModal: React.FC<{
   onUpdateAdminPermissions?: (updates: Partial<AdminResourcePermissionPolicy>) => void;
   activeModel?: StoredModel;
   customScenarios?: UseCaseScenario[];
-  learnedEntitiesCount?: number;
   onTriggerAdminLearnUpdateNow?: (options?: {
     customLearningPrompt?: string;
     clarificationConfirmed?: boolean;
@@ -352,7 +348,6 @@ export const EnterpriseGovernanceModal: React.FC<{
   onUpdateAdminPermissions,
   activeModel,
   customScenarios,
-  learnedEntitiesCount = 4,
   onTriggerAdminLearnUpdateNow,
 }) => {
   const [activeTab, setActiveTab] = useState<
@@ -384,15 +379,13 @@ export const EnterpriseGovernanceModal: React.FC<{
   const [pendingLearningClarification, setPendingLearningClarification] =
     useState<ContinualLearningHarvestResult | null>(null);
   const [lastLearnSyncNotice, setLastLearnSyncNotice] = useState<string>(
-    'Panini-Synapse-Distiller (v5.4 SVN-r404.0) synced user prompt + live internet grounding deltas, upgraded active model LoRA weights & accuracy benchmark, and updated Use-Case Library.'
+    'No scenario has been added in this workspace session yet.'
   );
   const [localPermissions, setLocalPermissions] = useState<AdminResourcePermissionPolicy>({
     enableOffTheHookVoice: true,
     enableMultilingual: true,
     enableQualityMultiPass: true,
     enableStrictClarificationGate: true,
-    enableScheduledInternetSync: true,
-    maturityUpdateCadence: 'daily',
   });
 
   const effectiveModel = activeModel || INITIAL_MODELS[1] || INITIAL_MODELS[0];
@@ -461,7 +454,7 @@ export const EnterpriseGovernanceModal: React.FC<{
         title:
           'Sovereign Major LTS Promotion: Air-Gapped Federated Cluster Sync & Neural Audio Mastering',
         basedOnGeneratedCapabilities: [
-          'v5.2 Admin Continual Learning Hub (Hourly/Daily/Weekly)',
+          'v5.2 Local Scenario Drafting (Manual)',
           'v5.3 Panini-LyraVox Multi-Verse Vocal Lyrics & Background Adaptation',
           'v5.4 Panini-Chronos-2M & Polyglot-AST Sandbox',
         ],
@@ -503,12 +496,12 @@ export const EnterpriseGovernanceModal: React.FC<{
       svn: 'SVN-r402.0',
       badge: 'Minor Release · Delivered & Bug-Verified',
       title:
-        'Panini-Synapse-Distiller Admin Continual Model Learning Engine, Culinary Brigade & Gandhi Multi-Shot Grounding Fixes',
+        'Local Scenario Drafting, Culinary Brigade & Gandhi Multi-Shot Grounding Fixes',
       summary:
-        'Admin Console "Learn & Update Now" engine + Continual Model Weight Evolution across every prompt and scenario, plus verified fixes for Executive Chefs in Commercial Hotel Kitchen (white double-breasted chef coats, tall white pleated toque hats, stainless steel hood, hanging copper cookware, active gas stove burners, plated dishes & synchronized sizzling/chopping/clink Foley) and Mahatma Gandhi Dandi Salt March multi-shot video.',
+        'Manual scenario drafting saves deterministic outlines to this workspace; it does not train models or update weights. This legacy release note also describes scenario-grounding examples that are not runtime verification.',
       bugsFixed: [
-        'BUG-04 Fixed: Moved all Governance, QA, Continual Learning, and Permission controls strictly into Admin Console (removed from User Workspace).',
-        'BUG-05 Fixed: Upgraded "Learn & Update Now" AND every prompt/scenario execution to continually evolve active model weights (incrementing selfLearningSamplesCount, upgrading QLoRA rank r, improving accuracyBenchmarkPct, and recording learned capabilities in Model Continual Learning & Weight Evolution Ledger).',
+        'BUG-04: Governance and permission controls are presented in the Admin Console.',
+        'BUG-05: Scenario drafting creates local outline records only; no model weights, adapters, or accuracy metrics are updated.',
         'BUG-06 Fixed: Executive Chefs in Commercial Hotel Kitchen no longer render in business suits or orange sneakers on an outdoor field; they wear crisp white double-breasted chef coats, red neckerchiefs, waist aprons, and tall pleated white chef hats (toques) inside a stainless steel hotel kitchen with hanging copper pots, active gas burners, heavy copper skillets, plated dishes, rising steam, and synchronized kitchen sizzling/knife-chopping/copper-clink Foley audio.',
         'BUG-07 Fixed: Mahatma Gandhi Dandi Salt March multi-shot video (REF-1005) renders Gandhi accurately (bald elder head, round wireframe spectacles, white Khadi dhoti & shawl, bamboo walking staff, traditional brown leather sandals — zero unrequested Nike sneakers) with Satyagrahi followers in white Khadi & Gandhi caps along the sunlit Dandi coastal salt shore across all 3 storyboard shots.',
       ],
@@ -534,11 +527,11 @@ export const EnterpriseGovernanceModal: React.FC<{
       title:
         'Panini-Aether-3D 6-DoF Relightable 3D Scene Synthesis, Panini-Chronos-2M 2M-Token Repository & Document Memory, & Multi-Format Tested Code Sandbox (Webpage, PPTX, DOCX, Excel)',
       summary:
-        'True 3D volumetric 6-DoF relightable scene synthesis with 100% universal prompt attribute alignment for unknown scenarios, Off-the-Hook Mic->Text->Use-Case Builder & Report-Back, Model Maturity + Meaning surfaced directly in user outputs, 2M-token repository memory, 4/4 unit-tested Multi-Format Code Sandbox, and Continuous Self-Testing Bug-Aware Roadmap Evolution.',
+        'Legacy roadmap entry; its feature claims are not verified in this build. Scenario construction is local and deterministic, and model maturity or runtime quality metrics are not available.',
       bugsFixed: [
         'BUG-501 Fixed: Off-the-Hook Voice Duplex converts microphone speech to text, builds a structured Use-Case (SCN-100XX), executes it, and reports back the synthesized answer text in UI and TTS.',
         'BUG-502 Fixed: Panini-Aether-3D renders true 3D volumetric perspective depth grids, 3D extruded meshes, directional shadows, interactive 6-DoF Yaw/Pitch/Zoom & relighting sliders, and achieves 100% attribute alignment on unknown prompts.',
-        'BUG-503 Fixed: Continual learning distills both user prompts and live internet sources, and surfaces Model Maturity Score, Stage, and plain-English meaning directly inside user chat outputs.',
+        'BUG-503: No continual model learning or maturity score is available; local scenario records and retrieved source records remain separate from model training.',
         'BUG-504 Fixed: Renamed top navigation tab from "Ask & Math" to "Chat" (keeping "Ask & Math" in the workspace capability dropdown) and added Continuous Self-Testing & Bug-Aware Roadmap Evolution synced with live Artifacts.',
       ],
     },
@@ -681,7 +674,7 @@ export const EnterpriseGovernanceModal: React.FC<{
         'Impact & Logic Audit: Strict Admin-Only Governance, Continual Learning & Permission Kill-Switches',
       role: 'Change Control Board (5 Yrs) & Engineering Manager (5 Yrs)',
       summary:
-        'Verified that Governance, Continual Learning (Hourly/Daily/Weekly), Multilingual policy, and Permission toggles reside strictly in the Admin Console and not in the User Workspace.',
+        'Verified that governance, manual local scenario drafting, multilingual policy, and permission controls reside in the Admin Console.',
       details:
         'Administrators can disable Off-the-Hook Voice, Multilingual Auto-Detection, or Extended 4-Pass Compute at any time to conserve hardware resources.',
     },
@@ -724,10 +717,10 @@ export const EnterpriseGovernanceModal: React.FC<{
     },
     {
       rev: 'SVN-r402.0 (v5.2)',
-      module: 'Panini-Synapse-Distiller Continual Learning Hub',
+      module: 'Manual Local Scenario Drafting',
       feature:
-        'Admin "Learn & Update Now" Button, Hourly/Daily/Weekly Maturity Sync, Learned Use-Case Registry Updates',
-      status: 'DELIVERED & VERIFIED',
+        'Create deterministic scenario outlines in the local workspace; no model training or scheduled sync',
+      status: 'LOCAL WORKSPACE ONLY',
     },
     {
       rev: 'SVN-r403.0 (v5.3)',
@@ -956,13 +949,6 @@ export const EnterpriseGovernanceModal: React.FC<{
         {/* TAB 2: CONTINUAL LEARNING ("LEARN & UPDATE NOW") + MATURITY CADENCE + SELF-UPDATING USE-CASE LIBRARY + RESOURCE PERMISSION KILL-SWITCHES */}
         {activeTab === 'continual_learning_permissions' &&
           (() => {
-            const maturityEval = calculateModelMaturityAndSchedule(
-              effectiveModel,
-              effectiveScenarios.length,
-              learnedEntitiesCount,
-              effectivePermissions.maturityUpdateCadence
-            );
-
             const handleExecuteLearnNow = (
               promptOverride?: string,
               confirmedClarification = false
@@ -984,9 +970,8 @@ export const EnterpriseGovernanceModal: React.FC<{
                 setLearnSyncCount((c) => c + 1);
                 setLastLearnSyncNotice(res.syncSummaryNotice);
               } else {
-                setLearnSyncCount((c) => c + 1);
                 setLastLearnSyncNotice(
-                  `[Sync #${learnSyncCount + 1}] Harvested latest peer-AI & user telemetry deltas into local GGUF shards and updated Use-Case Registry.`
+                  'Scenario save is unavailable because no local workspace handler is configured.'
                 );
               }
             };
@@ -995,10 +980,7 @@ export const EnterpriseGovernanceModal: React.FC<{
               const sortedForLedger = effectiveScenarios
                 .slice()
                 .sort((a, b) => b.indexNumber - a.indexNumber);
-              const bytes = generatePureLearningLedgerPdfBytes(
-                sortedForLedger,
-                maturityEval
-              );
+              const bytes = generatePureLearningLedgerPdfBytes(sortedForLedger);
               const blob = new Blob([bytes as unknown as BlobPart], {
                 type: 'application/pdf',
               });
@@ -1022,10 +1004,10 @@ export const EnterpriseGovernanceModal: React.FC<{
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold">
-                        v5.2 (SVN-r402.0) · Panini-Synapse-Distiller · Continual Learning &amp; Use-Case Harvester
+                        Local Scenario Library · Demo Model Profiles
                       </span>
                       <h3 className="text-sm font-bold text-white mt-1">
-                        On-Demand &ldquo;Learn &amp; Update Now&rdquo; + Maturity-Level Scheduled Internet Sync (Hourly / Daily / Weekly)
+                        Add a Scenario to the Local Workspace
                       </h3>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1036,7 +1018,7 @@ export const EnterpriseGovernanceModal: React.FC<{
                         className="px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono text-xs font-bold hover:bg-emerald-500/30 transition flex items-center gap-1.5"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Export Pure Use-Case Ledger (.pdf)</span>
+                        <span>Export Local Scenario Ledger (.pdf)</span>
                       </button>
                       <button
                         type="button"
@@ -1045,66 +1027,30 @@ export const EnterpriseGovernanceModal: React.FC<{
                         className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-mono text-xs font-bold hover:bg-cyan-400 transition flex items-center gap-1.5 shadow-lg"
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span>Learn &amp; Update Now (Sync #{learnSyncCount})</span>
+                        <span>Add Scenario to Local Library</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Live Model Maturity & Schedule Status Strip */}
                   <div
-                    data-testid="maturity-evaluation-strip"
-                    className="grid grid-cols-1 md:grid-cols-4 gap-2.5 rounded-xl border border-slate-800 bg-slate-950/90 p-3 font-mono text-[11px]"
+                    data-testid="model-runtime-disclaimer"
+                    className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 text-xs text-amber-100"
                   >
-                    <div>
-                      <div className="text-slate-400 text-[10px]">MODEL MATURITY LEVEL</div>
-                      <div className="text-cyan-300 font-bold mt-0.5">
-                        {maturityEval.maturityScorePct}% · {maturityEval.maturityStageLabel}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400 text-[10px]">ACTIVE VS. RECOMMENDED SYNC</div>
-                      <div className="text-emerald-300 font-bold mt-0.5">
-                        Active: {maturityEval.activeCadence.toUpperCase()} (Rec:{' '}
-                        {maturityEval.recommendedCadence.toUpperCase()})
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400 text-[10px]">NEXT SCHEDULED INTERNET SYNC</div>
-                      <div className="text-amber-300 font-semibold mt-0.5 truncate" title={maturityEval.nextScheduledSyncUtc}>
-                        {maturityEval.nextScheduledSyncUtc}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between md:justify-end gap-2">
-                      <div>
-                        <div className="text-slate-400 text-[10px]">INDEXED USE-CASES</div>
-                        <div className="text-white font-bold mt-0.5">
-                          {maturityEval.totalIndexedScenarios.toLocaleString()} ({maturityEval.customLearnedCount} Custom)
-                        </div>
-                      </div>
-                      {maturityEval.activeCadence !== maturityEval.recommendedCadence && (
-                        <button
-                          type="button"
-                          data-testid="auto-align-maturity-cadence-btn"
-                          onClick={() =>
-                            updatePermission({
-                              maturityUpdateCadence: maturityEval.recommendedCadence,
-                            })
-                          }
-                          className="px-2 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 text-[10px] font-bold shrink-0"
-                        >
-                          Auto-Align
-                        </button>
-                      )}
+                    <strong>Model runtime unavailable:</strong> no LLM weights or inference runtime are
+                    installed. This panel saves deterministic scenario outlines and local source records;
+                    it does not train models or schedule automatic internet syncs.
+                    <div className="mt-1 font-mono text-[11px]">
+                      Local scenario entries: {effectiveScenarios.length}
                     </div>
                   </div>
 
-                  {/* Custom Learning Topic Input (with Zero-Assumption Clarification Gate) */}
+                  {/* Scenario prompt (with a clarification gate for underspecified topics) */}
                   <div className="space-y-2">
                     <label
                       htmlFor="admin-custom-learning-input"
                       className="block font-mono text-[11px] text-slate-300 font-semibold"
                     >
-                      Custom Skill / Use-Case Learning Prompt (Leave empty to harvest automatically from recent User Prompts &amp; Scheduled Internet Deltas):
+                      Scenario prompt (leave empty to use a recent prompt, if available):
                     </label>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
@@ -1132,19 +1078,19 @@ export const EnterpriseGovernanceModal: React.FC<{
                     </div>
                   </div>
 
-                  {/* Zero-Assumption Learning Clarification Gate (if Admin enters concise/underspecified topic) */}
+                  {/* Clarification gate for concise or underspecified scenario prompts */}
                   {pendingLearningClarification?.needsClarification && (
                     <div
                       data-testid="admin-learning-clarification-gate"
                       className="rounded-xl border border-amber-500/45 bg-amber-950/25 p-3.5 space-y-2.5 text-xs"
                     >
                       <div className="font-mono font-bold text-amber-300">
-                        ⚠️ Zero-Assumption Parameter Clarification Gate (Panini-Synapse-Distiller v5.2):
+                        ⚠️ Please clarify this scenario prompt:
                       </div>
                       <p className="text-slate-200">{pendingLearningClarification.clarificationReason}</p>
                       <div className="space-y-1">
                         <div className="font-mono text-[11px] text-amber-200 font-semibold">
-                          Select a complete parameter-grounded learning specification or confirm below:
+                          Add a little more context, or confirm the prompt as written:
                         </div>
                         <div className="flex flex-col gap-1.5 pt-1">
                           {(pendingLearningClarification.suggestedClarificationPrompts || []).map(
@@ -1172,7 +1118,7 @@ export const EnterpriseGovernanceModal: React.FC<{
                           onClick={() => handleExecuteLearnNow(customLearningInput, true)}
                           className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-mono text-[11px] font-bold hover:bg-amber-400 transition"
                         >
-                          Confirm Parameters &amp; Commit Use-Case
+                          Confirm &amp; Add Scenario
                         </button>
                       </div>
                     </div>
@@ -1185,66 +1131,13 @@ export const EnterpriseGovernanceModal: React.FC<{
                     ✓ {lastLearnSyncNotice}
                   </div>
 
-                  {/* Maturity-Level Update Schedule Selector */}
-                  <div className="space-y-1.5">
-                    <div className="font-mono text-[11px] text-slate-300 font-semibold">
-                      Select Maturity-Level Automated Internet Learning Schedule:
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                      {(
-                        [
-                          {
-                            id: 'hourly',
-                            label: 'Stage 1: Nascent (Hourly)',
-                            desc: 'Hourly internet delta harvesting (<75% maturity)',
-                          },
-                          {
-                            id: 'daily',
-                            label: 'Stage 2: Developing (Daily)',
-                            desc: 'Daily digest & LoRA distillation (75%–89% maturity)',
-                          },
-                          {
-                            id: 'weekly',
-                            label: 'Stage 3: Mature (Weekly)',
-                            desc: 'Weekly verified benchmark consolidation (90%–97%)',
-                          },
-                          {
-                            id: 'sovereign_locked',
-                            label: 'Stage 4: Sovereign Air-Gap',
-                            desc: '100% locked local GGUF shards (98%+ / manual only)',
-                          },
-                        ] as const
-                      ).map((stage) => {
-                        const isSelected =
-                          effectivePermissions.maturityUpdateCadence === stage.id;
-                        return (
-                          <button
-                            key={stage.id}
-                            type="button"
-                            data-testid={`maturity-cadence-${stage.id}`}
-                            onClick={() =>
-                              updatePermission({ maturityUpdateCadence: stage.id })
-                            }
-                            className={`p-2.5 rounded-lg border text-left transition ${
-                              isSelected
-                                ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
-                            }`}
-                          >
-                            <div className="font-mono text-[11px] font-bold text-cyan-300">
-                              {stage.label}
-                            </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                              {stage.desc}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Automatic internet sync and model training are unavailable in this build.
+                    Scenarios are added only when you submit them.
+                  </p>
                 </div>
 
-                {/* Self-Updating Use-Case Library (SCN-10006..SCN-10008 + Newly Learned Scenarios) */}
+                {/* Local scenario library */}
                 <div
                   data-testid="self-updating-usecase-library"
                   className="rounded-xl border border-emerald-500/35 bg-slate-900/80 p-4 space-y-3 text-xs"
@@ -1252,14 +1145,14 @@ export const EnterpriseGovernanceModal: React.FC<{
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold">
-                        Self-Updating Use-Case Library (v5.2 Deliverable · SCN-10006..SCN-{10000 + effectiveScenarios.length})
+                        Local Scenario Library · SCN-{10001}..SCN-{10000 + effectiveScenarios.length}
                       </span>
                       <h3 className="text-sm font-bold text-white mt-1">
-                        Use-Cases Learned from User Prompts, Scheduled Internet Sync &amp; Sovereign Peer Distillation
+                        Scenarios saved in this workspace; entries do not update model weights
                       </h3>
                     </div>
                     <span className="font-mono text-[11px] text-emerald-300 font-semibold">
-                      {learnedShowcaseScenarios.length} Active v5.2 Learned Scenarios
+                      {learnedShowcaseScenarios.length} Local Scenarios
                     </span>
                   </div>
 
@@ -1279,8 +1172,7 @@ export const EnterpriseGovernanceModal: React.FC<{
                                 {scn.sovereignEngineModule || 'Panini-Veritas-Core'}
                               </span>
                               <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">
-                                {scn.learnedSource || 'User Prompt Telemetry'} ·{' '}
-                                {(scn.maturitySyncCadence || 'daily').toUpperCase()}
+                                Local scenario
                               </span>
                               <span className="text-[11px] font-bold text-white truncate">
                                 {scn.title}
@@ -1311,165 +1203,8 @@ export const EnterpriseGovernanceModal: React.FC<{
                   </div>
                 </div>
 
-                {/* Model Continual Learning & Weight Evolution Ledger (Updated on Every Prompt, Scenario & Admin Update) */}
-                {(() => {
-                  const headVer =
-                    effectiveModel.versions.find(
-                      (v) => v.versionId === effectiveModel.currentVersionId
-                    ) || effectiveModel.versions[0];
-                  const historyEntries = effectiveModel.continualLearningHistory || [
-                    {
-                      id: 'cl-seed-v53-culinary',
-                      timestamp: '2026-10-30 19:20:00 UTC',
-                      triggerSource: 'Live Prompt Execution' as const,
-                      promptAnalyzed:
-                        'Two executive chefs plating artisanal dishes in a commercial hotel kitchen with rising steam, copper cookware, and synchronized sizzling foley audio',
-                      targetSubsystem:
-                        'Panini-Kinesis-Cinema-8K (Culinary Brigade & Foley Physics)',
-                      learnedCapabilities: [
-                        'Executive Chef white double-breasted coats, red neckerchiefs & tall pleated white toque hats',
-                        'Commercial hotel kitchen stainless hood, hanging copper cookware, active gas stove burners & sizzling pan Foley',
-                      ],
-                      samplesAdded: 2,
-                      previousAccuracyPct: 99.25,
-                      updatedAccuracyPct: 99.38,
-                      previousLoraRank: 24,
-                      updatedLoraRank: 32,
-                      versionTagCommitted: 'v5.3.0-continual',
-                    },
-                    {
-                      id: 'cl-seed-v52-gandhi',
-                      timestamp: '2026-10-30 19:12:00 UTC',
-                      triggerSource: 'Scenario Telemetry' as const,
-                      promptAnalyzed:
-                        'Explain Mahatma Gandhi’s Dandi Salt March in simple everyday terms and generate a multi-shot video: Gandhi walking peacefully with followers along a sunlit coastal road',
-                      targetSubsystem:
-                        'Panini-Kinesis-Cinema-8K (Historical Multi-Shot Persona Grounding)',
-                      learnedCapabilities: [
-                        'Mahatma Gandhi persona (elder bald head, round wireframe spectacles, white Khadi dhoti & bamboo walking staff)',
-                        'Multi-shot storyboard main-character persistence across Shots 1, 2 & 3 on Dandi coastal salt shore',
-                      ],
-                      samplesAdded: 3,
-                      previousAccuracyPct: 99.1,
-                      updatedAccuracyPct: 99.25,
-                      previousLoraRank: 16,
-                      updatedLoraRank: 24,
-                      versionTagCommitted: 'v5.2.2-continual',
-                    },
-                  ];
-
-                  return (
-                    <div
-                      data-testid="model-continual-learning-evolution-ledger"
-                      className="rounded-xl border border-indigo-500/35 bg-slate-900/80 p-4 space-y-3 text-xs"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold">
-                            Continual Model Weight &amp; Adapter Evolution · Active Model: {effectiveModel.name}
-                          </span>
-                          <h3 className="text-sm font-bold text-white mt-1">
-                            How Every Prompt, Scenario &amp; &ldquo;Learn &amp; Update Now&rdquo; Evolves Model Weights Over Time
-                          </h3>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
-                          <span
-                            data-testid="active-model-self-learning-samples"
-                            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-indigo-500/30 text-indigo-300 font-bold"
-                          >
-                            Samples Distilled: {effectiveModel.selfLearningSamplesCount.toLocaleString()}
-                          </span>
-                          <span
-                            data-testid="active-model-accuracy-benchmark"
-                            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-emerald-500/30 text-emerald-300 font-bold"
-                          >
-                            Accuracy: {effectiveModel.accuracyBenchmarkPct}%
-                          </span>
-                          <span
-                            data-testid="active-model-lora-rank"
-                            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-cyan-500/30 text-cyan-300 font-bold"
-                          >
-                            QLoRA Rank: r={headVer?.loraRank || 32}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
-                        {historyEntries.map((entry) => (
-                          <div
-                            key={entry.id}
-                            data-testid={`model-learning-entry-${entry.id}`}
-                            className="rounded-lg border border-slate-800 bg-slate-950/90 p-3 space-y-1.5"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-[10px] font-bold">
-                                  {entry.versionTagCommitted}
-                                </span>
-                                <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px]">
-                                  {entry.triggerSource}
-                                </span>
-                                <span className="font-mono text-[11px] font-bold text-white">
-                                  {entry.targetSubsystem}
-                                </span>
-                              </div>
-                              <span className="font-mono text-[10px] text-emerald-300 font-semibold">
-                                +{entry.samplesAdded} Samples · LoRA r={entry.previousLoraRank}&rarr;r=
-                                {entry.updatedLoraRank} · Acc {entry.previousAccuracyPct}%&rarr;
-                                {entry.updatedAccuracyPct}%
-                              </span>
-                            </div>
-                            <div className="font-mono text-[11px] text-slate-300 truncate">
-                              Prompt Distilled: &ldquo;{entry.promptAnalyzed}&rdquo;
-                            </div>
-                            <ul className="list-disc list-inside text-[10px] text-slate-400 space-y-0.5">
-                              {entry.learnedCapabilities.map((cap, cIdx) => (
-                                <li key={cIdx}>{cap}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 100% Sovereign Nomenclature Capability Equivalence Matrix */}
-                <div
-                  data-testid="sovereign-equivalence-matrix"
-                  className="rounded-xl border border-purple-500/35 bg-slate-900/80 p-4 space-y-2.5 text-xs"
-                >
-                  <div>
-                    <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold">
-                      100% Proprietary Sovereign Nomenclature · On-Premises &amp; Hybrid Offline AI
-                    </span>
-                    <h3 className="text-sm font-bold text-white mt-1">
-                      Panini Master AI Subsystem Equivalence Ledger (Zero Borrowed External Model Names)
-                    </h3>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {maturityEval.sovereignEquivalenceMatrix.map((item) => (
-                      <div
-                        key={item.sovereignSubsystem}
-                        className="rounded-lg border border-slate-800 bg-slate-950/90 p-2.5 space-y-1"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[11px] font-bold text-purple-300">
-                            {item.sovereignSubsystem}
-                          </span>
-                          <span className="font-mono text-[10px] text-emerald-400">
-                            {item.onPremQuantSupport}
-                          </span>
-                        </div>
-                        <div className="text-[11px] font-semibold text-white">
-                          {item.capabilityDomain}
-                        </div>
-                        <div className="text-[10px] text-slate-400 leading-relaxed">
-                          {item.distilledStrengthSummary}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div data-testid="model-runtime-disclaimer" className="rounded-xl border border-indigo-500/35 bg-slate-900/80 p-4 text-xs text-slate-300">
+                  Model profile numbers and history are not runtime measurements. This build has no installed model weights or inference runtime, and scenario saves do not train a model.
                 </div>
 
             {/* Admin Resource & Permission Kill-Switches */}
@@ -1937,4 +1672,3 @@ export const EnterpriseGovernanceModal: React.FC<{
     </div>
   );
 };
-

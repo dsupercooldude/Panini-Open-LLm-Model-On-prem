@@ -4,17 +4,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   autoCorrectUserQuery,
-  evaluateQueryClarityAndClarifications,
   translateNlpToUseCase,
-  synthesizeDynamicModelFromSearch,
-  detectQueryDomain,
-  crawlWebForDeepResearch,
+  BibliographyReference,
   generateDeepResearchPlan,
   verifyExistingUseCaseMatch,
   extractCleanEntityTopic,
-  StoredModel,
 } from './src/utils/engineLogic';
-import { INITIAL_MODELS, INITIAL_CUSTOM_SCENARIOS } from './src/utils/initialData';
+import { INITIAL_CUSTOM_SCENARIOS } from './src/utils/initialData';
 import {
   analyzeBioscienceQuery,
   synthesizeMusicTrackSpec,
@@ -79,12 +75,17 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       version: '5.6.0',
       svnRevision: 'SVN-r406.0',
       zeroExternalModelCalls: true,
-      packagedSovereignModels: [
+      modelProfiles: [
         'panini-omni-flash-v56 (Panini-Omni-Flash-1.1-Sovereign)',
         'panini-lyria-3-pro-v56 (Panini-Lyria-3-Pro-Sovereign)',
         'panini-omega-2t-master (Panini-Omega-2.0T-Sovereign-Master)',
         'panini-400b-flagship (Panini-400B-MoE-Flagship)',
       ],
+      inferenceRuntime: {
+        available: false,
+        weightsLoaded: false,
+        mode: 'deterministic-local-rules',
+      },
       hardwareExecutionPolicies: {
         desktop_laptop_onprem: 'on_prem_full_synthesis_and_stitching',
         mobile_edge: 'mobile_internet_stitch_only',
@@ -202,13 +203,13 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
           const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/\s+/g, '_'))}`;
           if (!results.some((r) => r.doiOrUrl === url)) {
             results.push({
-              title: `${item.title} — Live Encyclopedia & Empirical Reference`,
+              title: `${item.title} — Wikipedia`,
               authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
               publicationOrSource: 'Wikipedia Live Knowledge Graph',
               year: 0,
               url,
               doiOrUrl: url,
-              snippet: cleanSnippet || `Wikipedia search result: ${item.title}.`,
+              snippet: cleanSnippet || 'No excerpt was provided by the Wikipedia search API.',
               sourceEngine: 'Wikipedia Live REST Engine',
             });
           }
@@ -254,7 +255,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             year: w.publication_year || 0,
             url: workUrl,
             doiOrUrl: workUrl,
-            snippet: w.display_name,
+            snippet: `OpenAlex record for "${cleanQ}". ${w.display_name}; ${authors}; ${w.publication_year || 'publication year not listed'}.`,
             sourceEngine: 'OpenAlex Scholarly Index',
           });
         }
@@ -265,7 +266,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
 
     try {
       const crossrefRes = await fetch(
-        `https://api.crossref.org/works?query.bibliographic=${encoded}&rows=3&select=title,author,published,URL,DOI,abstract`,
+        `https://api.crossref.org/works?query.bibliographic=${encoded}&rows=4&select=title,author,published,URL,DOI,abstract,container-title`,
         {
           signal: AbortSignal.timeout(2800),
           headers: { 'User-Agent': 'PaniniOpenLLMStudio/1.0' },
@@ -281,45 +282,69 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               URL?: string;
               DOI?: string;
               abstract?: string;
+              'container-title'?: string[];
             }>;
           };
         };
         for (const work of crossrefJson.message?.items || []) {
           const title = work.title?.[0]?.trim();
-          const url = work.URL || (work.DOI ? `https://doi.org/${work.DOI}` : '');
-          if (!title || !url) continue;
+          const url = work.DOI
+            ? `https://doi.org/${work.DOI}`
+            : work.URL?.startsWith('https://')
+            ? work.URL
+            : '';
+          if (!title || !url || results.some((result) => result.url === url)) continue;
           const authors =
             work.author
               ?.slice(0, 3)
               .map((author) => [author.given, author.family].filter(Boolean).join(' '))
               .filter(Boolean)
-              .join(', ') || 'Crossref-indexed authors';
-          const snippet = (work.abstract || `Crossref record for "${title}".`)
-            .replace(/<[^>]+>/g, ' ')
+              .join(', ') || 'Author not listed';
+          const publicationDate =
+            work.published?.['date-parts']?.[0]?.[0] || 0;
+          const abstract = work.abstract
+            ?.replace(/<[^>]+>/g, ' ')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
             .replace(/\s+/g, ' ')
             .trim();
           results.push({
             title,
             authorsOrInstitution: authors,
-            publicationOrSource: 'Crossref Works API',
-            year: work.published?.['date-parts']?.[0]?.[0] || 0,
+            publicationOrSource: work['container-title']?.[0] || 'Crossref record',
+            year: publicationDate,
             url,
             doiOrUrl: url,
-            snippet,
+            snippet: abstract || 'No abstract was provided in the Crossref record.',
             sourceEngine: 'Crossref Works API',
           });
         }
       }
     } catch {
-      // Other live providers may still return usable results.
+      // Results from other live providers remain available.
     }
 
-    const uniqueResults = new Map<string, (typeof results)[number]>();
+    const sourcesByProvider = new Map<string, typeof results>();
     for (const result of results) {
-      const key = result.url.toLowerCase();
-      if (key && !uniqueResults.has(key)) uniqueResults.set(key, result);
+      const providerResults = sourcesByProvider.get(result.sourceEngine) || [];
+      providerResults.push(result);
+      sourcesByProvider.set(result.sourceEngine, providerResults);
     }
-    return Array.from(uniqueResults.values()).slice(0, maxResults);
+    const balancedResults: typeof results = [];
+    while (balancedResults.length < maxResults) {
+      let addedResult = false;
+      for (const providerResults of sourcesByProvider.values()) {
+        const nextResult = providerResults.shift();
+        if (nextResult) {
+          balancedResults.push(nextResult);
+          addedResult = true;
+          if (balancedResults.length === maxResults) break;
+        }
+      }
+      if (!addedResult) break;
+    }
+    return balancedResults;
   }
 
   // Backend endpoint: Deep Research Crawler Engine (fetches real internet data in Online mode and honors custom stages)
@@ -332,11 +357,12 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
           ? req.body.steps
           : generateDeepResearchPlan(rawTopic);
 
-      const baseReferences = crawlWebForDeepResearch(rawTopic, steps);
+      const baseReferences: BibliographyReference[] = [];
       const liveStageSnippets: Record<string, string> = {};
 
       if (isOnline) {
         const liveMainSources = await fetchLiveInternetSources(rawTopic, 4);
+        const liveStageReferences: (typeof baseReferences)[number][] = [];
         liveMainSources.forEach((src, idx) => {
           baseReferences[idx] = {
             refNumber: idx + 1,
@@ -358,9 +384,22 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             if (stageSources[0]) {
               const key = st.id || `step-${idx + 1}`;
               liveStageSnippets[key] = `${stageSources[0].snippet} (Live Source: ${stageSources[0].title} — ${stageSources[0].doiOrUrl})`;
+              if (!baseReferences.some((reference) => reference.doiOrUrl === stageSources[0].doiOrUrl)) {
+                liveStageReferences[idx] = {
+                  refNumber: 0,
+                  title: stageSources[0].title,
+                  authorsOrInstitution: stageSources[0].authorsOrInstitution,
+                  publicationOrSource: stageSources[0].publicationOrSource,
+                  year: stageSources[0].year,
+                  doiOrUrl: stageSources[0].doiOrUrl,
+                  crawlerEngine: stageSources[0].sourceEngine,
+                  relevanceSummary: stageSources[0].snippet,
+                };
+              }
             }
           })
         );
+        baseReferences.push(...liveStageReferences.filter(Boolean));
       }
 
       // Re-number references cleanly
@@ -372,8 +411,13 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       res.json({
         ok: true,
         topic: rawTopic,
-        isOnlineInternetFetched:
-          isOnline && (baseReferences.length > 0 || Object.keys(liveStageSnippets).length > 0),
+        isOnlineInternetFetched: isOnline && numberedRefs.length > 0,
+        searchStatus:
+          !isOnline
+            ? 'offline'
+            : numberedRefs.length > 0
+            ? 'live_sources_retrieved'
+            : 'no_live_sources',
         stagesValidated: steps.length,
         references: numberedRefs,
         liveStageSnippets,
@@ -427,44 +471,6 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         processedBy: 'Panini-400B-Backend-NLP-Translator-v5.0',
         autoCorrect,
         useCase,
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
-  });
-
-  // Backend endpoint: Full query analysis (Auto-Correct + Clarifying Questions + NLP-to-UseCase + Dynamic Search Model)
-  app.post('/api/nlp/analyze-query', (req, res) => {
-    try {
-      const {
-        query = '',
-        customCountOffset = 1,
-        existingModels = INITIAL_MODELS,
-      }: {
-        query?: string;
-        customCountOffset?: number;
-        existingModels?: StoredModel[];
-      } = req.body || {};
-
-      const autoCorrect = autoCorrectUserQuery(String(query));
-      const effectiveQuery = autoCorrect.correctedQuery;
-      const clarification = evaluateQueryClarityAndClarifications(effectiveQuery);
-      const detectedDomain = detectQueryDomain(effectiveQuery);
-      const translatedUseCase = translateNlpToUseCase(effectiveQuery, Number(customCountOffset) || 1);
-      const dynamicModelResult = synthesizeDynamicModelFromSearch(
-        effectiveQuery,
-        detectedDomain,
-        Array.isArray(existingModels) ? existingModels : INITIAL_MODELS
-      );
-
-      res.json({
-        ok: true,
-        processedBy: 'Panini-400B-Backend-NLP-Engine',
-        autoCorrect,
-        clarification,
-        detectedDomain,
-        translatedUseCase,
-        dynamicModelResult,
       });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });

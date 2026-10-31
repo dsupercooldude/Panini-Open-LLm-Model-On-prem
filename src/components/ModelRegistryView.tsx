@@ -228,7 +228,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
     setCommitNotes(
       mode === 'clone'
         ? `Cloned from ${model.name} (${ver.versionTag}) with editable glass-box layers`
-        : `Updated quantization to ${ver.quantType} and tuned active layer pruning`
+        : `Updated profile metadata: ${ver.quantType} quantization and active-layer settings`
     );
     setFormError('');
   };
@@ -344,28 +344,35 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
   const subTabs: { id: RegistrySubTab; label: string; countBadge?: string }[] = [
     {
       id: 'models',
-      label: '1. Model Tiers & Glass-Box Config',
-      countBadge: `${compatibleModels.length} Active`,
+      label: '1. Demo Model Profiles',
+      countBadge: `${compatibleModels.length} Profiles`,
     },
     {
       id: 'use_cases',
-      label: '2. 10,000+ Use Cases & NLP Builder',
-      countBadge: `${(TOTAL_PRETRAINED_SCENARIOS + customScenarios.length).toLocaleString()}`,
+      label: '2. Scenario Templates & Builder',
+      countBadge: `${TOTAL_PRETRAINED_SCENARIOS.toLocaleString()} templates · ${customScenarios.length} local`,
     },
     {
       id: 'monitoring',
-      label: '3. Model Performance Monitoring',
-      countBadge: `${inspectedModel.accuracyBenchmarkPct}% Acc`,
+      label: '3. Profile Metrics (Unverified)',
+      countBadge: 'Metadata',
     },
     {
       id: 'versions',
-      label: '4. Version Ledger & Rollbacks',
-      countBadge: `${inspectedModel.versions.length} Commits`,
+      label: '4. Version Metadata',
+      countBadge: `${inspectedModel.versions.length} records`,
     },
   ];
 
   return (
     <div className="space-y-5">
+      <div
+        data-testid="model-runtime-disclosure"
+        className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-100"
+      >
+        No model weights or LLM inference runtime are installed. Registry values are demo profile
+        metadata and resource estimates, not runtime measurements.
+      </div>
       {/* ADMIN SUB-TABS UNDERNEATH FOR ORGANIZED REPRESENTATION */}
       <div
         role="tablist"
@@ -401,19 +408,18 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
         ))}
       </div>
 
-      {/* SUB-TAB 1: MODEL TIERS, HARDWARE SPECS, ON-DEMAND SUMMARIES & GLASS-BOX CONFIG */}
+      {/* SUB-TAB 1: DEMO MODEL PROFILES AND CONFIGURATION METADATA */}
       {activeSubTab === 'models' && (
         <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className={`text-base font-semibold ${headingText}`}>
-                Supported Parameter Tiers for {activeHardware.name} ({deploymentMode})
+                Demo Model Profiles for {activeHardware.name} ({deploymentMode})
               </h2>
               <p className={`text-xs ${mutedText}`}>
-                Models exceeding host RAM ({activeHardware.ramGb}GB), CPU ({activeHardware.cpuCores}{' '}
-                Cores), or Storage ({activeHardware.storageFreeGb}GB) in Air-Gapped mode are
-                automatically hidden. Click <strong>Summary</strong> on any model to view its
-                Explainable AI &amp; Use-Case summary.
+                No model weights or LLM inference runtime are installed. These entries are profile
+                metadata only; resource figures are estimates, and selecting a profile does not
+                load or run a model.
               </p>
             </div>
             <div className={`text-xs font-mono ${mutedText}`}>
@@ -444,7 +450,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                     <div className="flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
                       <span className="text-sky-400 font-semibold">{model.parameterBadge}</span>
                       {isRecommended && (
-                        <span className="text-emerald-400 font-semibold">[RECOMMENDED]</span>
+                        <span className="text-emerald-400 font-semibold">[PROFILE MATCH]</span>
                       )}
                     </div>
 
@@ -455,26 +461,26 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                       </p>
                     </div>
 
-                    {/* Explicit RAM, CPU & Storage Specs */}
+                    {/* Estimated profile resource requirements */}
                     <div
                       className={`p-2.5 rounded-lg border ${borderClass} ${subSurfaceClass} text-xs font-mono tabular-nums space-y-1`}
                     >
                       <div className="flex justify-between">
-                        <span className={mutedText}>Min RAM / Active:</span>
+                        <span className={mutedText}>Estimated RAM:</span>
                         <span className={headingText}>
-                          {model.minRamGb} GB Min ({footprint.totalRequiredRamGb} GB Active)
+                          {model.minRamGb} GB profile minimum ({footprint.totalRequiredRamGb} GB estimated)
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className={mutedText}>Min CPU / NPU:</span>
+                        <span className={mutedText}>CPU/NPU profile:</span>
                         <span className={headingText}>{model.minCpuCores}-Core CPU/NPU</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className={mutedText}>Min Storage Disk:</span>
+                        <span className={mutedText}>Estimated storage:</span>
                         <span className={headingText}>{model.minStorageGb} GB Free</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className={mutedText}>Deployments:</span>
+                        <span className={mutedText}>Target environments:</span>
                         <span className="text-sky-400">Cloud · On-Prem · Air-Gap</span>
                       </div>
                     </div>
@@ -485,7 +491,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                         className={`p-3 rounded-lg border border-sky-500/40 bg-sky-500/5 space-y-2 text-xs`}
                       >
                         <div className="font-semibold text-sky-400">
-                          Explainable AI (XAI) Model Summary:
+                          Demo profile description:
                         </div>
                         <p className={`${headingText} text-[11px] leading-relaxed`}>
                           {model.xaiArchitectureSummary}
@@ -515,7 +521,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                           : 'bg-sky-500 text-slate-950 hover:bg-sky-400'
                       }`}
                     >
-                      {isSelectedRuntime ? 'Active User Model' : 'Set as Active'}
+                      {isSelectedRuntime ? 'Selected Demo Profile' : 'Select Demo Profile'}
                     </button>
 
                     <button
@@ -687,7 +693,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
 
                 <div>
                   <label htmlFor="lora-rank-input" className={`block text-xs ${mutedText} mb-1`}>
-                    Self-Learning QLoRA Rank (r)
+                    Profile Adapter-Rank Metadata (not loaded)
                   </label>
                   <select
                     id="lora-rank-input"
@@ -751,7 +757,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
         </div>
       )}
 
-      {/* SUB-TAB 2: 10,000+ USE CASES CATALOG, VERIFICATION & CLONE-AND-EDIT BUILDER */}
+      {/* SUB-TAB 2: GENERATED SCENARIO TEMPLATES AND LOCAL SCENARIO BUILDER */}
       {activeSubTab === 'use_cases' && (
         <div className="space-y-5">
           {/* Admin NLP-to-Use-Case Verification & Translation Builder */}
@@ -765,8 +771,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                   </span>
                 </h2>
                 <p className={`text-xs ${mutedText} mt-0.5`}>
-                  Adding any new use case first verifies whether an existing scenario in the
-                  10,000+ catalog already fulfills your needs. If a close match exists, you can{' '}
+                  Adding a scenario first checks deterministic built-in template variants and
+                  saved local scenarios for a close match. You can{' '}
                   <strong>Clone &amp; Edit</strong> that close match or register a new use case.
                 </p>
               </div>
@@ -799,12 +805,12 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 className={`p-4 rounded-xl border border-sky-500/40 bg-sky-500/5 text-xs space-y-2.5`}
               >
                 <div className="font-semibold text-sky-400">
-                  10,000+ Pretrained &amp; Custom Panini Use-Case Matrix Summary:
+                  Scenario Catalog Summary:
                 </div>
                 <p className={headingText}>
-                  Panini indexes {TOTAL_PRETRAINED_SCENARIOS.toLocaleString()} deterministic
-                  pretrained scenarios plus {customScenarios.length} custom/cloned NLP scenarios
-                  across 9 core domains (Science, Mathematics, Geology, History, Literature,
+                  The catalog generates {TOTAL_PRETRAINED_SCENARIOS.toLocaleString()} deterministic
+                  scenario-template variants (not pretrained model data) plus {customScenarios.length}
+                  saved local scenarios across 9 core domains (Science, Mathematics, Geology, History, Literature,
                   Computer Programming, Cybersecurity, Sacred &amp; Religious Studies, and
                   Astrology).
                 </p>
@@ -815,7 +821,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                       className={`p-2 rounded border ${borderClass} ${subSurfaceClass}`}
                     >
                       <div className={`font-semibold ${headingText} truncate`}>{dom}</div>
-                      <div className="text-sky-400">1,111+ Scenarios</div>
+                      <div className="text-sky-400">1,111+ template variants</div>
                     </div>
                   ))}
                 </div>
@@ -1113,20 +1119,20 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
             )}
           </div>
 
-          {/* Searchable & Multi-Parameter Filterable 10,000+ Use-Case Explorer */}
+          {/* Searchable deterministic template and local scenario explorer */}
           <div className={`border ${borderClass} ${surfaceClass} rounded-xl p-5 space-y-4`}>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
                 <h3 className={`text-sm font-semibold ${headingText} flex items-center gap-2`}>
                   <Filter className="w-4 h-4 text-sky-400" />
                   <span>
-                    Searchable Use-Case Catalog ({scenarioQueryResult.totalMatched.toLocaleString()}{' '}
-                    Matched · {customScenarios.length} Custom / Cloned)
+                    Scenario Templates &amp; Local Scenarios ({scenarioQueryResult.totalMatched.toLocaleString()}{' '}
+                    Matched · {customScenarios.length} Saved / Cloned)
                   </span>
                 </h3>
                 <p className={`text-xs ${mutedText}`}>
-                  Filter use cases by free-text query, domain category, quantization format, or
-                  origin source. Click <strong>Clone &amp; Edit</strong> on any scenario to
+                  Search template variants and saved scenarios by text, domain, quantization, or
+                  source. Click <strong>Clone &amp; Edit</strong> on any result to
                   customize a close match.
                 </p>
               </div>
@@ -1195,8 +1201,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 }}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
               >
-                <option value="All">Source: All (Pretrained + Custom)</option>
-                <option value="Pretrained">Source: Pretrained 10k Matrix</option>
+                <option value="All">Source: All (Built-in + Local)</option>
+                <option value="Pretrained">Source: Built-in Catalog</option>
                 <option value="Custom">Source: Custom / Cloned NLP</option>
               </select>
             </div>
@@ -1319,11 +1325,11 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
             <div>
               <h2 className={`text-base font-semibold ${headingText} flex items-center gap-2`}>
                 <Activity className="w-4 h-4 text-sky-400" />
-                <span>Admin Model Performance Monitoring &amp; Deployment Topology</span>
+                <span>Profile Metadata &amp; Estimated Resource Topology</span>
               </h2>
               <p className={`text-xs ${mutedText} mt-0.5`}>
-                Real-time monitoring of model accuracy, token latency, XAI attribution confidence,
-                and execution topology across Cloud, On-Premises, and Air-Gapped nodes.
+                These are illustrative profile fields and calculated resource estimates; no model is
+                executing and no runtime telemetry is collected.
               </p>
             </div>
 
@@ -1347,58 +1353,58 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono tabular-nums">
             <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>Reasoning Accuracy</div>
+              <div className={`text-[11px] ${mutedText}`}>Accuracy Profile Field</div>
               <div className="text-base font-semibold text-emerald-400 mt-0.5">
                 {inspectedModel.accuracyBenchmarkPct}%
               </div>
-              <div className={`text-[11px] ${mutedText}`}>MMLU-Pro / Math-4</div>
+              <div className={`text-[11px] ${mutedText}`}>Unverified metadata</div>
             </div>
 
             <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>Token Throughput</div>
+              <div className={`text-[11px] ${mutedText}`}>Throughput Estimate</div>
               <div className={`text-base font-semibold ${headingText} mt-0.5`}>
                 {telemetry.estimatedTokensPerSec} tok/s
               </div>
               <div className={`text-[11px] ${mutedText}`}>
-                P50 Latency: {inspectedModel.avgLatencyMs}ms
+                Profile latency field: {inspectedModel.avgLatencyMs}ms
               </div>
             </div>
 
             <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>XAI Confidence</div>
+              <div className={`text-[11px] ${mutedText}`}>Confidence Profile Field</div>
               <div className="text-base font-semibold text-sky-400 mt-0.5">
                 {inspectedModel.accuracyBenchmarkPct}%
               </div>
-              <div className={`text-[11px] ${mutedText}`}>Causal Gate Verified</div>
+              <div className={`text-[11px] ${mutedText}`}>Unverified metadata</div>
             </div>
 
             <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>Dynamic Learning</div>
+              <div className={`text-[11px] ${mutedText}`}>Online Search Mode</div>
               <div className={`text-base font-semibold ${headingText} mt-0.5`}>
-                {isOnlineLearning ? 'Web + QLoRA' : 'Air-Gapped QLoRA'}
+                {isOnlineLearning ? 'Online source lookup' : 'Offline templates'}
               </div>
               <div className={`text-[11px] ${mutedText}`}>
-                +{inspectedModel.selfLearningSamplesCount} Local Commits
-              </div>
-            </div>
-
-            <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>Indexed Use Cases</div>
-              <div className={`text-base font-semibold ${headingText} mt-0.5`}>
-                {(TOTAL_PRETRAINED_SCENARIOS + customScenarios.length).toLocaleString()}
-              </div>
-              <div className={`text-[11px] ${mutedText}`}>
-                +{customScenarios.length} Custom / Search
+                No model training or weight updates
               </div>
             </div>
 
             <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
-              <div className={`text-[11px] ${mutedText}`}>Supported Models</div>
+              <div className={`text-[11px] ${mutedText}`}>Generated Template Variants</div>
               <div className={`text-base font-semibold ${headingText} mt-0.5`}>
-                {compatibleModels.length} / {models.length} Tiers
+                {TOTAL_PRETRAINED_SCENARIOS.toLocaleString()}
               </div>
               <div className={`text-[11px] ${mutedText}`}>
-                {hiddenModelsCount > 0 ? `${hiddenModelsCount} Hidden (HW Limit)` : 'All Tiers Fit'}
+                {customScenarios.length} saved local scenarios
+              </div>
+            </div>
+
+            <div className={`p-3 rounded-lg border ${borderClass} ${subSurfaceClass}`}>
+              <div className={`text-[11px] ${mutedText}`}>Compatible Profiles</div>
+              <div className={`text-base font-semibold ${headingText} mt-0.5`}>
+                {compatibleModels.length} / {models.length} profiles
+              </div>
+              <div className={`text-[11px] ${mutedText}`}>
+                {hiddenModelsCount > 0 ? `${hiddenModelsCount} excluded by estimates` : 'All profiles included'}
               </div>
             </div>
           </div>
@@ -1409,10 +1415,10 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 <tr className={`border-b ${borderClass} ${mutedText}`}>
                   <th className="py-2 pr-3">Model Name</th>
                   <th className="py-2 px-3">Parameter Tier</th>
-                  <th className="py-2 px-3">Accuracy</th>
-                  <th className="py-2 px-3">Avg Latency</th>
-                  <th className="py-2 px-3">Min RAM / CPU / Disk</th>
-                  <th className="py-2 pl-3">Self-Learning Commits</th>
+                  <th className="py-2 px-3">Accuracy Metadata</th>
+                  <th className="py-2 px-3">Latency Metadata</th>
+                  <th className="py-2 px-3">Estimated RAM / CPU / Disk</th>
+                  <th className="py-2 pl-3">Version Records</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -1422,7 +1428,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                       {model.name}{' '}
                       {isRecommended && (
                         <span className="text-emerald-400 font-mono text-[10px]">
-                          [RECOMMENDED]
+                          [PROFILE MATCH]
                         </span>
                       )}
                     </td>
@@ -1433,7 +1439,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                       {model.minRamGb}GB / {model.minCpuCores}C / {model.minStorageGb}GB
                     </td>
                     <td className={`py-2.5 pl-3 ${headingText}`}>
-                      +{model.selfLearningSamplesCount} QLoRA samples
+                      {model.versions.length} version records
                     </td>
                   </tr>
                 ))}
@@ -1564,7 +1570,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 experts
               </strong>{' '}
               with a <strong>{currentVersion.contextLength.toLocaleString()}-token</strong> KV
-              context window and <strong>QLoRA rank r={currentVersion.loraRank}</strong>.
+              context window and <strong>profile adapter-rank metadata r={currentVersion.loraRank}</strong>.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
@@ -1581,12 +1587,11 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
               </div>
               <div className={`p-3 rounded-lg border ${borderClass} ${surfaceClass} space-y-1`}>
                 <div className="font-semibold text-emerald-400">
-                  2. Use-Case &amp; Self-Learning Coverage
+                  2. Scenario Catalog Coverage
                 </div>
                 <p className={mutedText}>
-                  Covers all 10,000+ pretrained scenarios plus {customScenarios.length} custom/cloned
-                  scenarios and +{inspectedModel.selfLearningSamplesCount} continual QLoRA
-                  fine-tuning samples extracted from Deep Research crawls.
+                  Includes built-in scenario entries plus {customScenarios.length} custom or cloned
+                  local scenarios. Adding a scenario does not change model weights.
                 </p>
               </div>
               <div className={`p-3 rounded-lg border ${borderClass} ${surfaceClass} space-y-1`}>

@@ -30,7 +30,6 @@ import {
   autoCorrectUserQuery,
   evaluateQueryClarityAndClarifications,
   translateNlpToUseCase,
-  synthesizeDynamicModelFromSearch,
   summarizeUploadedAttachment,
   analyzeNlpVisualPrompt,
   calculateVideoTimingSchedule,
@@ -43,9 +42,9 @@ import {
   ThreadContextMemory,
   detectAmbiguousQueryContext,
   generateDeepResearchPlan,
+  buildRetrievedSearchStream,
   executeContinualLearningHarvest,
   ContinualLearningHarvestResult,
-  applyPromptScenarioToModelLearning,
 } from './utils/engineLogic';
 import {
   VideoAspectRatio,
@@ -160,20 +159,18 @@ export default function App() {
   // Sub-Domain Expert Selection ('auto' or specific SubDomainExpert.id)
   const [selectedExpertId, setSelectedExpertId] = useState<string>('auto');
 
-  // Continuous Wikipedia & Web Self-Learning Memory Store (Updates Pretrained Models)
+  // Locally cached source records from explicit online research.
   const [learnedEntities, setLearnedEntities] = useState<LearnedEntityKnowledge[]>([]);
 
   // Persistent Online / Offline Switch for Multi-Engine Search Stream
   const [isOnlineLearning, setIsOnlineLearning] = useState<boolean>(false);
 
-  // Admin Console Resource & Permission Policy (Controls Voice Duplex, Multilingual, Extended Compute, Clarification Gate & Maturity Sync)
+  // Admin Console Resource & Permission Policy
   const [adminPermissions, setAdminPermissions] = useState<AdminResourcePermissionPolicy>({
     enableOffTheHookVoice: true,
     enableMultilingual: true,
     enableQualityMultiPass: true,
     enableStrictClarificationGate: true,
-    enableScheduledInternetSync: true,
-    maturityUpdateCadence: 'daily',
   });
 
   // Chat Threads & Reference ID Counter (By default NO query or output unless asked)
@@ -188,10 +185,7 @@ export default function App() {
     'Mathematics',
     'Geology',
   ]);
-  const [recentQueries, setRecentQueries] = useState<string[]>([
-    'Quantum-thermodynamic coherence in cryogenic optical resonators',
-    'Zero-allocation cache-line aligned lock-free SPSC ring buffer in Rust',
-  ]);
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const [mediaGallery, setMediaGallery] = useState<GeneratedMediaItem[]>(INITIAL_MEDIA_GALLERY);
 
   const appendMessagesToThread = (
@@ -204,19 +198,6 @@ export default function App() {
     if (promptForLearning.length > 4) {
       setRecentQueries((prev) =>
         [promptForLearning, ...prev.filter((q) => q !== promptForLearning)].slice(0, 25)
-      );
-      setModels((prev) =>
-        prev.map((m) =>
-          m.id === activeModel.id
-            ? applyPromptScenarioToModelLearning(
-                m,
-                promptForLearning,
-                'Live Prompt Execution',
-                activeProfile.name,
-                1
-              ).updatedModel
-            : m
-        )
       );
     }
 
@@ -486,8 +467,8 @@ export default function App() {
       'INFO',
       'QuantEngine',
       nextState
-        ? 'Enabled Multi-Engine Online Search (4 Independent Search Engines · Zero 3rd-Party Online AI Models).'
-        : 'Switched to 100% Offline Air-Gapped Local Panini Execution Mode.'
+        ? 'Enabled online search indexes (Wikipedia, OpenAlex, and Crossref; no external AI model calls).'
+        : 'Disabled external search; responses use deterministic local rules.'
     );
   };
 
@@ -550,7 +531,7 @@ export default function App() {
   };
 
   /**
-   * Unified Ask & Math Chat Handler (Supports Live Internet Grounding + Automatic Wikipedia Entity Learning & Pretrained Model Updating)
+   * Unified chat handler with explicit live-source grounding and local source caching.
    */
   const handleSendMessage = async (
     rawPrompt: string,
@@ -576,17 +557,6 @@ export default function App() {
     const targetVer =
       targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
       targetModel.versions[0];
-
-    fetch('/api/nlp/analyze-query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: rawPrompt,
-        customCountOffset: customScenarios.length + 1,
-      }),
-    }).catch(() => {
-      // Air-gapped local resilience
-    });
 
     if (attachment) {
       const attResult = summarizeUploadedAttachment(
@@ -653,31 +623,16 @@ export default function App() {
           options: ambiguityCheck.options,
         },
         glassBox: {
-          quantizationUsed: targetVer.quantType,
-          activeParametersBillions: targetModel.activeParamsBillions,
-          totalParametersBillions: targetModel.totalParamsBillions,
-          routedExpertIds: ['Exp-Polysemy-Gate', 'Exp-Context-Memory'],
-          attentionEntropy: 1.18,
-          kvCacheCompressionRatio: '2.4x (FP8 KV)',
-          tokenGenerationMs: 12,
-          selfLearningAdapterApplied: true,
-          adapterRankDelta: 'Multi-Context Sense Disambiguation Gate',
           explainableAi: {
-            confidenceScorePct: 99.7,
-            eli12Explanation: `Because "${ambiguityCheck.entityName}" can mean very different things (like the ancient Sanskrit sage Maharshi Panini, a grilled Italian cheese panini sandwich, or this Panini 400B AI model!), we're asking you to pick the exact meaning first so the whole conversation stays on the right track!`,
+            eli12Explanation: `The local rule-based entity matcher found multiple meanings for "${ambiguityCheck.entityName}", so it asks you to choose before continuing. No model inference was run.`,
             decisionPathway: [
-              `1. Detected polysemous entity "${ambiguityCheck.entityName}" without disambiguating context modifiers.`,
-              `2. Paused blind synthesis and surfaced ${ambiguityCheck.options.length} distinct domain meanings.`,
-              `3. Ready to lock the selected sense into Multi-Context Thread Memory for all follow-up turns.`,
+              `1. Local text rules found multiple possible meanings for "${ambiguityCheck.entityName}".`,
+              `2. Paused synthesis and presented ${ambiguityCheck.options.length} choices.`,
+              '3. Waiting for the user to select a meaning before continuing.',
             ],
-            keyFeatureAttributions: [
-              { feature: 'Polysemous Entity Sense Detector', weightPct: 64 },
-              { feature: 'Multi-Turn Thread Memory Graph', weightPct: 36 },
-            ],
-            safetyAndBiasCheck: 'Verified proactive context disambiguation.',
-            knowledgeSourceMode: isOnlineLearning
-              ? 'Hybrid Local + Dynamic Web Learning'
-              : 'Air-Gapped Local Weights',
+            keyFeatureAttributions: [],
+            safetyAndBiasCheck: 'Rule-based ambiguity check; no model inference or source lookup was performed.',
+            knowledgeSourceMode: 'Local deterministic entity-matching rules; no model weights loaded',
           },
         },
         selfLearningCommitted: false,
@@ -730,34 +685,19 @@ export default function App() {
         content: clarificationBody,
         clarificationOptions: clarification.suggestedRefinements,
         glassBox: {
-          quantizationUsed: targetVer.quantType,
-          activeParametersBillions: targetModel.activeParamsBillions,
-          totalParametersBillions: targetModel.totalParamsBillions,
-          routedExpertIds: ['Exp-Intent-01', 'Exp-Dialog-04'],
-          attentionEntropy: 1.21,
-          kvCacheCompressionRatio: '2.4x (FP8 KV)',
-          tokenGenerationMs: 14,
-          selfLearningAdapterApplied: true,
-          adapterRankDelta: 'Interactive Clarification Gate',
           explainableAi: {
-            confidenceScorePct: 99.4,
-            eli12Explanation: `Your question was a little short, so Panini is asking a quick follow-up question to make sure it gives you the exact right answer — whether you want a science explanation, a math proof, or computer code!`,
+            eli12Explanation: 'Local intent rules found that the prompt needs more detail, so the app is asking a follow-up before proceeding. No model inference was run.',
             decisionPathway: [
-              '1. Detected underspecified or open-ended user query intent.',
-              '2. Formulated targeted domain & capability clarifying questions.',
-              '3. Generated 1-click specialized Panini use-case refinement prompts.',
+              '1. Local text rules classified the prompt as underspecified.',
+              '2. Prepared follow-up choices to clarify the requested task.',
+              '3. Waiting for the user to choose a refinement.',
             ],
-            keyFeatureAttributions: [
-              { feature: 'Ambiguity & Intent Classifier', weightPct: 68 },
-              { feature: '10k Use-Case Taxonomy Graph', weightPct: 32 },
-            ],
-            safetyAndBiasCheck: 'Verified helpful interactive disambiguation.',
-            knowledgeSourceMode: isOnlineLearning
-              ? 'Hybrid Local + Dynamic Web Learning'
-              : 'Air-Gapped Local Weights',
+            keyFeatureAttributions: [],
+            safetyAndBiasCheck: 'Rule-based clarification; no model inference or source lookup was performed.',
+            knowledgeSourceMode: 'Local deterministic prompt rules; no model weights loaded',
           },
         },
-        selfLearningCommitted: true,
+        selfLearningCommitted: false,
       };
 
       appendMessagesToThread([userMsg, assistantMsg], effectivePrompt);
@@ -768,83 +708,83 @@ export default function App() {
     const synthesisPrompt = resolvedOpt ? resolvedOpt.expandedPrompt : effectivePrompt;
 
     // Automatically fetch Wikipedia & online grounding for all user questions and encyclopedic/entity queries
-    const qLower = synthesisPrompt.toLowerCase();
-    const isQuestionOrEntityQuery =
-      isOnlineLearning ||
-      qLower.includes('?') ||
-      /\b(what|who|where|when|why|how|tell|explain|describe|define|history|biography|capital|meaning|solve|calculate|mahatma|gandhi)\b/.test(
-        qLower
-      );
-
     let liveOnlineSources: LiveOnlineSearchSource[] | undefined;
-    if (isQuestionOrEntityQuery) {
+    let liveSearchWarning: string | undefined;
+    if (isOnlineLearning) {
       try {
         const res = await fetch('/api/search/online', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: effectivePrompt }),
         });
-        if (!res.ok) {
-          throw new Error(`Live search returned HTTP ${res.status}`);
-        }
-        if (res.ok) {
-          const data = await res.json();
-          const rawSources = Array.isArray(data?.sources)
-            ? data.sources
-            : Array.isArray(data?.liveSources)
-            ? data.liveSources
-            : [];
-          if (rawSources.length > 0) {
-            liveOnlineSources = rawSources.map((s: Record<string, unknown>) => ({
-              title: String(s.title || ''),
-              snippet: String(s.snippet || ''),
-              url: String(s.url || s.doiOrUrl || 'https://en.wikipedia.org'),
-              publicationOrSource: String(
-                s.publicationOrSource || 'Wikipedia Live Knowledge Graph'
-              ),
-              year: Number(s.year || 0),
-              sourceEngine: String(
-                s.sourceEngine || s.publicationOrSource || 'Live Web Index'
-              ),
-            }));
-          }
-        }
-        // Also ingest online spatial/search grounding into Panini's local offline shard vault
-        const groundingRes = await fetch('/api/multimodal/grounding', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: effectivePrompt }),
-        });
-        if (!groundingRes.ok) {
-          appendLog(
-            'WARN',
-            'QuantEngine',
-            `Spatial grounding returned HTTP ${groundingRes.status}; continuing with retrieved search sources.`
+        const data = await res.json();
+        if (!res.ok || data?.ok === false) {
+          throw new Error(
+            typeof data?.error === 'string' ? data.error : `Online search failed (${res.status}).`
           );
         }
-        if (groundingRes.ok) {
-          const gData = await groundingRes.json();
-          if (gData?.mapsGrounding && gData?.searchGrounding) {
+        const rawSources = Array.isArray(data?.sources)
+          ? data.sources
+          : Array.isArray(data?.liveSources)
+          ? data.liveSources
+          : [];
+        liveOnlineSources = rawSources
+          .filter(
+            (source: Record<string, unknown>) =>
+              typeof (source.url || source.doiOrUrl) === 'string' &&
+              /^https:\/\//i.test(String(source.url || source.doiOrUrl))
+          )
+          .map((source: Record<string, unknown>) => ({
+            title: String(source.title || ''),
+            snippet: String(source.snippet || ''),
+            url: String(source.url || source.doiOrUrl),
+            publicationOrSource: String(source.publicationOrSource || 'Live search index'),
+            sourceEngine: String(source.sourceEngine || source.publicationOrSource || 'Live search index'),
+            year: Number(source.year || 0),
+          }));
+        if (liveOnlineSources?.length === 0) {
+          liveSearchWarning =
+            'No live sources were returned. This answer uses deterministic local templates, not source-verified research.';
+        }
+
+        try {
+          const groundingRes = await fetch('/api/multimodal/grounding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: effectivePrompt }),
+          });
+          if (!groundingRes.ok) {
+            throw new Error(`Spatial grounding failed (${groundingRes.status}).`);
+          }
+          const groundingData = await groundingRes.json();
+          if (groundingData?.mapsGrounding && groundingData?.searchGrounding) {
             savePaniniKnowledgeShard(synthesisPrompt, {
               syncedFromOnline: true,
               cachedWikipediaSources: liveOnlineSources,
               mapsGrounding: {
-                ...gData.mapsGrounding,
+                ...groundingData.mapsGrounding,
                 modelUsed: 'Panini-Spatial-Atlas',
               },
               searchGrounding: {
-                ...gData.searchGrounding,
+                ...groundingData.searchGrounding,
                 modelUsed: 'Panini-Verified-Index',
               },
             });
           }
+        } catch (error) {
+          liveSearchWarning = [
+            liveSearchWarning,
+            `Spatial grounding was unavailable: ${
+              error instanceof Error ? error.message : 'request failed'
+            }`,
+          ]
+            .filter(Boolean)
+            .join(' ');
         }
       } catch (error) {
-        appendLog(
-          'WARN',
-          'QuantEngine',
-          `Live search unavailable; continuing with local synthesis. ${String(error)}`
-        );
+        liveSearchWarning = `${
+          error instanceof Error ? error.message : 'Online search request failed.'
+        } This answer uses deterministic local templates only.`;
       }
     }
 
@@ -856,7 +796,7 @@ export default function App() {
       explicitDomain || resolvedOpt?.domain,
       targetVer.quantType,
       targetModel.selfLearningSamplesCount,
-      isOnlineLearning || Boolean(liveOnlineSources && liveOnlineSources.length > 0),
+      Boolean(liveOnlineSources && liveOnlineSources.length > 0),
       liveOnlineSources,
       {
         explicitExpertId: activeExpertChoice,
@@ -876,45 +816,18 @@ export default function App() {
       prev.some((s) => s.id === newUseCase.id) ? prev : [newUseCase, ...prev]
     );
 
-    // If new knowledge was learned from Wikipedia or encyclopedic synthesis, update the pretrained model weights & learned entity memory
+    // Keep learned entities as local app memory; this demo does not update model weights.
     if (synthesis.learnedEntity) {
       const learned = synthesis.learnedEntity;
       setLearnedEntities((prev) => [
         learned,
         ...prev.filter((e) => e.topicKey.toLowerCase() !== learned.topicKey.toLowerCase()),
       ]);
-      setModels((prev) =>
-        prev.map((m) =>
-          m.id === targetModel.id
-            ? {
-                ...m,
-                selfLearningSamplesCount: m.selfLearningSamplesCount + 1,
-                versions: m.versions.map((v, idx) =>
-                  idx === 0
-                    ? {
-                        ...v,
-                        notes: `[Auto-Learned Wikipedia/Web Entity: "${learned.title}" -> Scenario ${learned.scenarioId}] ${v.notes}`,
-                      }
-                    : v
-                ),
-              }
-            : m
-        )
-      );
       appendLog(
         'INFO',
         'QuantEngine',
-        `Updated pretrained model ${targetModel.name} with learned Wikipedia/web knowledge for "${learned.title}" (Scenario ${learned.scenarioId}).`
+        `Stored "${learned.title}" in local app memory (Scenario ${learned.scenarioId}); model weights were not changed.`
       );
-    }
-
-    const dynModelRes = synthesizeDynamicModelFromSearch(
-      effectivePrompt,
-      synthesis.detectedDomain,
-      models
-    );
-    if (dynModelRes.createdNew) {
-      setModels((prev) => [...prev, dynModelRes.model]);
     }
 
     const userMsg: ChatMessage = {
@@ -941,7 +854,14 @@ export default function App() {
       simpleAnswerMarkdown: synthesis.simpleAnswerMarkdown,
       verifiedFacts: synthesis.verifiedFacts,
       mathStages: synthesis.mathStages,
-      multiEngineStream: synthesis.multiEngineStream,
+      multiEngineStream: isOnlineLearning
+        ? buildRetrievedSearchStream(
+            effectivePrompt,
+            liveOnlineSources || [],
+            (synthesis.matchedScenario || newUseCase).id
+          )
+        : undefined,
+      searchWarning: liveSearchWarning,
       glassBox: synthesis.glassBox,
       selectedExpert: synthesis.selectedExpert,
       alternativeExperts: synthesis.alternativeExperts,
@@ -952,8 +872,8 @@ export default function App() {
       followUpQuestions: synthesis.followUpQuestions,
       contextInheritedFrom: synthesis.contextInheritedFrom,
       synthesizedUseCase: newUseCase,
-      synthesizedModelName: dynModelRes.model.name,
-      selfLearningCommitted: Boolean(synthesis.learnedEntity),
+      synthesizedModelName: targetModel.name,
+      selfLearningCommitted: false,
       bioscienceAnalysis: synthesis.bioscienceAnalysis,
       musicTrack:
         synthesis.musicTrack ||
@@ -1085,15 +1005,6 @@ export default function App() {
     );
     setCustomScenarios((prev) => [newUseCase, ...prev]);
 
-    const dynModelRes = synthesizeDynamicModelFromSearch(
-      effectivePrompt,
-      'Computer Programming',
-      models
-    );
-    if (dynModelRes.createdNew) {
-      setModels((prev) => [...prev, dynModelRes.model]);
-    }
-
     const userMsg: ChatMessage = {
       id: `msg-code-u-${Date.now()}`,
       role: 'user',
@@ -1120,7 +1031,7 @@ export default function App() {
       codingResolution: codeSynth.codingResolution,
       glassBox: codeSynth.glassBox,
       synthesizedUseCase: newUseCase,
-      synthesizedModelName: dynModelRes.model.name,
+      synthesizedModelName: targetModel.name,
       selfLearningCommitted: false,
     };
 
@@ -1154,6 +1065,10 @@ export default function App() {
       setActiveModelId(modelValidation.selectedModel.id);
     }
     const targetModel = modelValidation.selectedModel;
+    const targetVer =
+      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
+      targetModel.versions[0];
+
     // 1. Check if the research topic is ambiguous (e.g., "Panini")
     const ambiguityCheck = explicitSenseOption
       ? { isAmbiguous: false, resolvedOption: explicitSenseOption }
@@ -1228,41 +1143,38 @@ export default function App() {
       id: `msg-dr-plan-u-${Date.now()}`,
       role: 'user',
       authorName: activeProfile.name,
-      timestamp: '08:34 UTC',
+      timestamp: new Date().toLocaleTimeString(),
       domain: nextCtx.activeDomain || 'Science',
       content: `Deep Research: ${resolvedOpt ? resolvedOpt.label : effectiveTopic}`,
       autoCorrectedFrom: autoCorrect.wasCorrected ? topic : undefined,
     };
 
-    const planMsgId = `msg-dr-plan-a-${Date.now() + 1}`;
     const assistantPlanMsg: ChatMessage = {
-      id: planMsgId,
+      id: `msg-dr-plan-a-${Date.now() + 1}`,
       role: 'assistant',
-      authorName: `${targetModel.name} (Deep Research Plan · ${
-        isOnlineLearning ? 'Live Internet Grounded' : 'Offline Shards'
-      })`,
-      timestamp: '08:34 UTC',
+      authorName: `${targetModel.name} profile · Research plan draft`,
+      timestamp: new Date().toLocaleTimeString(),
       domain: nextCtx.activeDomain || 'Science',
       subDomain: nextCtx.activeSubDomain,
-      content: `### Research plan ready: ${resolvedTopic}\n\nReview the proposed stages below. No search has run and no report has been generated yet. Approve the plan to execute it.`,
-      simpleAnswerMarkdown: `Review the proposed stages for **${resolvedTopic}** below. Approve the plan to run research.`,
+      content: `### Research plan draft: ${resolvedTopic}\n\nReview the proposed stages below. No search has run yet and no model was trained. Expand **Show more** to review stage details, then approve to retrieve sources and build a structured synthesis.\n\n${proposedSteps
+        .map((step, index) => `${index + 1}. **${step.title}** — ${step.objective}`)
+        .join('\n\n')}`,
       pendingResearchPlan: {
         topic: resolvedTopic,
         resolvedSenseLabel: resolvedOpt?.label || nextCtx.resolvedSenseLabel,
-        detectedDomain: nextCtx.activeDomain,
         steps: proposedSteps,
         status: 'awaiting_approval',
       },
       verifiedFacts: [
         modelValidation.validationReason,
-        'Plan drafted only; research and online searches have not started.',
+        'This is a deterministic research plan proposal; no sources were retrieved and no model was trained.',
       ],
       selfLearningCommitted: false,
     };
 
     appendMessagesToThread(
       [userMsg, assistantPlanMsg],
-      `Deep Research: ${effectiveTopic}`,
+      `Research plan: ${effectiveTopic}`,
       nextCtx
     );
   };
@@ -1284,17 +1196,9 @@ export default function App() {
       activeModel
     );
     const targetModel = modelValidation.selectedModel;
-    if (modelValidation.autoSwitched) {
-      setActiveModelId(targetModel.id);
-    }
     const targetVer =
       targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
       targetModel.versions[0];
-
-    const planMessage = chatHistory.find((message) => message.id === planMessageId);
-    if (planMessage?.pendingResearchPlan?.status !== 'awaiting_approval') {
-      return;
-    }
 
     // Mark plan card as 'executing'
     setChatHistory((prev) =>
@@ -1302,6 +1206,7 @@ export default function App() {
         m.id === planMessageId && m.pendingResearchPlan
           ? {
               ...m,
+              researchError: undefined,
               pendingResearchPlan: {
                 ...m.pendingResearchPlan,
                 steps: approvedSteps,
@@ -1313,34 +1218,53 @@ export default function App() {
     );
 
     let liveCrawledData: LiveCrawledResearchPayload | undefined;
-    try {
-      const res = await fetch('/api/research/crawl', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: approvedTopic,
-          steps: approvedSteps,
-          isOnline: isOnlineLearning,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`Research crawler returned HTTP ${res.status}`);
+    if (isOnlineLearning) {
+      try {
+        const res = await fetch('/api/research/crawl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: approvedTopic,
+            steps: approvedSteps,
+            isOnline: true,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data?.ok === false) {
+          throw new Error(
+            typeof data?.error === 'string' ? data.error : `Research search failed (${res.status}).`
+          );
+        }
+        liveCrawledData = {
+          references: Array.isArray(data?.references) ? data.references : [],
+          liveStageSnippets:
+            data?.liveStageSnippets && typeof data.liveStageSnippets === 'object'
+              ? data.liveStageSnippets
+              : {},
+          isOnlineInternetFetched: Boolean(data?.isOnlineInternetFetched),
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'The online research request failed.';
+        setChatHistory((prev) => {
+          const updated = prev.map((m) =>
+            m.id === planMessageId && m.pendingResearchPlan
+              ? {
+                  ...m,
+                  researchError: `${message} Switch to Offline mode or retry after checking connectivity.`,
+                  pendingResearchPlan: { ...m.pendingResearchPlan, status: 'failed' as const },
+                }
+              : m
+          );
+          setChatThreads((threads) =>
+            threads.map((thread) =>
+              thread.id === activeThreadId ? { ...thread, messages: updated } : thread
+            )
+          );
+          return updated;
+        });
+        return;
       }
-      const data = await res.json();
-      liveCrawledData = {
-        references: Array.isArray(data.references) ? data.references : [],
-        liveStageSnippets:
-          data.liveStageSnippets && typeof data.liveStageSnippets === 'object'
-            ? data.liveStageSnippets
-            : {},
-        isOnlineInternetFetched: Boolean(data.isOnlineInternetFetched),
-      };
-    } catch (error) {
-      appendLog(
-        'WARN',
-        'QuantEngine',
-        `Research sources unavailable; continuing with local synthesis. ${String(error)}`
-      );
     }
 
     const report = executeDeepResearchPlan(
@@ -1355,18 +1279,23 @@ export default function App() {
     const newUseCase = translateNlpToUseCase(approvedTopic, nextOffset);
     setCustomScenarios((prev) => [newUseCase, ...prev]);
 
+    const researchWarning =
+      isOnlineLearning && !liveCrawledData?.isOnlineInternetFetched
+        ? 'No live sources were returned. This output is a deterministic local outline, not source-verified research.'
+        : undefined;
+
     setChatHistory((prev) => {
       const updated = prev.map((m) =>
         m.id === planMessageId
           ? {
               ...m,
-              authorName: `${targetModel.name} (Executed ${approvedSteps.length}-Stage Deep Research · ${
-                isOnlineLearning ? 'Live Internet Grounded' : 'Offline Shards'
-              })`,
+              authorName: `${targetModel.name} profile · ${researchWarning ? 'No live sources' : isOnlineLearning ? 'Live sources retrieved' : 'Offline outline'}`,
               domain: report.detectedDomain,
               subDomain: report.detectedSubDomain,
               content: report.answerMarkdown,
               simpleAnswerMarkdown: report.simpleAnswerMarkdown,
+              researchWarning,
+              researchError: undefined,
               pendingResearchPlan: m.pendingResearchPlan
                 ? {
                     ...m.pendingResearchPlan,
@@ -1380,12 +1309,12 @@ export default function App() {
               matchedScenario: report.matchedScenario || newUseCase,
               verifiedFacts: [modelValidation.validationReason, ...report.verifiedFacts],
               bibliographyReferences: report.bibliographyReferences,
-              deepResearchTuning: report.deepResearchTuning,
+              deepResearchMetadata: report.deepResearchMetadata,
               multiEngineStream: isOnlineLearning ? report.multiEngineStream : undefined,
               followUpQuestions: report.followUpQuestions,
               glassBox: report.glassBox,
               synthesizedUseCase: newUseCase,
-              selfLearningCommitted: true,
+              selfLearningCommitted: false,
             }
           : m
       );
@@ -1633,35 +1562,21 @@ ${storyboardBullets}
         ...(liveWebContextNote ? [`Live Internet Visual Grounding: ${liveWebContextNote}`] : []),
       ],
       glassBox: {
-        quantizationUsed: targetVer.quantType,
-        activeParametersBillions: targetModel.activeParamsBillions,
-        totalParametersBillions: targetModel.totalParamsBillions,
-        routedExpertIds: ['Exp-Cinema-8K', 'Exp-Human-Rig', 'Exp-Ghibli-Art'],
-        attentionEntropy: 1.41,
-        kvCacheCompressionRatio: '2.4x (FP8 Latent KV)',
-        tokenGenerationMs: 22,
-        selfLearningAdapterApplied: true,
-        adapterRankDelta: '8K Prompt-Driven Human & Ghibli Cinema LoRA r=16',
         explainableAi: {
-          confidenceScorePct: 99.4,
-          eli12Explanation: `Panini validated your prompt ("**${cleanPrompt.slice(0, 60)}**"), automatically routed to **${targetModel.name}**, and synthesized every frame live from scratch (${visualNlp.validatedPromptEntities?.join(', ') || 'custom scene'})! Click **Video Settings** on the player anytime to change resolution, FPS, lighting, or camera lens and watch all parameters update live!`,
+          eli12Explanation: `The local procedural scene builder created a preview from the prompt "${cleanPrompt.slice(0, 60)}". It does not use loaded image/video model weights.`,
           decisionPathway: [
-            `1. ${modelValidation.validationReason}`,
-            `2. Validated prompt entities (${visualNlp.validatedPromptEntities?.join(', ') || cleanPrompt.slice(0, 40)}) -> Environment: ${visualNlp.sceneEnvironment}, Weather: ${visualNlp.weatherEffect}.`,
-            `3. Synthesized live ${qualityTier} (${resLabel}) procedural frames with ${schedule.recommendedInterFrameYieldMs}ms inter-frame yield.`,
+            `1. Applied local prompt-matching rules for ${visualNlp.validatedPromptEntities?.join(', ') || cleanPrompt.slice(0, 40)}.`,
+            `2. Selected the ${visualNlp.sceneEnvironment} scene template and ${visualNlp.weatherEffect} weather treatment.`,
+            `3. Generated a deterministic ${qualityTier} (${resLabel}) procedural preview.`,
           ],
-          keyFeatureAttributions: [
-            { feature: 'Live Prompt Entity & Physics Synthesizer', weightPct: 52 },
-            { feature: `${visualNlp.cinematographyOptics} & Volumetric Lighting`, weightPct: 32 },
-            { feature: 'Thermal-Aware Frame Pacer', weightPct: 16 },
-          ],
-          safetyAndBiasCheck: 'Live procedural DiT synthesis & data validation verified.',
-          knowledgeSourceMode: isOnlineLearning
-            ? 'Hybrid Local + Dynamic Web Learning'
-            : 'Air-Gapped Local Weights',
+          keyFeatureAttributions: [],
+          safetyAndBiasCheck: 'Procedural scene rules ran; no model inference or training was performed.',
+          knowledgeSourceMode: liveWebContextNote
+            ? 'Retrieved source records used as prompt context; no model weights loaded'
+            : 'Deterministic procedural scene builder; no model weights loaded',
         },
       },
-      selfLearningCommitted: true,
+      selfLearningCommitted: false,
     };
 
     appendMessagesToThread([userMsg, assistantMsg], `${qualityTier} ${modality}: ${cleanPrompt}`);
@@ -1746,32 +1661,6 @@ ${storyboardBullets}
       );
       return updated;
     });
-  };
-
-  const handleCommitSelfLearning = (messageId: string) => {
-    const targetMsg = chatHistory.find((m) => m.id === messageId);
-    setChatHistory((prev) => {
-      const updated = prev.map((m) =>
-        m.id === messageId ? { ...m, selfLearningCommitted: true } : m
-      );
-      setChatThreads((threads) =>
-        threads.map((t) => (t.id === activeThreadId ? { ...t, messages: updated } : t))
-      );
-      return updated;
-    });
-    setModels((prev) =>
-      prev.map((m) =>
-        m.id === activeModel.id
-          ? applyPromptScenarioToModelLearning(
-              m,
-              targetMsg?.content || 'Verified scenario telemetry commit',
-              'Scenario Telemetry',
-              activeProfile.name,
-              1
-            ).updatedModel
-          : m
-      )
-    );
   };
 
   const handleCloneModel = (
@@ -1930,9 +1819,6 @@ ${storyboardBullets}
         options?.clarificationConfirmed || !adminPermissions.enableStrictClarificationGate,
       recentUserQueries: recentQueries,
       existingScenarios: customScenarios,
-      existingLearnedEntities: learnedEntities,
-      cadence: adminPermissions.maturityUpdateCadence,
-      activeModel,
       actorName: activeProfile.name,
     });
 
@@ -1944,64 +1830,20 @@ ${storyboardBullets}
       const learnedScenario = harvestRes.newScenario;
       setCustomScenarios((prev) => [learnedScenario, ...prev]);
 
-      if (harvestRes.newLearnedEntity) {
-        const entity = harvestRes.newLearnedEntity;
-        setLearnedEntities((prev) => [entity, ...prev]);
-      }
-
-      setModels((prev) =>
-        prev.map((m) =>
-          m.id === activeModel.id
-            ? harvestRes.updatedModel ||
-              applyPromptScenarioToModelLearning(
-                m,
-                learnedScenario.starterPrompt,
-                'Admin Continual Learning Update',
-                activeProfile.name,
-                harvestRes.harvestedCount
-              ).updatedModel
-            : m
-        )
-      );
-
-      // Persist to local GGUF/BIN shard vault and optionally enrich from /api/search/online
+      // Persist the local scenario outline without presenting it as verified knowledge.
       savePaniniKnowledgeShard(learnedScenario.starterPrompt, {
-        syncedFromOnline: isOnlineLearning && adminPermissions.enableScheduledInternetSync,
-        cachedVerifiedFacts: [
-          `Registered ${learnedScenario.id} (${learnedScenario.sovereignEngineModule}): ${learnedScenario.title}`,
-          `Maturity Schedule: ${adminPermissions.maturityUpdateCadence.toUpperCase()}`,
-        ],
+        syncedFromOnline: false,
       });
-
-      if (isOnlineLearning && adminPermissions.enableScheduledInternetSync) {
-        fetch('/api/search/online', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: learnedScenario.starterPrompt }),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => {
-            if (Array.isArray(data?.sources) && data.sources.length > 0) {
-              savePaniniKnowledgeShard(learnedScenario.starterPrompt, {
-                syncedFromOnline: true,
-                cachedWikipediaSources: data.sources,
-              });
-            }
-          })
-          .catch(() => {
-            // Offline deterministic shard remains active
-          });
-      }
 
       appendCollab(
         'Scenario',
-        `Admin triggered Panini-Synapse-Distiller "Learn & Update Now" (${adminPermissions.maturityUpdateCadence} cadence) -> Registered ${learnedScenario.id} (${learnedScenario.sovereignEngineModule})`,
+        `Admin saved scenario ${learnedScenario.id} to the local workspace (${learnedScenario.sovereignEngineModule}); model weights were not changed.`,
         learnedScenario.id
       );
       appendLog(
         'INFO',
         'QuantEngine',
-        `Admin triggered Panini-Synapse-Distiller "Learn & Update Now": ${harvestRes.syncSummaryNotice}`
+        `Admin saved scenario ${learnedScenario.id}: ${harvestRes.syncSummaryNotice}`
       );
     }
 
@@ -2178,7 +2020,7 @@ ${storyboardBullets}
 
         <div className="flex items-center gap-2.5 shrink-0">
           <span className={`hidden md:inline text-[11px] font-mono ${mutedText}`}>
-            Model: <strong className={headingText}>{activeModel.name}</strong> ({currentVersion.quantType})
+            Demo profile: <strong className={headingText}>{activeModel.name}</strong> · {currentVersion.quantType} metadata
           </span>
           <button
             type="button"
@@ -2230,7 +2072,6 @@ ${storyboardBullets}
             onClearThreadContext={handleClearThreadContext}
             onGenerateMediaInChat={handleGenerateMediaInChat}
             onUpdateGeneratedMedia={handleUpdateGeneratedMedia}
-            onCommitSelfLearning={handleCommitSelfLearning}
             onOpenAdminConsole={handleOpenAdminConsoleFromGear}
             onOpenAdminInstallScripts={handleOpenAdminInstallScripts}
             contentSafetyMode={contentSafetyMode}
@@ -2335,10 +2176,13 @@ ${storyboardBullets}
                       OFFLINE_MODE={String(presetOfflineMode)}
                     </div>
                     <div className={`font-mono truncate ${mutedText}`} title={presetModelCacheDir}>
-                      CACHE={presetModelCacheDir}
+                      Configured model path: {presetModelCacheDir}
                     </div>
                     <div className={mutedText}>
-                      Indexed Scenarios: {(10000 + customScenarios.length).toLocaleString()}
+                      Generated template variants: 10,000
+                    </div>
+                    <div className={mutedText}>
+                      Saved local scenarios: {customScenarios.length}
                     </div>
                   </div>
                 )}
@@ -2362,23 +2206,14 @@ ${storyboardBullets}
 
             {/* Right Admin Console Main Content */}
             <div className="min-w-0 space-y-5">
-              {/* Top Admin Sovereign Quick-Access Bar (Learn & Update Now + Release Selector + Resource Permissions) */}
+              {/* Admin workspace quick-access bar */}
               <div
                 data-testid="admin-console-sovereign-banner"
                 className="rounded-xl border border-amber-500/40 bg-slate-900/90 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/30">
-                    v5.4 (SVN-r404.0) · Panini-Aether-3D + Chronos-2M + Polyglot-AST Active
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">
-                    Golden SVN-r500.0-LTS Train
-                  </span>
                   <span className="font-semibold text-white">
-                    Panini Sovereign Master Governance, Continual Learning &amp; Resource Permission Hub
-                  </span>
-                  <span className="text-[11px] font-mono text-cyan-300">
-                    · Cadence: {adminPermissions.maturityUpdateCadence.toUpperCase()}
+                    Local Scenario Workspace · Demo Model Profiles
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2391,7 +2226,7 @@ ${storyboardBullets}
                     }}
                     className="px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 font-mono text-[11px] font-bold hover:bg-cyan-400 transition"
                   >
-                    ⚡ Learn &amp; Update Now
+                    Add Scenario
                   </button>
                   <button
                     type="button"
@@ -2418,7 +2253,6 @@ ${storyboardBullets}
                   onUpdateAdminPermissions={handleUpdateAdminPermissions}
                   activeModel={activeModel}
                   customScenarios={customScenarios}
-                  learnedEntitiesCount={learnedEntities.length}
                   onTriggerAdminLearnUpdateNow={handleTriggerAdminLearnUpdateNow}
                 />
               )}

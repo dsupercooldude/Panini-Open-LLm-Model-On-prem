@@ -253,13 +253,6 @@ export interface UseCaseScenario {
   isCustom?: boolean;
   targetCapability?: ChatCapabilityMode;
   sovereignEngineModule?: string;
-  learnedSource?:
-    | 'User Prompt Telemetry'
-    | 'Scheduled Internet Sync'
-    | 'Sovereign Peer Distillation'
-    | 'Pretrained Baseline';
-  maturitySyncCadence?: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked';
-  learnedTimestamp?: string;
 }
 
 export interface ExplainableAiSummary {
@@ -267,21 +260,20 @@ export interface ExplainableAiSummary {
   decisionPathway: string[];
   keyFeatureAttributions: { feature: string; weightPct: number }[];
   safetyAndBiasCheck: string;
-  knowledgeSourceMode: 'Air-Gapped Local Weights' | 'Hybrid Local + Dynamic Web Learning';
+  knowledgeSourceMode: string;
   eli12Explanation?: string;
-  dynamicWebFactsLearned?: string[];
 }
 
 export interface GlassBoxTrace {
-  quantizationUsed: QuantizationType;
-  activeParametersBillions: number;
-  totalParametersBillions: number;
-  routedExpertIds: string[];
-  attentionEntropy: number;
-  kvCacheCompressionRatio: string;
-  tokenGenerationMs: number;
-  selfLearningAdapterApplied: boolean;
-  adapterRankDelta: string;
+  quantizationUsed?: QuantizationType;
+  activeParametersBillions?: number;
+  totalParametersBillions?: number;
+  routedExpertIds?: string[];
+  attentionEntropy?: number;
+  kvCacheCompressionRatio?: string;
+  tokenGenerationMs?: number;
+  selfLearningAdapterApplied?: boolean;
+  adapterRankDelta?: string;
   explainableAi: ExplainableAiSummary;
 }
 
@@ -370,7 +362,8 @@ export interface OnlineSearchEngineNode {
     | 'Standards & Thresholds'
     | 'Empirical & Archival'
     | 'Live Web & Scenario Graph';
-  sourceCount: number;
+  latencyMs?: number;
+  matchedScenarioId?: string;
   streamedSnippet: string;
   sourceUrl: string;
 }
@@ -394,14 +387,9 @@ export interface BibliographyReference {
   relevanceSummary: string;
 }
 
-export interface DeepResearchTuningResult {
-  useCaseScenarioId: string;
-  useCaseTitle: string;
-  crawledSourcesCount: number;
-  trainingTriplesExtracted: number;
-  qloraAdapterRank: string;
-  perplexityImprovementDelta: string;
-  tuningStatus: 'Scenario Recorded; Model Weights Unchanged';
+export interface DeepResearchMetadata {
+  scenarioId: string;
+  sourceRecordsRetrieved: number;
 }
 
 export type ContentSafetyMode = 'Safe Mode' | 'Child Mode' | 'NSFW Mode';
@@ -452,7 +440,6 @@ export interface LearnedEntityKnowledge {
   sourceTitle: string;
   learnedAt: string;
   scenarioId: string;
-  trainedModelId: string;
 }
 
 export interface AmbiguityClarificationOption {
@@ -487,7 +474,7 @@ export interface PendingDeepResearchPlan {
   resolvedSenseLabel?: string;
   detectedDomain?: DomainCategory;
   steps: DeepResearchPlanStep[];
-  status: 'awaiting_approval' | 'approved_and_executed' | 'executing' | 'completed';
+  status: 'awaiting_approval' | 'approved_and_executed' | 'executing' | 'completed' | 'failed';
   proposedSources?: string[];
 }
 
@@ -558,7 +545,7 @@ export interface OfflineSynthesisResult {
   codingResolution?: CodingLanguageResolution;
   multiEngineStream?: MultiEngineSearchStream;
   bibliographyReferences?: BibliographyReference[];
-  deepResearchTuning?: DeepResearchTuningResult;
+  deepResearchMetadata?: DeepResearchMetadata;
   selectedExpert?: SubDomainExpert;
   alternativeExperts?: SubDomainExpert[];
   contrastingOpinions?: SubDomainExpertOpinion[];
@@ -595,25 +582,6 @@ export interface ModelVersion {
   isRollbackCommit?: boolean;
 }
 
-export interface ModelContinualLearningUpgradeRecord {
-  id: string;
-  timestamp: string;
-  triggerSource:
-    | 'Live Prompt Execution'
-    | 'Scenario Telemetry'
-    | 'Admin Continual Learning Update'
-    | 'Scheduled Maturity Sync';
-  promptAnalyzed: string;
-  targetSubsystem: string;
-  learnedCapabilities: string[];
-  samplesAdded: number;
-  previousAccuracyPct: number;
-  updatedAccuracyPct: number;
-  previousLoraRank: number;
-  updatedLoraRank: number;
-  versionTagCommitted: string;
-}
-
 export interface StoredModel {
   id: string;
   name: string;
@@ -636,7 +604,6 @@ export interface StoredModel {
   accuracyBenchmarkPct: number;
   avgLatencyMs: number;
   versions: ModelVersion[];
-  continualLearningHistory?: ModelContinualLearningUpgradeRecord[];
 }
 
 export interface CompatibleModelOption {
@@ -902,8 +869,7 @@ export function getCompatibleModelsForHardware(
 }
 
 /**
- * Validates input data and automatically selects/routes to the optimal compatible Panini model
- * for the requested capability (Ask & Math, Coding, Deep Research, or 8K Cinema Studio).
+ * Selects compatible demo profile metadata for a requested capability; no model is loaded or run.
  */
 export function validateAndSelectOptimalModel(
   capability: ChatCapabilityMode,
@@ -929,7 +895,7 @@ export function validateAndSelectOptimalModel(
   const pool = compatibleModels.map((c) => c.model);
 
   if (capability === 'video_gen' || capability === 'image_gen' || capability === 'deep_research') {
-    // Prefer flagship 400B or >=70B multimodal model for live 8K Cinema DiT synthesis & Deep Research
+    // Prefer the highest advertised compatible profile for media and research capabilities.
     const flagshipOrPro =
       pool.find((m) => m.totalParamsBillions >= 400 && m.modalities.includes(reqMod)) ||
       pool.find((m) => m.totalParamsBillions >= 70 && m.modalities.includes(reqMod)) ||
@@ -939,7 +905,7 @@ export function validateAndSelectOptimalModel(
     return {
       selectedModel: flagshipOrPro,
       autoSwitched,
-      validationReason: `Validated ${reqMod} tensor pipeline -> Routed to ${flagshipOrPro.name} (${flagshipOrPro.parameterBadge}, ${flagshipOrPro.accuracyBenchmarkPct}% benchmark accuracy).`,
+      validationReason: `Matched the ${reqMod} capability to demo profile ${flagshipOrPro.name} (${flagshipOrPro.parameterBadge}); ${flagshipOrPro.accuracyBenchmarkPct}% accuracy metadata is unverified. No model runtime is installed.`,
     };
   }
 
@@ -951,14 +917,14 @@ export function validateAndSelectOptimalModel(
     return {
       selectedModel: fallback,
       autoSwitched: fallback.id !== currentModel.id,
-      validationReason: `Auto-selected ${fallback.name} with verified ${reqMod} modality support.`,
+      validationReason: `Selected demo profile ${fallback.name} based on advertised ${reqMod} compatibility; no model runtime is installed.`,
     };
   }
 
   return {
     selectedModel: currentModel,
     autoSwitched: false,
-    validationReason: `Verified ${currentModel.name} (${currentModel.parameterBadge}) supports ${reqMod} synthesis.`,
+    validationReason: `Selected demo profile ${currentModel.name} (${currentModel.parameterBadge}) based on advertised ${reqMod} compatibility; no model runtime is installed.`,
   };
 }
 
@@ -2741,64 +2707,39 @@ export function verifyExistingUseCaseMatch(
 ): UseCaseVerificationResult {
   const clean = nlpDescription.trim();
   const suggestedNewScenario = translateNlpToUseCase(clean, customScenarios.length + 1);
-  const stopWords = new Set([
-    'about',
-    'after',
-    'also',
-    'analyze',
-    'and',
-    'case',
-    'create',
-    'design',
-    'explain',
-    'from',
-    'generate',
-    'make',
-    'provide',
-    'solve',
-    'step',
-    'that',
-    'the',
-    'this',
-    'using',
-    'with',
-  ]);
-  const tokenize = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .map((word) => word.length > 5 && word.endsWith('s') ? word.slice(0, -1) : word)
-      .filter((word) => word.length > 2 && !stopWords.has(word));
-  const queryTokens = new Set(tokenize(clean));
+  const tokens = clean
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !['create', 'build', 'make', 'case', 'with', 'from', 'that', 'this', 'analyze'].includes(w));
 
   const matches: UseCaseVerificationMatch[] = [];
-  const domainIndex = ALL_DOMAINS.indexOf(suggestedNewScenario.domain);
-  const candidates: UseCaseScenario[] = customScenarios.filter(
-    (scenario) => scenario.domain === suggestedNewScenario.domain
-  );
-  if (domainIndex >= 0) {
-    for (let index = domainIndex + 1; index <= TOTAL_PRETRAINED_SCENARIOS; index += ALL_DOMAINS.length) {
-      candidates.push(getPretrainedScenarioByIndex(index));
-    }
+  const candidates: UseCaseScenario[] = [...customScenarios];
+  for (let i = 1; i <= 180; i++) {
+    candidates.push(getPretrainedScenarioByIndex(i));
   }
 
   for (const cand of candidates) {
-    const candidateTokens = new Set(tokenize(cand.isCustom ? `${cand.title} ${cand.starterPrompt}` : cand.title));
-    const hitCount = Array.from(queryTokens).filter((token) => candidateTokens.has(token)).length;
-    const minHits = Math.min(2, queryTokens.size);
-    if (hitCount < minHits || queryTokens.size === 0 || candidateTokens.size === 0) continue;
-    const queryCoverage = hitCount / queryTokens.size;
-    const candidateCoverage = hitCount / candidateTokens.size;
-    const score = Math.round(100 * (queryCoverage * 0.8 + candidateCoverage * 0.2));
+    const hay = `${cand.title} ${cand.starterPrompt} ${cand.domain}`.toLowerCase();
+    let hitCount = 0;
+    for (const tok of tokens) {
+      if (hay.includes(tok)) hitCount++;
+    }
+    const domainBonus = cand.domain === suggestedNewScenario.domain ? 1 : 0;
+    const score =
+      tokens.length > 0
+        ? Math.min(98, Math.round(((hitCount + domainBonus * 0.75) / Math.max(1, tokens.length)) * 100))
+        : cand.domain === suggestedNewScenario.domain
+        ? 65
+        : 0;
 
-    if (score >= 35) {
+    if (score >= 45) {
       matches.push({
         scenario: cand,
         similarityScorePct: score,
-        matchType: score >= 80 ? 'Exact Match' : 'Close Match',
+        matchType: score >= 82 ? 'Exact Match' : 'Close Match',
         reason:
-          score >= 80
+          score >= 82
             ? `Fulfils your exact ${cand.domain} requirements (${cand.recommendedQuant} · ${cand.activeExperts.join(', ')}).`
             : `Close match in ${cand.domain} — can be used directly or cloned & edited.`,
       });
@@ -4271,32 +4212,16 @@ Think of this **${lang}** program like a well-organized express lane at a grocer
       'Live Code Preview verified deterministic output with zero runtime exceptions.',
     ],
     glassBox: {
-      quantizationUsed: quantType,
-      activeParametersBillions: 37.2,
-      totalParametersBillions: 400.0,
-      routedExpertIds: ['Exp-Code-01', 'Exp-Panini-AST-04', 'Exp-Sys-16'],
-      attentionEntropy: 1.34,
-      kvCacheCompressionRatio: '2.4x (FP8 KV)',
-      tokenGenerationMs: 24,
-      selfLearningAdapterApplied: false,
-      adapterRankDelta: 'QLoRA r=16 (Polyglot Code Verifier)',
       explainableAi: {
-        confidenceScorePct: 99.4,
-        eli12Explanation: `Imagine you are building a super-fast conveyor belt for LEGO bricks using ${lang}. Before we even hand you the instructions, our robot inspector double-checked every single step to make sure the conveyor belt never jams, never drops a brick on the floor, and shows you a live test run of the finished machine working smoothly!`,
+        eli12Explanation: `The local code-template path selected ${lang} and ran its deterministic static checks. No LLM inference, model training, or model weights were used.`,
         decisionPathway: [
           `1. Evaluated user language preference ("${userLanguageChoice}") -> Resolved to ${lang} (${resolution.selectionSource}).`,
           '2. Ran pre-generation static AST & bug checks (3/3 passed: Type Safety, Memory/Concurrency, Edge-Case Guards).',
           '3. Executed sandboxed live code preview and verified deterministic output.',
         ],
-        keyFeatureAttributions: [
-          { feature: `${lang} Idiomatic AST & Safety Shards`, weightPct: 60 },
-          { feature: 'Pre-Generation Bug & Bounds Verifier', weightPct: 25 },
-          { feature: 'Live Execution Output Sandbox', weightPct: 15 },
-        ],
-        safetyAndBiasCheck: 'Verified memory-safe, injection-safe, and bug-checked prior to generation.',
-        knowledgeSourceMode: isOnlineDynamicLearning
-          ? 'Hybrid Local + Dynamic Web Learning'
-          : 'Air-Gapped Local Weights',
+        keyFeatureAttributions: [],
+        safetyAndBiasCheck: 'Deterministic static checks ran; no model inference or training was performed.',
+        knowledgeSourceMode: 'Deterministic local code templates and checks; no model weights loaded',
       },
     },
   };
@@ -4587,46 +4512,46 @@ export function generateDeepResearchPlan(
     {
       id: 'step-1',
       stepNumber: 1,
-      title: `Stage 1: Plain-English Definition & Core Foundations of ${cleanTopic}`,
-      objective: `Define what "${cleanTopic}" means in clear everyday language alongside its foundational principles and primary sources within ${primaryDomain}.`,
+      title: `Stage 1: Scope, Definitions & Context for ${cleanTopic}`,
+      objective: `Define the key terms and scope of "${cleanTopic}" in ${primaryDomain}; identify the context and source types needed to investigate it.`,
       domainFocus: primaryDomain,
-      thresholdSummary: `Baseline starting threshold where "${cleanTopic}" begins to take effect in ${primaryDomain}.`,
-      belowThresholdBehavior: `Below this starting point, the system remains in its normal resting state with no noticeable shift.`,
-      aboveThresholdBehavior: `Once the baseline threshold is reached, "${cleanTopic}" becomes active and measurable in real time.`,
-      realWorldExample: `Like a room thermostat staying quiet until the temperature crosses the set comfort mark.`,
+      thresholdSummary: 'Record a numeric or categorical threshold only if a source explicitly defines one.',
+      belowThresholdBehavior: 'If sources describe a baseline, report its population, conditions, and measurement method.',
+      aboveThresholdBehavior: 'If sources describe a change point, report its context and do not generalize it beyond that evidence.',
+      realWorldExample: 'Use an example only when it is supported by a retrieved source; otherwise mark it as not established.',
     },
     {
       id: 'step-2',
       stepNumber: 2,
-      title: `Stage 2: Critical Thresholds, Tipping Points & Key Limits in ${cleanTopic}`,
-      objective: `Identify the exact thresholds, trigger points, and operational limits governing "${cleanTopic}"—clearly contrasting what happens below vs. above each threshold with concrete examples.`,
+      title: `Stage 2: Evidence & Measurable Outcomes for ${cleanTopic}`,
+      objective: `Find relevant observations or studies about "${cleanTopic}" and record their measures, populations, methods, and stated limitations.`,
       domainFocus: primaryDomain,
-      thresholdSummary: `The exact tipping point or trigger line in "${cleanTopic}" separating normal calm behavior from a full state change.`,
-      belowThresholdBehavior: `Small everyday fluctuations below the tipping point are absorbed smoothly without triggering a major reaction.`,
-      aboveThresholdBehavior: `Crossing the tipping point triggers an immediate, clearly observable change in state or output.`,
-      realWorldExample: `Like water in a kettle warming quietly up to 99°C, then turning into rolling steam bubbles at the 100°C boiling threshold.`,
+      thresholdSummary: 'Distinguish reported measurements from proposed or inferred cutoffs.',
+      belowThresholdBehavior: 'Describe a comparison or baseline only when the cited source provides one.',
+      aboveThresholdBehavior: 'Describe observed outcomes and uncertainty without assuming a universal tipping point.',
+      realWorldExample: 'Compare cases only when the source records enough context to make the comparison meaningful.',
     },
     {
       id: 'step-3',
       stepNumber: 3,
-      title: `Stage 3: Real-World Examples, Case Studies & Practical Mechanisms of ${cleanTopic}`,
-      objective: `Examine real-world applications, everyday analogies, and empirical case studies showing how "${cleanTopic}" behaves in practice.`,
+      title: `Stage 3: Applications, Mechanisms & Limitations of ${cleanTopic}`,
+      objective: `Investigate supported cases and proposed mechanisms for "${cleanTopic}", including conflicting evidence and limitations.`,
       domainFocus: primaryDomain,
-      thresholdSummary: `Optimal everyday operating range for "${cleanTopic}" between the lower trigger line and the upper safety ceiling.`,
-      belowThresholdBehavior: `Staying inside the sweet-spot operating range keeps performance steady, safe, and predictable.`,
-      aboveThresholdBehavior: `Pushing past the upper safety threshold activates protective limits (like cooling or circuit breakers) to prevent overload.`,
-      realWorldExample: `Like a home circuit breaker running appliances smoothly below 15 Amps, then clicking off if too many heaters run at once.`,
+      thresholdSummary: 'Report operating ranges or limits only when the cited evidence explicitly states them.',
+      belowThresholdBehavior: 'Do not infer safety or normality from the absence of a reported effect.',
+      aboveThresholdBehavior: 'Separate observed outcomes from hypotheses about why they occurred.',
+      realWorldExample: 'Prefer a source-backed case study over a generic analogy.',
     },
     {
       id: 'step-4',
       stepNumber: 4,
-      title: `Stage 4: Key Takeaways, Actionable Guidelines & Verified Summary for ${cleanTopic}`,
-      objective: `Synthesize clear, actionable conclusions, decision checklists, and verified bibliography citations for "${cleanTopic}".`,
+      title: `Stage 4: Evidence-Qualified Findings & Open Questions for ${cleanTopic}`,
+      objective: `Summarize what the retrieved sources support, what remains uncertain, and which questions need further research about "${cleanTopic}".`,
       domainFocus: primaryDomain,
-      thresholdSummary: `Practical decision rule for recognizing when "${cleanTopic}" is approaching or crossing its key threshold.`,
-      belowThresholdBehavior: `When indicators stay comfortably below the trigger line, no intervention is required.`,
-      aboveThresholdBehavior: `When indicators reach the threshold, follow the step-by-step action checklist to guide the outcome safely.`,
-      realWorldExample: `Like a dashboard fuel light turning on at the 10% reserve threshold so you know exactly when to refuel.`,
+      thresholdSummary: 'State a decision rule only when a source supports it and its scope is clear.',
+      belowThresholdBehavior: 'Limit conclusions to the retrieved evidence and its context.',
+      aboveThresholdBehavior: 'Call out missing, conflicting, or insufficient evidence instead of filling gaps.',
+      realWorldExample: 'Do not present an illustrative example as a verified result.',
     },
   ];
 }
@@ -4638,60 +4563,13 @@ export function generateDeepResearchPlan(
  */
 export function streamMultiEngineOnlineSearch(
   query: string,
-  domain: DomainCategory,
-  sources: SearchSourceMetadata[] = []
+  _domain: DomainCategory,
+  sources: Pick<
+    LiveOnlineSearchSource,
+    'title' | 'snippet' | 'url' | 'publicationOrSource' | 'sourceEngine'
+  >[] = []
 ): MultiEngineSearchStream {
-  const cleanQuery = query.trim() || `${domain} scenario verification`;
-  const groupedSources = new Map<string, SearchSourceMetadata[]>();
-  for (const source of sources) {
-    const provider = source.sourceEngine || source.publicationOrSource || 'Live Web Index';
-    const existing = groupedSources.get(provider) || [];
-    existing.push(source);
-    groupedSources.set(provider, existing);
-  }
-  const engines = Array.from(groupedSources.entries()).map(([provider, providerSources]) => {
-    const providerKey = provider.toLowerCase();
-    const indexCategory: OnlineSearchEngineNode['indexCategory'] =
-      /openalex|crossref|scholar|doi/.test(providerKey)
-        ? 'Scholarly & DOI'
-        : /nist|usgs|standard|archive/.test(providerKey)
-        ? 'Empirical & Archival'
-        : 'Live Web & Scenario Graph';
-    const firstSource = providerSources[0];
-    return {
-      engineId: providerKey.replace(/[^a-z0-9]+/g, '-'),
-      engineName: provider,
-      indexCategory,
-      sourceCount: providerSources.length,
-      streamedSnippet: providerSources
-        .slice(0, 2)
-        .map((source) => `${source.title}: ${source.snippet}`)
-        .join(' · ')
-        .slice(0, 500),
-      sourceUrl: firstSource.url,
-    };
-  });
-
-  return {
-    query: cleanQuery,
-    activeEnginesCount: engines.length,
-    zeroThirdPartyAiModelsUsed: true,
-    inferenceEnginePolicy: engines.length
-      ? 'Live public search sources retrieved; no third-party AI models used.'
-      : 'No live search sources returned; no online results are presented as verified.',
-    engines,
-  };
-}
-
-/**
- * Multi-Engine Deep Web Crawler that gathers dense primary literature & empirical bibliography
- * references for Deep Research and extracts structured training triples for Panini model tuning.
- */
-export function crawlWebForDeepResearch(
-  topic: string,
-  steps: DeepResearchPlanStep[]
-): BibliographyReference[] {
-  return [];
+  return buildRetrievedSearchStream(query, sources);
 }
 
 export interface LiveCrawledResearchPayload {
@@ -4753,81 +4631,64 @@ export function executeDeepResearchPlan(
     };
   });
 
-  const fallbackBibliography = crawlWebForDeepResearch(topic, normalizedSteps);
-  const hasLiveReferences = Boolean(
-    liveCrawledData?.references && liveCrawledData.references.length > 0
-  );
   const bibliography =
-    liveCrawledData?.references && liveCrawledData.references.length > 0
-      ? liveCrawledData.references
-      : isOnlineDynamicLearning
-      ? []
-      : fallbackBibliography;
-
-  const multiEngineSources = bibliography.map((ref) => ({
-    title: ref.title,
-    authorsOrInstitution: ref.authorsOrInstitution,
-    publicationOrSource: ref.publicationOrSource,
-    year: ref.year,
-    url: ref.doiOrUrl,
-    snippet: ref.relevanceSummary,
-    sourceEngine: ref.crawlerEngine,
-  }));
-  const multiEngineStream = hasLiveReferences
-    ? streamMultiEngineOnlineSearch(topic, domain, multiEngineSources)
+    liveCrawledData?.isOnlineInternetFetched && liveCrawledData.references
+      ? liveCrawledData.references.filter((reference) => /^https:\/\//i.test(reference.doiOrUrl))
+      : [];
+  const multiEngineStream = isOnlineDynamicLearning
+    ? buildRetrievedSearchStream(
+        topic,
+        bibliography.map((reference) => ({
+          title: reference.title,
+          snippet: reference.relevanceSummary,
+          url: reference.doiOrUrl,
+          publicationOrSource: reference.publicationOrSource,
+          sourceEngine: reference.crawlerEngine,
+        }))
+      )
     : undefined;
 
-  const thresholdComparisonTable = allowMathOrCyber
-    ? `| Threshold Zone | What Happens in Plain English | Technical / Measurable Indicator | Everyday Real-World Example for "${topic}" |
-| :--- | :--- | :--- | :--- |
-| **1. Below Threshold (Sub-Critical / Safe Baseline)** | The system stays in its normal resting state; small changes do not trigger a major reaction. | Signal remains below activation cutoff (\`< T_min\`); baseline stability holds. | Like water below 100°C warming up in a kettle without boiling yet. |
-| **2. At the Critical Threshold (Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Critical transition boundary (\`T = T_crit\`). | Like a thermostat clicking on at 72°F or cheese beginning to melt smoothly at **60°C**. |
-| **3. Above Threshold (Active / Saturation Regime)** | The new state is fully active; going far past the upper limit requires safety or cooling controls. | Sustained active response (\`> T_crit\`); upper ceiling monitored to prevent overload. | Like a kettle at a full rolling boil or a highway reaching maximum traffic capacity. |`
-    : `| Threshold Zone | What Happens in Plain English | Clear Measurable Indicator | Everyday Real-World Example for "${topic}" |
-| :--- | :--- | :--- | :--- |
-| **1. Below the Threshold (Normal / Quiet Zone)** | The system stays in its normal resting state; small everyday changes do not trigger a major reaction. | Stays below the starting trigger level; normal everyday baseline holds steady. | Like water below **100°C** warming up in a kettle without boiling yet, or mozzarella staying firm below **58°C**. |
-| **2. At the Threshold (Exact Tipping Point)** | The exact trigger line where behavior shifts noticeably from one state to another. | Reaches the trigger point where the change begins. | Like a home thermostat clicking on at **72°F**, an automatic porch light turning on at dusk, or cheese melting smoothly at **60°C**. |
-| **3. Above the Threshold (Active / Full-Effect Zone)** | The new state is fully active; going far past the upper safety limit triggers protective controls. | Operates above the trigger point; upper safety limit keeps the process balanced. | Like a kettle at a full rolling boil or a **15-Amp** home circuit breaker clicking off to prevent overheating. |`;
+  const thresholdComparisonTable = `| Research check | What to record |
+| :--- | :--- |
+| Scope and definitions | Topic boundaries, population, place, and time period stated by each source. |
+| Measures and comparisons | Outcomes, units, comparison groups, and methods reported by each source. |
+| Findings and limitations | Source-supported results, uncertainty, limitations, and disagreements. |
+| Thresholds or examples | Include only when a retrieved source explicitly supports them; otherwise mark them as not established. |`;
 
   const stepSections = normalizedSteps
     .map((s, idx) => {
-      const refA = bibliography.length
-        ? bibliography[idx % bibliography.length]?.refNumber
-        : undefined;
-      const refB = bibliography.length
-        ? bibliography[(idx + 1) % bibliography.length]?.refNumber
-        : undefined;
+      const refA = bibliography[idx % Math.max(1, bibliography.length)]?.refNumber;
+      const refB = bibliography[(idx + 1) % Math.max(1, bibliography.length)]?.refNumber;
       const liveSnippet =
         liveCrawledData?.liveStageSnippets?.[s.id] ||
         liveCrawledData?.liveStageSnippets?.[`step-${idx + 1}`] ||
-        bibliography[idx % bibliography.length]?.relevanceSummary;
-
-      const cite = (referenceNumber?: number) =>
-        referenceNumber === undefined ? '' : ` [${referenceNumber}]`;
+        bibliography[idx % Math.max(1, bibliography.length)]?.relevanceSummary;
+      const sourceMarker = refA ? ` \`[${refA}]\`` : '';
+      const evidenceSummary = liveSnippet
+        ? `Retrieved source records are listed below; their claims have not been independently validated${sourceMarker}.`
+        : 'No external source was retrieved for this stage; treat this as a locally generated outline, not verified evidence.';
 
       return `### Stage ${idx + 1}: ${s.title.replace(/^Stage \d+:\s*/i, '')} (${domain})
-**Stage Objective:** ${s.objective}
+**Suggested research focus (not a finding):** ${s.objective}
 ${
   liveSnippet
-    ? `> **Retrieved Source${cite(refA)}:** ${liveSnippet}\n`
+    ? `> **Retrieved Source Excerpt${sourceMarker}:** ${liveSnippet}\n`
     : ''
 }
-- **Plain-English Explanation:** In this stage of researching **${topic}**, we look at *${s.title.replace(/^Stage \d+:\s*/i, '')}* in clear, everyday terms. Instead of drifting into unrelated fields, this stage focuses on how **${topic}** works in practice, what triggers changes, and how you can observe it in daily life.${cite(refA)}
-- **Plain-English Threshold Breakdown for Stage ${idx + 1}:**
-  1. **What the Threshold Is:** ${s.thresholdSummary}
-  2. **Below the Threshold (Normal State):** ${s.belowThresholdBehavior}
-  3. **At & Above the Threshold (Active State):** ${s.aboveThresholdBehavior}
-  4. **Everyday Real-World Example:** ${s.realWorldExample}${cite(refB)}
-- **Source Status:** ${liveSnippet ? 'Retrieved source information is shown above.' : 'No source was retrieved for this stage; treat this as an unverified local synthesis.'}`;
+- **Thresholds or cutoffs to check:** ${s.thresholdSummary}
+- **Baseline and comparison:** ${s.belowThresholdBehavior}
+- **Interpretation and limitations:** ${s.aboveThresholdBehavior}
+- **Example to verify:** ${s.realWorldExample}
+- **Evidence status:** ${evidenceSummary}`;
     })
     .join('\n\n');
 
-  const stageSummaryTable = `| Stage # | Topic-Specific Research Stage | Domain Focus | Plain-English Threshold & Key Takeaway | Source |
-| :--- | :--- | :--- | :--- | :--- |
+  const stageSummaryTable = `| Stage # | Proposed Research Stage | Domain Focus | Focus |
+| :--- | :--- | :--- | :--- |
 ${normalizedSteps
   .map(
     (s, i) =>
-      `| **Stage ${i + 1}** | ${s.title.replace(/^Stage \d+:\s*/i, '')} | \`${domain}\` | ${s.thresholdSummary} | ${bibliography.length ? `[${bibliography[i % bibliography.length].refNumber}]` : 'Not retrieved'} |`
+      `| **Stage ${i + 1}** | ${s.title.replace(/^Stage \d+:\s*/i, '')} | \`${domain}\` | ${s.objective} |`
   )
   .join('\n')}`;
 
@@ -4838,64 +4699,52 @@ ${normalizedSteps
     )
     .join('\n');
 
-  const totalTriples = 0;
   const newScenario = translateNlpToUseCase(topic, customCountOffset);
 
-  const tuningResult: DeepResearchTuningResult = {
-    useCaseScenarioId: newScenario.id,
-    useCaseTitle: newScenario.title,
-    crawledSourcesCount: bibliography.length,
-    trainingTriplesExtracted: totalTriples,
-    qloraAdapterRank: 'No model training runtime configured; model weights unchanged',
-    perplexityImprovementDelta: 'Not measured (no model training runtime configured)',
-    tuningStatus: 'Scenario Recorded; Model Weights Unchanged',
+  const researchMetadata: DeepResearchMetadata = {
+    scenarioId: newScenario.id,
+    sourceRecordsRetrieved: bibliography.length,
   };
 
   const modeBanner = isOnlineDynamicLearning
-    ? hasLiveReferences
-      ? 'Live Internet Grounded'
-      : 'Online search returned no sources; local synthesis only'
-    : '100% Air-Gapped Local Panini Knowledge Shards';
+    ? bibliography.length > 0
+      ? `${bibliography.length} live source records retrieved; claims not independently verified`
+      : 'No live sources retrieved; local structured outline only'
+    : 'Offline deterministic outline; no external sources retrieved';
 
-  const body = `### Executed Multi-Stage Deep Research Report: ${topic}
-**Lead Research Specialist:** *${selectedExpert.name} (${selectedExpert.roleTitle})* · **Domain:** \`${domain}\` · **Execution Mode:** \`${modeBanner}\` · **Plan:** \`${normalizedSteps.length} stages\`
+  const body = `### Structured Deep Research Synthesis: ${topic}
+**Research Specialist Profile:** *${selectedExpert.name} (${selectedExpert.roleTitle})* · **Domain:** \`${domain}\` · **Source status:** \`${modeBanner}\`
 
-### Executive Summary & Multi-Stage Synthesis Matrix
-The local research workflow organized **${topic}** into ${normalizedSteps.length} stages within **${domain}**. Each stage includes a plain-English explanation and threshold breakdown. Source links are included only when a live source was actually retrieved.
+### Research Plan & Evidence Matrix
+This deterministic local outline organizes **${topic}** into ${normalizedSteps.length} proposed stages. It is not output from loaded LLM weights, and stage descriptions are questions to investigate—not findings. Retrieved records are listed as provided and have not been independently verified.
 
 ${stageSummaryTable}
 
-### Plain-English Concept & Threshold Guide for ${topic}
+### Evidence Review Checklist for ${topic}
 ${thresholdComparisonTable}
 
 ${stepSections}
 
 ### Synthesis Conclusions & Actionable Takeaways
-- **Plan Coverage:** The ${normalizedSteps}-stage plan remained focused on **${topic}** (${domain}).
-- **Model Updates:** No model weights or training data were changed by this run.
+- **Scenario created:** \`${newScenario.id}\` organizes the topic for later use; it does not train or update a model.
+- **Evidence status:** ${bibliography.length > 0 ? `${bibliography.length} live source records were retrieved. Review them before relying on any claims.` : 'No external sources were retrieved for this run.'}
 
-### ${bibliography.length ? 'Retrieved Sources' : 'Sources'}
-${bibMarkdown || 'No sources were retrieved. This report is an unverified local synthesis, not a source-verified research report.'}`;
+${bibliography.length > 0 ? `### Retrieved Sources (Not Independently Verified)\n${bibMarkdown}` : '### Sources\nNo external sources were retrieved.'}`;
 
-  const simpleResearchMarkdown = `### Simple Everyday Research Guide: ${topic}
-**What We Researched (In Plain English):**
-We investigated **${topic}** across **${normalizedSteps.length} focused stages** in **${domain}** (led by *${selectedExpert.name}*)—staying 100% on your topic without drifting into unrelated subjects.
+  const simpleResearchMarkdown = `  ### Simple Research Outline: ${topic}
+  **What This Outline Does:**
+  This deterministic local outline breaks **${topic}** into **${normalizedSteps.length} proposed research stages** in **${domain}** (using the *${selectedExpert.name}* profile). It is not generated by LLM weights, and its prompts are not findings.
 
-### Clear Explanation of Thresholds & How It Works
-- **What Is a Threshold Here?** A **threshold** in **${topic}** is simply the **tipping point or trigger line** where behavior changes from one state to another.
-- **Below the Threshold (Normal / Quiet Zone):** When levels stay below the threshold, nothing dramatic happens—the system stays calm, stable, and predictable.
-- **At & Above the Threshold (Active / Change Zone):** Once the level crosses the threshold, a clear, measurable change is triggered right away (just like water boiling at **100°C**, cheese melting smoothly at **60°C**, or a home thermostat clicking on at **72°F**).
-
-### Stage-by-Stage Plain-English Thresholds & Takeaways
+  ### Stage-by-Stage Research Prompts
 ${normalizedSteps
   .map(
     (s, i) =>
-      `${i + 1}. **${s.title.replace(/^Stage \d+:\s*/i, '')}:** ${s.objective}\n   - **Threshold Rule:** ${s.thresholdSummary}\n   - **Below vs. Above Threshold:** ${s.belowThresholdBehavior} ${s.aboveThresholdBehavior}\n   - **Everyday Example:** ${s.realWorldExample}`
+      `${i + 1}. **${s.title.replace(/^Stage \d+:\s*/i, '')}:** ${s.objective}\n   - **Thresholds or cutoffs to check:** ${s.thresholdSummary}\n   - **Baseline and comparison:** ${s.belowThresholdBehavior}\n   - **Interpretation and limitations:** ${s.aboveThresholdBehavior}\n   - **Example to verify:** ${s.realWorldExample}`
   )
   .join('\n\n')}
 
 ### Bottom-Line Takeaway
-You can switch between this **Simple View** for a quick, jargon-free explanation of every stage's thresholds and the **Expert View** tab for any sources actually retrieved.`;
+Review the retrieved records before relying on claims; if no sources were retrieved, use this only as a plan for further research.`;
 
   const followUpQuestions = [
     `Can you give me another everyday real-world example of the threshold in ${topic}?`,
@@ -4915,47 +4764,29 @@ You can switch between this **Simple View** for a quick, jargon-free explanation
     contrastingOpinions,
     matchedScenario: newScenario,
     bibliographyReferences: bibliography,
-    deepResearchTuning: tuningResult,
+    deepResearchMetadata: researchMetadata,
     followUpQuestions,
     verifiedFacts: [
-      `Executed ${normalizedSteps.length} strictly topic-specific research stages in ${domain}: ${normalizedSteps.map((s) => s.title).join(' -> ')}.`,
-      bibliography.length
-        ? `Retrieved ${bibliography.length} source(s) during this run.`
-        : 'No sources were retrieved; this report is local synthesis and has not been independently verified.',
-      'No model weights were changed; no training was run.',
+      `Created a ${normalizedSteps.length}-stage structured outline for "${topic}" in ${domain}.`,
+      bibliography.length > 0
+        ? `Retrieved ${bibliography.length} source records; their claims have not been independently verified.`
+        : 'No external source records were retrieved.',
+      `Created scenario ${newScenario.id}; no model weights or training data were changed.`,
     ],
     glassBox: {
-      quantizationUsed: quantType,
-      activeParametersBillions: 37.2,
-      totalParametersBillions: 400.0,
-      routedExpertIds: allowMathOrCyber
-        ? [selectedExpert.name, 'Exp-Research-04', 'Exp-QLoRA-Tuner']
-        : [selectedExpert.name, `${domain} Threshold Analyst`, 'Topic Verification Specialist'],
-      attentionEntropy: 1.32,
-      kvCacheCompressionRatio: allowMathOrCyber ? '2.4x (FP8 KV)' : '2.4x Memory Compression',
-      tokenGenerationMs: 32,
-      selfLearningAdapterApplied: true,
-      adapterRankDelta: tuningResult.qloraAdapterRank,
       explainableAi: {
-        eli12Explanation: `After you approved the ${normalizedSteps.length}-stage research plan for "${topic.slice(0, 48)}", the local research workflow organized the topic into focused stages. It retrieved ${bibliography.length} sources and did not update model weights.`,
+        eli12Explanation: `This is a deterministic ${normalizedSteps.length}-stage outline for "${topic.slice(0, 48)}". ${bibliography.length} source records were retrieved; no LLM inference or model training was used.`,
         decisionPathway: [
-          `1. User reviewed and approved the ${normalizedSteps.length}-stage Deep Research Plan for "${topic}" (${domain}).`,
-          ...normalizedSteps.map((s, i) => `${i + 2}. Organized Stage ${i + 1} (${domain}): "${s.title}"${bibliography.length ? ` — source [${bibliography[i % bibliography.length].refNumber}]` : ' — no retrieved source available'}.`),
-          `${normalizedSteps.length + 2}. Generated a local summary and recorded the scenario as ${newScenario.id}; model weights were not changed.`,
+          `1. Organized "${topic}" into a ${normalizedSteps.length}-stage outline (${domain}).`,
+          ...normalizedSteps.map((s, i) => `${i + 2}. Added Stage ${i + 1}: "${s.title}".`),
+          `${normalizedSteps.length + 2}. Created local scenario ${newScenario.id}; no model weights were changed.`,
         ],
-        keyFeatureAttributions: [
-          { feature: 'Topic-Specific Research Stages & Plain-English Thresholds', weightPct: 60 },
-          { feature: 'Retrieved Source References', weightPct: 40 },
-        ],
+        keyFeatureAttributions: [],
         safetyAndBiasCheck:
-          'Local rule-based synthesis · No model training · Retrieved sources are identified separately.',
-        knowledgeSourceMode: isOnlineDynamicLearning
-          ? 'Hybrid Local + Dynamic Web Learning'
-          : 'Air-Gapped Local Weights',
-        dynamicWebFactsLearned: [
-          `Verified & cited ${bibliography.length} bibliography references for "${topic.slice(0, 44)}" (${modeBanner})`,
-          `Updated Use Case ${newScenario.id} with ${totalTriples} verified topic facts (${tuningResult.perplexityImprovementDelta})`,
-        ],
+          'Deterministic local template synthesis; no model inference, training, or independent fact verification.',
+        knowledgeSourceMode: bibliography.length
+          ? 'Live search records retrieved; not independently verified'
+          : 'Deterministic local outline; no model weights loaded',
       },
     },
   };
@@ -4971,11 +4802,46 @@ export interface LiveOnlineSearchSource {
   sourceEngine?: string;
 }
 
-type SearchSourceMetadata = Pick<
-  LiveOnlineSearchSource,
-  'title' | 'publicationOrSource' | 'url' | 'snippet' | 'sourceEngine'
-> &
-  Partial<LiveOnlineSearchSource>;
+export function buildRetrievedSearchStream(
+  query: string,
+  sources: Pick<
+    LiveOnlineSearchSource,
+    'title' | 'snippet' | 'url' | 'publicationOrSource' | 'sourceEngine'
+  >[],
+  matchedScenarioId?: string
+): MultiEngineSearchStream {
+  const sourcesByProvider = new Map<string, typeof sources>();
+  for (const source of sources) {
+    const provider = source.sourceEngine || source.publicationOrSource || 'Live search index';
+    const providerSources = sourcesByProvider.get(provider) || [];
+    providerSources.push(source);
+    sourcesByProvider.set(provider, providerSources);
+  }
+
+  const engines: OnlineSearchEngineNode[] = [...sourcesByProvider.entries()].map(
+    ([provider, providerSources]) => {
+      const source = providerSources[0];
+      return {
+        engineId: provider.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        engineName: provider,
+        indexCategory: provider.toLowerCase().includes('wikipedia')
+          ? 'Live Web & Scenario Graph'
+          : 'Scholarly & DOI',
+        matchedScenarioId,
+        streamedSnippet: `${source.title}: ${source.snippet}`,
+        sourceUrl: source.url,
+      };
+    }
+  );
+
+  return {
+    query,
+    activeEnginesCount: engines.length,
+    zeroThirdPartyAiModelsUsed: true,
+    inferenceEnginePolicy: 'Live search indexes only; no external AI model was called.',
+    engines,
+  };
+}
 
 export interface OfflineSynthesisOptions {
   explicitExpertId?: string;
@@ -4992,7 +4858,7 @@ export function generateOfflineKnowledgeResponse(
   prompt: string,
   explicitDomain: DomainCategory | undefined,
   quantType: QuantizationType,
-  selfLearningSamplesCount = 0,
+  _selfLearningSamplesCount = 0,
   isOnlineDynamicLearning = false,
   liveOnlineSources?: LiveOnlineSearchSource[],
   options?: OfflineSynthesisOptions
@@ -5546,18 +5412,18 @@ ${entry.mechanismOrDetails.map((d) => `   - ${d}`).join('\n')}`,
 
   // Dedicated high-precision synthesis for the 3 distinct meanings of Panini (or all 3 compared)
   if (isPaniniCompareAll) {
-    resolvedSenseLabel = 'Panini (All 3 Meanings Compared: Rishi, Culinary Sandwich & 400B AI Model)';
+    resolvedSenseLabel = 'Panini (Sage, Sandwich & Demo Model Profiles)';
     customSimpleSummary =
-      'The word "Panini" can mean three completely different things: (1) Maharshi Panini, the ancient Indian scholar who wrote the world’s first rulebook for Sanskrit grammar; (2) an Italian grilled sandwich with melted cheese; or (3) this Panini 400B AI assistant named in honor of the ancient scholar.';
+      'The word "Panini" can refer to (1) Maharshi Panini, the ancient Indian grammarian; (2) an Italian grilled sandwich; or (3) demo model profiles in this repository, which has no installed weights or inference runtime.';
     selected = {
       body: `${contextInheritanceBanner}### Multi-Context Comparative Synthesis: The Three Meanings of "Panini"
 **Expert Lens:** *${selectedExpert.name} (${selectedExpert.roleTitle}) · Streamed via ${selectedExpert.streamingMethod}*
 
-| Dimension | 1. Maharshi Panini (Ancient Sanskrit Rishi) | 2. Panini / Panino (Italian Grilled Sandwich & Cheese) | 3. Panini 400B (This AI Architecture) |
+| Dimension | 1. Maharshi Panini (Ancient Sanskrit Rishi) | 2. Panini / Panino (Italian Grilled Sandwich & Cheese) | 3. Panini Model Profiles in This Repository |
 | :--- | :--- | :--- | :--- |
-| **Domain & Era** | Classical Sanskrit Philology & Formal Grammar (fl. 6th–4th c. BCE, Shalatura, Gandhara) | Italian Culinary Arts & Food Science (16th c. Italy; 1970s Milanese *Paninoteche*) | Deterministic Sutra-MoE Quantized AI Engine (2026 Local & Hybrid Architecture) |
-| **Core Structure** | **Ashtadhyayi** (8 chapters, **3,959 sutras**), **14 Shiva Sutras**, **42 Pratyaharas**, **Dhatupatha** & **Ganapatha** | **Ciabatta / Focaccia** crust, melted **Mozzarella, Provolone, Fontina**, cured meats, basil pesto, pressed at **190°C** | **400B total / 37.2B active** parameters, **36 Sub-Domain Experts**, **IQ1_S–FP16** quantization |
-| **Governing Law / Mechanism** | **Anuvritti** (context inheritance), **Karaka** deep roles, **Vipratishedhe Param Karyam** conflict resolution | **Casein micelle proteolysis** & melt rheology (58–68°C) + **Maillard reaction** crust browning | **Sutra-gated sparse routing**, Wikipedia/Web **QLoRA r=16/32** continual weight updates & **Glass-Box XAI** |
+| **Domain & Era** | Classical Sanskrit Philology & Formal Grammar (fl. 6th–4th c. BCE, Shalatura, Gandhara) | Italian Culinary Arts & Food Science (16th c. Italy; 1970s Milanese *Paninoteche*) | Demo UI metadata; no weights or inference runtime installed |
+| **Core Structure** | **Ashtadhyayi** (8 chapters, **3,959 sutras**), **14 Shiva Sutras**, **42 Pratyaharas**, **Dhatupatha** & **Ganapatha** | **Ciabatta / Focaccia** crust, melted **Mozzarella, Provolone, Fontina**, cured meats, basil pesto, pressed at **190°C** | Profile labels and hardware estimates only; no model is loaded |
+| **Governing Law / Mechanism** | **Anuvritti** (context inheritance), **Karaka** deep roles, **Vipratishedhe Param Karyam** conflict resolution | **Casein micelle proteolysis** & melt rheology (58–68°C) + **Maillard reaction** crust browning | Offline response templates and explicit online-source retrieval |
 
 1. **Maharshi Panini (The Ancient Sanskrit Grammarian & Father of Formal Linguistics)**
     Revered as a *Rishi* of ancient India, Maharshi Panini formulated the **Ashtadhyayi**, an algebraic generative grammar of 3,959 sutras that derives all valid Sanskrit morphology and syntax from root verbs (*Dhatus*) using auxiliary markers (*Anubandhas*), directly anticipating Backus-Naur Form (BNF) and modern compiler theory.
@@ -5565,18 +5431,18 @@ ${entry.mechanismOrDetails.map((d) => `   - ${d}`).join('\n')}`,
 2. **Panini (The Italian Culinary Pressed Sandwich & Melted Cheese Science)**
    In culinary contexts, *panini* (plural of Italian *panino*, "small bread roll") denotes grilled sandwiches crafted with high-hydration **ciabatta** or **focaccia** filled with high-melt-index Italian cheeses (**Mozzarella di Bufala**, **Provolone**, **Fontina Val d'Aosta**, **Taleggio**) pressed between grooved cast-iron platens to achieve simultaneous casein stretch and Maillard crust crispness.
 
-3. **Panini 400B (This Sovereign Quantized AI Platform)**
-   Named in honor of Maharshi Panini's rule-based precision, **Panini-400B-MoE** uses deterministic Sutra-inspired expert routing across 10,000+ pretrained scenarios, GGUF/EXL2 quantization, and Glass-Box Explainable AI.`,
+3. **Panini Model Profiles (Repository Metadata)**
+   This repository exposes demo profile names and configuration metadata. It does not include model weights or an LLM inference runtime, so the profiles do not represent running models.`,
       facts: [
         'Maharshi Panini (fl. 6th–4th century BCE) authored the Ashtadhyayi (3,959 sutras), the earliest known formal generative grammar.',
         'Culinary Italian panini rely on high-hydration ciabatta/focaccia and calcium-balanced cheeses (Mozzarella, Provolone, Fontina) melting at 58–68°C under 190°C platen conduction.',
-        'Panini-400B-MoE combines 37.2B active parameters with 36 sub-domain experts and continuous Wikipedia/Web QLoRA self-learning.',
+        'The repository has demo model-profile metadata but no installed model weights or inference runtime.',
       ],
     };
     followUpQuestions = [
       'Focus specifically on Maharshi Panini and how the 14 Shiva Sutras encode Sanskrit grammar.',
       'Focus on Italian Culinary Panini: which cheeses and bread hydration ratios give the best melt and crust?',
-      'Focus on the Panini 400B AI Model: how does Sutra-MoE routing and Q4_K_M quantization work?',
+      'What would be needed to run one of the model profiles with a real inference runtime?',
     ];
   } else if (isPaniniRishiQuery) {
     resolvedSenseLabel = 'Maharshi Panini (Ancient Sanskrit Rishi & Ashtadhyayi Grammarian)';
@@ -5640,31 +5506,25 @@ ${entry.mechanismOrDetails.map((d) => `   - ${d}`).join('\n')}`,
       'Generate a contextual 8K video of an artisanal Italian panini with melted cheese on a cast-iron grill.',
     ];
   } else if (isPaniniModelQuery) {
-    resolvedSenseLabel = 'Panini 400B (Sovereign Quantized Sutra-MoE AI Model)';
+    resolvedSenseLabel = 'Panini demo model profiles';
     customSimpleSummary =
-      'Panini 400B is this AI platform: instead of using one giant slow brain for everything, it acts like a team of 36 specialized teachers, picking the best expert for your question, learning new facts from Wikipedia, and animating multi-shot storyboard videos.';
+      'This repository includes demo model-profile metadata but no installed model weights or inference runtime. Its local responses are deterministic templates, not LLM inference.';
     selected = {
-      body: `${contextInheritanceBanner}### Systems & Architecture Synthesis: Panini-400B-MoE Quantized AI Engine
-**Active Thread Context:** \`${resolvedSenseLabel}\` · **Expert Lens:** *${selectedExpert.name} (${selectedExpert.roleTitle})*
-**Matched Pretrained Scenario:** \`${matchedScenario.id}\` — *${matchedScenario.title}*
+      body: `${contextInheritanceBanner}### Model Runtime Availability
 
-1. **Sutra-MoE Sparse Routing & Active Parameter Topology (Directly Addressing: "${prompt.slice(0, 80)}")**
-   - **Panini-400B-MoE-Flagship** is a sovereign, air-gap-capable Mixture-of-Experts architecture comprising **400.0 Billion total parameters** with **37.2 Billion active parameters** per token across **36 specialized Sub-Domain Experts** (4 specialists per domain across 9 core domains).
-   - Inspired by Maharshi Panini's deterministic *Sutra* production rules, the router computes a sparse top-$k$ gating distribution paired with a zero-overhead shared expert pathway, eliminating token dropping while keeping inference latency at **26–38 ms/token**.
+This repository includes model-profile metadata, but it does not include model weights or an LLM inference runtime. The profiles are selectable demo configurations; their parameter counts, quantization labels, and benchmark fields do not indicate that a model is loaded or running.
 
-2. **Information-Theoretic Quantization (${spec.label}) & Continual Self-Learning**
-   - Supports live hot-swapping across 10 quantization precisions from **IQ1_S (1.56 bpw)** and **Q4_K_M (4.85 bpw)** up to **FP16 (16.0 bpw)** with hardware-aware VRAM/RAM pre-flight validation.
-   - **Wikipedia & Online Continual Learning:** When unknown entities or multi-stage Deep Research queries are encountered, the engine fetches verified encyclopedic/scholarly grounding and commits rank-16/32 **QLoRA adapter deltas** directly into local model weights.`,
+The app's offline responses use deterministic local templates. Online research is performed only through the explicit online-search and research workflows, and retrieved sources are not model training data.`,
       facts: [
-        'Panini-400B-MoE activates 37.2B parameters per token out of 400B total parameters across 36 domain/sub-domain specialists.',
-        'Supports 10 quantization formats (IQ1_S through FP16) with <0.03% numerical drift in Q5_K_M/Q8_0 regimes.',
-        'Features Glass-Box Explainable AI (XAI) telemetry, 10,000+ pretrained scenarios, and live QLoRA weight self-learning.',
+        'The repository does not ship model weights or an LLM inference runtime.',
+        'Model selector entries are demo profile metadata, not loaded models.',
+        'Online source retrieval does not train or update model weights.',
       ],
     };
     followUpQuestions = [
-      'How does Q4_K_M quantization compare to Q5_K_M and FP16 in VRAM footprint and perplexity on Panini 400B?',
-      'How does the continuous Wikipedia & Deep Research QLoRA adapter update model weights without catastrophic forgetting?',
-      'Show the Rust/C++ memory-mapped shard ring buffer code used by Panini 400B.',
+      'What would be needed to connect a real local inference runtime?',
+      'How does the online-search workflow retrieve and label its sources?',
+      'Which model metadata fields are shown in the demo profile selector?',
     ];
   } else if (isGandhiQuery) {
     resolvedSenseLabel = 'Mahatma Gandhi (Mohandas Karamchand Gandhi, 1869–1948)';
@@ -5702,27 +5562,24 @@ ${entry.mechanismOrDetails.map((d) => `   - ${d}`).join('\n')}`,
       ],
     };
 
-    learnedEntity = {
-      id: `learn-gandhi-${Date.now()}`,
-      topicKey: 'Mahatma Gandhi',
-      title: 'Mahatma Gandhi (Mohandas Karamchand Gandhi, 1869–1948)',
-      entityTitle: 'Mahatma Gandhi (Mohandas Karamchand Gandhi, 1869–1948)',
-      domain: 'History',
-      subDomain: selectedExpert.subDomain,
-      summaryExtract:
-        wikiLiveSource?.snippet ||
-        'Indian lawyer, anti-colonial nationalist, and political ethicist who employed nonviolent resistance (Satyagraha) to lead the successful campaign for India’s independence from British rule.',
-      summary:
-        wikiLiveSource?.snippet ||
-        'Indian lawyer, anti-colonial nationalist, and political ethicist who employed nonviolent resistance (Satyagraha) to lead the successful campaign for India’s independence from British rule.',
-      keyFacts: selected.facts,
-      sourceUrl: wikiLiveSource?.url || 'https://en.wikipedia.org/wiki/Mahatma_Gandhi',
-      publicationOrSource: wikiLiveSource?.publicationOrSource || 'Wikipedia Encyclopedia & Collected Works Archive',
-      sourceTitle: wikiLiveSource?.publicationOrSource || 'Wikipedia Encyclopedia & Collected Works Archive',
-      learnedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      scenarioId: matchedScenario.id,
-      trainedModelId: options?.activeModelId || 'model-panini-400b',
-    };
+    if (wikiLiveSource?.url) {
+      learnedEntity = {
+        id: `learn-gandhi-${Date.now()}`,
+        topicKey: 'Mahatma Gandhi',
+        title: 'Mahatma Gandhi (Mohandas Karamchand Gandhi, 1869–1948)',
+        entityTitle: 'Mahatma Gandhi (Mohandas Karamchand Gandhi, 1869–1948)',
+        domain: 'History',
+        subDomain: selectedExpert.subDomain,
+        summaryExtract: wikiLiveSource.snippet,
+        summary: wikiLiveSource.snippet,
+        keyFacts: selected.facts,
+        sourceUrl: wikiLiveSource.url,
+        publicationOrSource: wikiLiveSource.publicationOrSource,
+        sourceTitle: wikiLiveSource.title,
+        learnedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        scenarioId: matchedScenario.id,
+      };
+    }
     followUpQuestions = [
       'How did Mahatma Gandhi’s 1930 Dandi Salt March mobilize international press and weaken colonial fiscal authority?',
       'Compare Gandhi’s concept of Gram Swaraj in Hind Swaraj (1909) with Rabindranath Tagore’s cosmopolitan critique.',
@@ -5731,16 +5588,16 @@ ${entry.mechanismOrDetails.map((d) => `   - ${d}`).join('\n')}`,
   } else if (existingLearned) {
     customSimpleSummary = existingLearned.summaryExtract;
     selected = {
-      body: `${contextInheritanceBanner}### Synthesized from Learned Model Weights & Wikipedia Grounding: ${existingLearned.title}
+      body: `${contextInheritanceBanner}### Previously Cached Research Record: ${existingLearned.title}
 **Expert Lens:** *${selectedExpert.name} (${selectedExpert.roleTitle}) · Streamed via ${selectedExpert.streamingMethod}*
-**Matched Pretrained Scenario:** \`${existingLearned.scenarioId}\` · **Source:** [${existingLearned.publicationOrSource}](${existingLearned.sourceUrl})
+**Matched Scenario:** \`${existingLearned.scenarioId}\` · **Source:** ${existingLearned.publicationOrSource}${existingLearned.sourceUrl ? ` (${existingLearned.sourceUrl})` : ''}
 
-1. **Verified Encyclopedic & Model-Committed Synthesis**
+1. **Cached Source Summary**
    ${existingLearned.summaryExtract}
 
 2. **Expert Analytical Assessment (${selectedExpert.subDomain})**
    - **${selectedExpert.name}'s Perspective:** ${selectedExpert.opinionStance}
-   - **Key Committed Facts in Model Adapter:**
+   - **Key Facts Recorded with This Source:**
 ${existingLearned.keyFacts.map((f) => `     - ${f}`).join('\n')}`,
       facts: existingLearned.keyFacts,
     };
@@ -5784,12 +5641,11 @@ ${extraSourcesList}`,
       summaryExtract: primaryLiveSource.snippet,
       summary: primaryLiveSource.snippet,
       keyFacts: selected.facts,
-      sourceUrl: primaryLiveSource.url || 'https://en.wikipedia.org',
-      publicationOrSource: primaryLiveSource.publicationOrSource || 'Wikipedia Live Knowledge Graph',
-      sourceTitle: primaryLiveSource.publicationOrSource || 'Wikipedia Live Knowledge Graph',
+      sourceUrl: primaryLiveSource.url,
+      publicationOrSource: primaryLiveSource.publicationOrSource,
+      sourceTitle: primaryLiveSource.title,
       learnedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       scenarioId: matchedScenario.id,
-      trainedModelId: options?.activeModelId || 'model-panini-400b',
     };
   } else {
     selected = {
@@ -5902,14 +5758,11 @@ ${extraSourcesList}`,
               `Local GGUF Shard Fact (${shardFiles.ggufShardFile} · ${s.publicationOrSource}): ${s.title} — ${s.snippet.slice(0, 120)}`
           )
       : []),
-    ...(isOnlineDynamicLearning && !effectiveGroundingSources?.length
-      ? ['Live search was requested, but no provider returned sources; this answer uses local synthesis only.']
-      : []),
     `Offline AI Single Source of Truth: Cached into local shard ${shardFiles.ggufShardFile} & tensor index ${shardFiles.binTensorFile} (Scenario ${matchedScenario.id}).`,
   ];
 
   const committedShard = savePaniniKnowledgeShard(prompt, {
-    syncedFromOnline: isOnlineDynamicLearning || Boolean(effectiveGroundingSources?.length),
+    syncedFromOnline: Boolean(effectiveGroundingSources?.length),
     cachedWikipediaSources: effectiveGroundingSources,
     cachedAnswerMarkdown: filteredMarkdown,
     cachedSimpleMarkdown: filteredSimpleMarkdown,
@@ -5922,7 +5775,7 @@ ${extraSourcesList}`,
   });
   if (cleanTopic && cleanTopic !== prompt) {
     savePaniniKnowledgeShard(cleanTopic, {
-      syncedFromOnline: isOnlineDynamicLearning || Boolean(effectiveGroundingSources?.length),
+      syncedFromOnline: Boolean(effectiveGroundingSources?.length),
       cachedWikipediaSources: effectiveGroundingSources,
       cachedAnswerMarkdown: filteredMarkdown,
       cachedSimpleMarkdown: filteredSimpleMarkdown,
@@ -5961,60 +5814,23 @@ ${extraSourcesList}`,
     verifiedFacts: verifiedFactsList,
     mathStages,
     glassBox: {
-      quantizationUsed: quantType,
-      activeParametersBillions: 37.2,
-      totalParametersBillions: 400.0,
-      routedExpertIds: [selectedExpert.name, ...tpl.experts.slice(0, 2)],
-      attentionEntropy: Number((1.42 + (8.5 - spec.bitsPerWeight) * 0.04).toFixed(3)),
-      kvCacheCompressionRatio: quantType === 'IQ1_S' || quantType === 'Q2_K' ? '4.8x (Q4_0 KV)' : '2.4x (FP8 KV)',
-      tokenGenerationMs: selectedExpert.streamingSpeedMs,
-      selfLearningAdapterApplied: selfLearningSamplesCount > 0 || isOnlineDynamicLearning || Boolean(learnedEntity),
-      adapterRankDelta:
-        isOnlineDynamicLearning || Boolean(learnedEntity)
-          ? `QLoRA r=16 (+${selfLearningSamplesCount + 1} commits · Wikipedia & Scenario ${matchedScenario.id} learned)`
-          : selfLearningSamplesCount > 0
-          ? `QLoRA r=16 (+${selfLearningSamplesCount} local feedback commits active)`
-          : 'Base Pretrained Weights (0 local delta commits)',
       explainableAi: {
-        confidenceScorePct: 99.4,
-        eli12Explanation: `Imagine asking a specialist teacher about "${resolvedSenseLabel || cleanTopic}": we picked ${selectedExpert.name} (${selectedExpert.subDomain}), matched pretrained scenario ${matchedScenario.id} (${matchedScenario.title}), verified the facts against Wikipedia and archival records, and provided both a Simple Everyday Guide and an Expert Technical View!`,
+        eli12Explanation: `This response was assembled from deterministic local templates for "${resolvedSenseLabel || cleanTopic}". A scenario template was matched, and live sources are included only when the online-search workflow retrieves them. No LLM inference or model training was performed.`,
         decisionPathway: [
-          `1. Panini Sutra Intent Router matched domain "${domain}" -> Sub-Domain "${selectedExpert.subDomain}" and Pretrained Scenario ${matchedScenario.id} ("${matchedScenario.title}").`,
-          `2. Routed to Sub-Domain Expert ${selectedExpert.name} (${selectedExpert.roleTitle}) using ${selectedExpert.streamingMethod}.`,
+          `1. Classified the prompt into domain "${domain}" and sub-domain "${selectedExpert.subDomain}".`,
+          `2. Matched local scenario template ${matchedScenario.id} ("${matchedScenario.title}").`,
           mathStages
-            ? '3. Executed 4-stage symbolic & numerical mathematical solver with boundary verification.'
-            : `3. Synthesized Simple Everyday Guide + Expert Technical View for "${resolvedSenseLabel || cleanTopic}" (${policyNotice}).`,
-          isOnlineDynamicLearning || Boolean(learnedEntity)
-            ? `4. Fetched Wikipedia/online grounding and committed new QLoRA knowledge delta into active model weights.`
-            : '4. Verified 100% air-gapped execution with zero external network sockets.',
+            ? '3. Applied deterministic symbolic and numerical math rules.'
+            : `3. Assembled a deterministic response for "${resolvedSenseLabel || cleanTopic}" (${policyNotice}).`,
+          effectiveGroundingSources?.length
+            ? '4. Included retrieved source records; they were not used to train a model.'
+            : '4. No live sources were provided; this response is not source-verified.',
         ],
-        keyFeatureAttributions: [
-          { feature: `Sub-Domain Expert (${selectedExpert.name})`, weightPct: 48 },
-          { feature: `Matched Scenario (${matchedScenario.id})`, weightPct: 32 },
-          {
-            feature:
-              isOnlineDynamicLearning || Boolean(learnedEntity)
-                ? 'Wikipedia & Web Continuous Self-Learning Adapter'
-                : 'Local QLoRA Self-Learning',
-            weightPct: 20,
-          },
-        ],
-        safetyAndBiasCheck: `${policyNotice} · 100% Native Panini Inference · Zero 3rd-Party Online AI Models.`,
-        knowledgeSourceMode:
-          isOnlineDynamicLearning || Boolean(learnedEntity)
-            ? 'Hybrid Local + Dynamic Web Learning'
-            : 'Air-Gapped Local Weights',
-        dynamicWebFactsLearned:
-          isOnlineDynamicLearning || Boolean(learnedEntity)
-            ? [
-                ...(learnedEntity
-                  ? [`Learned Entity "${learnedEntity.title}" -> Scenario ${learnedEntity.scenarioId} (${learnedEntity.sourceUrl})`]
-                  : []),
-                ...(liveOnlineSources && liveOnlineSources.length > 0
-                  ? liveOnlineSources.map((s) => `${s.title} (${s.url})`)
-                  : []),
-              ]
-            : undefined,
+        keyFeatureAttributions: [],
+        safetyAndBiasCheck: `${policyNotice} · Deterministic local templates; no LLM runtime is installed.`,
+        knowledgeSourceMode: effectiveGroundingSources?.length
+          ? 'Retrieved source records included; not independently verified'
+          : 'Deterministic local response; no live source records supplied',
       },
     },
   };
@@ -6391,12 +6207,7 @@ export function inferUseCaseTargetCapabilityAndModule(promptText: string): {
 
 export function translateNlpToUseCase(
   nlpDescription: string,
-  customCountOffset = 1,
-  metadata?: {
-    learnedSource?: UseCaseScenario['learnedSource'];
-    maturitySyncCadence?: UseCaseScenario['maturitySyncCadence'];
-    learnedTimestamp?: string;
-  }
+  customCountOffset = 1
 ): UseCaseScenario {
   const normalizedInput = nlpDescription
     .replace(/^(?:Live\s+Synthesize\s+[^:]+:\s*)+/i, '')
@@ -6432,76 +6243,8 @@ export function translateNlpToUseCase(
     activeExperts: tpl.experts,
     targetCapability,
     sovereignEngineModule,
-    learnedSource: metadata?.learnedSource || 'Pretrained Baseline',
-    maturitySyncCadence: metadata?.maturitySyncCadence || 'daily',
-    learnedTimestamp: metadata?.learnedTimestamp || '2026-10-30 UTC',
     isCustom: true,
   };
-}
-
-export function synthesizeDynamicModelFromSearch(
-  query: string,
-  domain: DomainCategory,
-  existingModels: StoredModel[]
-): { model: StoredModel; createdNew: boolean } {
-  const slug = domain.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const dynamicId = `panini-dyn-${slug}`;
-  const existing = existingModels.find((m) => m.id === dynamicId);
-  if (existing) {
-    return { model: existing, createdNew: false };
-  }
-
-  const tpl = DOMAIN_TEMPLATES[domain];
-  const newVerId = `v-dyn-${slug}-1`;
-  const dynamicModel: StoredModel = {
-    id: dynamicId,
-    name: `Panini-32B-${domain.replace(/[^a-zA-Z0-9]+/g, '')}-Specialist`,
-    parameterBadge: `32B Dynamic ${domain} Specialist`,
-    family: `Panini-Dynamic-Search-Adapted (${domain})`,
-    totalParamsBillions: 32.4,
-    activeParamsBillions: 16.2,
-    currentVersionId: newVerId,
-    isClonedFork: true,
-    parentModelId: 'panini-32b-balanced',
-    modalities: ['Text', 'Math', 'Research', 'Image', 'Video', 'Code'],
-    selfLearningSamplesCount: 1,
-    minRamGb: 10,
-    minCpuCores: 6,
-    cpuRequirementLabel: '6-Core ARM64 / x86 CPU + 10GB RAM (Auto-Adapted from Search)',
-    minStorageGb: 11,
-    supportedDeployments: ['Air-Gapped Local', 'On-Premises Cluster', 'Cloud Elastic Node'],
-    xaiArchitectureSummary: `Dynamically synthesized ${domain} specialist model triggered by user search ("${query.slice(
-      0,
-      48
-    )}"). Routes tokens through Panini domain experts ${tpl.experts.join(', ')} with causal XAI verification.`,
-    primaryUseCasesSummary: [
-      `Specialized ${domain} synthesis & automated use-case adaptation from user searches`,
-      `Multi-stage symbolic proof, polyglot code, and deep research verification`,
-      `Offline 4K/8K cinematography scene and character rendering`,
-    ],
-    accuracyBenchmarkPct: 98.4,
-    avgLatencyMs: 16,
-    versions: [
-      {
-        versionId: newVerId,
-        versionTag: 'v5.0.0-search-adapted',
-        commitHash: Math.floor(1000000 + Math.random() * 8999999).toString(16),
-        timestamp: '2026-10-20 22:36 UTC',
-        author: 'Panini Dynamic Search Auto-Learner',
-        quantType: tpl.quant,
-        activeLayers: 64,
-        totalLayers: 64,
-        moeActiveExperts: 2,
-        moeTotalExperts: 8,
-        contextLength: 32768,
-        systemDirective: `Deliver high-precision ${domain} analysis adapted to live user search patterns.`,
-        loraRank: 16,
-        notes: `Auto-provisioned Panini specialist model from user search: "${query.slice(0, 60)}"`,
-      },
-    ],
-  };
-
-  return { model: dynamicModel, createdNew: true };
 }
 
 export interface UploadedAttachment {
@@ -6518,8 +6261,8 @@ export interface UploadedAttachment {
 export function summarizeUploadedAttachment(
   attachment: UploadedAttachment,
   userQuestion: string,
-  quantType: QuantizationType = 'Q4_K_M',
-  isOnlineDynamicLearning = false
+  _quantType: QuantizationType = 'Q4_K_M',
+  _isOnlineDynamicLearning = false
 ): OfflineSynthesisResult {
   const domain = detectQueryDomain(userQuestion || attachment.name);
   const isImg = attachment.kind === 'image';
@@ -6528,62 +6271,45 @@ export function summarizeUploadedAttachment(
     : '1920×1080 px (Normalized Vision Tensor)';
 
   const body = isImg
-    ? `### Multimodal Image Summarization & Visual Telemetry Report
+    ? `### Image Attachment Preview (No Vision Model Available)
 **Attached Image:** \`${attachment.name} (${attachment.sizeKb} KB · ${dimText})\`
-**User Query:** \`${userQuestion || 'Summarize visual structure, key subjects, and technical telemetry'}\`
+**User Query:** \`${userQuestion || 'No question provided'}\`
 
-1. **Scene & Object Decomposition (Panini Offline Vision-Language Encoder)**
-   - **Primary Visual Subject:** High-contrast structural & human-factors composition with clear foreground focal geometry, studio key-to-rim luminance ratio (3.4:1), and crisp edge gradients.
-   - **OCR & Symbolic Extraction:** Detected embedded technical annotations, coordinate axes, and structural boundaries with 99.1% character-level confidence.
-   - **Contextual Answer:** Based on the visual features in \`${attachment.name}\`, the primary region of interest exhibits stable morphological symmetry and directly supports your ${domain} inquiry.`
-    : `### Attached Document Analysis & Grounded Q&A
+This build has no vision model runtime and does not inspect image pixels. The details above are attachment metadata only; no visual subjects, text, or claims were analyzed.`
+    : `### Document Attachment Preview (No LLM Analysis Available)
 **Attached Document:** \`${attachment.name} (${attachment.sizeKb} KB · ${attachment.mimeType})\`
-**User Query:** \`${userQuestion || 'Summarize key findings and answer questions from this attachment'}\`
+**User Query:** \`${userQuestion || 'No question provided'}\`
 
-1. **Executive Document Summary & Extracted Propositions**
-   - **Parsed Content Excerpt:** \`${
-     attachment.textContentPreview
-       ? attachment.textContentPreview.slice(0, 140)
-       : 'Structured technical specification, equations, and empirical dataset tables.'
-   }\`
-   - **Key Synthesis:** Cross-referenced the uploaded document against Panini 400B's ${domain} knowledge shards. All numerical claims and boundary assumptions in \`${attachment.name}\` are internally consistent.`;
+${attachment.textContentPreview ? `**Provided text preview:**\n\n> ${attachment.textContentPreview.slice(0, 500)}` : 'No extracted text preview was provided.'}
+
+This build has no LLM inference runtime. It displays the provided preview only; document claims were not analyzed or verified.`;
 
   return {
     detectedDomain: domain,
     answerMarkdown: body,
     verifiedFacts: [
-      `Processed attachment "${attachment.name}" (${attachment.sizeKb} KB) locally via Panini quantized vision/document encoder.`,
+      `Received attachment metadata for "${attachment.name}" (${attachment.sizeKb} KB).`,
       isImg
-        ? `Extracted spatial layout (${dimText}), color histogram, and semantic regions.`
-        : 'Indexed document sections into local FP8 KV context window with zero data leakage.',
+        ? `Image pixel analysis is unavailable; reported dimensions are ${dimText}.`
+        : attachment.textContentPreview
+          ? 'Displayed the supplied text preview without model analysis or fact verification.'
+          : 'No document text preview was supplied for analysis.',
     ],
     glassBox: {
-      quantizationUsed: quantType,
-      activeParametersBillions: 37.2,
-      totalParametersBillions: 400.0,
-      routedExpertIds: ['Exp-Vision-02', 'Exp-Doc-09', DOMAIN_TEMPLATES[domain].experts[0]],
-      attentionEntropy: 1.39,
-      kvCacheCompressionRatio: '2.4x (FP8 Multimodal KV)',
-      tokenGenerationMs: 28,
-      selfLearningAdapterApplied: true,
-      adapterRankDelta: 'QLoRA Vision-Text Cross-Attention r=16',
       explainableAi: {
-        confidenceScorePct: 99.0,
-        eli12Explanation: `Think of this like showing a picture or page ("${attachment.name}") to a smart friend: our eyes scanned every shape and word right on your computer without sending it anywhere else, and connected it to ${domain} so you get a clear, simple explanation!`,
+        eli12Explanation: `The app received metadata for "${attachment.name}" and displays only a supplied text preview, if available. No vision or LLM model analyzed the attachment.`,
         decisionPathway: [
-          `1. Ingested ${attachment.kind} attachment "${attachment.name}" into local multimodal tensor buffer.`,
-          `2. Routed visual/document patches through Exp-Vision-02 and ${domain} expert head.`,
-          '3. Verified cross-modal alignment between attachment features and user prompt.',
+          `1. Read the attachment metadata and detected the ${domain} prompt domain using local text rules.`,
+          isImg
+            ? '2. Image pixels were not analyzed because no vision runtime is installed.'
+            : attachment.textContentPreview
+              ? '2. Displayed the supplied text preview without interpreting its claims.'
+              : '2. No extracted text preview was supplied.',
+          '3. No model inference, training, or external source lookup was performed.',
         ],
-        keyFeatureAttributions: [
-          { feature: `Attachment (${attachment.name}) Features`, weightPct: 62 },
-          { feature: `${domain} Pretrained Knowledge Shards`, weightPct: 26 },
-          { feature: 'Local Multimodal Alignment Adapter', weightPct: 12 },
-        ],
-        safetyAndBiasCheck: 'Attachment processed locally with zero external cloud upload.',
-        knowledgeSourceMode: isOnlineDynamicLearning
-          ? 'Hybrid Local + Dynamic Web Learning'
-          : 'Air-Gapped Local Weights',
+        keyFeatureAttributions: [],
+        safetyAndBiasCheck: 'Attachment content was not analyzed or verified by a model.',
+        knowledgeSourceMode: 'Attachment metadata and optional text preview only; no model weights loaded',
       },
     },
   };
@@ -6599,8 +6325,7 @@ export function generatePdfDocumentBytes(
   responseContent: string,
   domain: string,
   xai?: ExplainableAiSummary,
-  bibliography?: BibliographyReference[],
-  tuning?: DeepResearchTuningResult
+  bibliography?: BibliographyReference[]
 ): Uint8Array {
   const sanitizePdfText = (str: string) =>
     str
@@ -6610,8 +6335,9 @@ export function generatePdfDocumentBytes(
       .replace(/\)/g, '\\)');
 
   const rawLines: string[] = [
-    `PANINI 400B - DENSE RESEARCH, XAI & VERIFIED BIBLIOGRAPHY REPORT`,
-    `Domain: ${domain} | Generated: 2026-10-21 UTC | Native Panini Inference (Zero 3rd-Party AI)`,
+    `PANINI LOCAL RESPONSE EXPORT`,
+    `Domain: ${domain} | Generated: ${new Date().toISOString()}`,
+    `Offline responses use deterministic templates; this export does not certify claims.`,
     `--------------------------------------------------------------------------------`,
     `Report Title: ${title.slice(0, 82)}`,
     `Query / Topic: ${query.slice(0, 88)}`,
@@ -6637,7 +6363,7 @@ export function generatePdfDocumentBytes(
   if (bibliography && bibliography.length > 0) {
     rawLines.push('');
     rawLines.push(`--------------------------------------------------------------------------------`);
-    rawLines.push(`VERIFIED BIBLIOGRAPHY & PRIMARY REFERENCES (${bibliography.length} SOURCES)`);
+    rawLines.push(`RETRIEVED SOURCES (NOT INDEPENDENTLY VERIFIED) (${bibliography.length})`);
     for (const ref of bibliography) {
       const refLine = `[${ref.refNumber}] ${ref.authorsOrInstitution} (${ref.year}). ${ref.title}. ${ref.publicationOrSource}.`;
       for (let i = 0; i < refLine.length; i += 86) {
@@ -6647,28 +6373,20 @@ export function generatePdfDocumentBytes(
     }
   }
 
-  if (tuning) {
-    rawLines.push('');
-    rawLines.push(`--------------------------------------------------------------------------------`);
-    rawLines.push(
-      `USE-CASE MODEL TRAINING & FINE-TUNING: ${tuning.useCaseScenarioId} (${tuning.trainingTriplesExtracted} Triples | ${tuning.perplexityImprovementDelta})`
-    );
-  }
-
   if (xai) {
     rawLines.push(`--------------------------------------------------------------------------------`);
     rawLines.push(
-      `Explainable AI (XAI) Confidence: ${xai.confidenceScorePct}% | Source: ${xai.knowledgeSourceMode}`
+      `Explainable AI (XAI) | Source: ${xai.knowledgeSourceMode}`
     );
     for (const step of xai.decisionPathway.slice(0, 4)) {
       rawLines.push(`  ${step.slice(0, 86)}`);
     }
   }
 
-  // Paginate cleanly across 1 or 2 PDF pages (52 lines per page) so dense research + bibliography are never cut off
+  // Keep the full response and bibliography by paginating all generated lines.
   const linesPerPage = 52;
   const pageChunks: string[][] = [];
-  for (let i = 0; i < Math.min(rawLines.length, linesPerPage * 2); i += linesPerPage) {
+  for (let i = 0; i < rawLines.length; i += linesPerPage) {
     pageChunks.push(rawLines.slice(i, i + linesPerPage));
   }
   if (pageChunks.length === 0) {
@@ -6735,181 +6453,6 @@ export function generatePdfDocumentBytes(
   return encoder.encode(fullPdfString);
 }
 
-/**
- * v5.2 (SVN-r402.0) — Panini-Synapse-Distiller Maturity Schedule & Continual Learning Engine
- */
-export interface SovereignCapabilityEquivalenceItem {
-  sovereignSubsystem: string;
-  capabilityDomain: string;
-  onPremQuantSupport: string;
-  distilledStrengthSummary: string;
-}
-
-export interface MaturityScheduleEvaluation {
-  maturityScorePct: number;
-  maturityStageLabel:
-    | 'Stage 1: Nascent (<75%)'
-    | 'Stage 2: Developing (75%–89%)'
-    | 'Stage 3: Mature (90%–97%)'
-    | 'Stage 4: Sovereign Master (98%+)';
-  maturityMeaningSummary: string;
-  outputQualityCapabilitiesUnlocked: string[];
-  promptLearnedSamplesCount: number;
-  internetLearnedSourcesCount: number;
-  activeLoraRank: number;
-  recommendedCadence: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked';
-  activeCadence: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked';
-  intervalHours: number;
-  nextScheduledSyncUtc: string;
-  totalIndexedScenarios: number;
-  customLearnedCount: number;
-  learnedEntitiesCount: number;
-  sovereignEquivalenceMatrix: SovereignCapabilityEquivalenceItem[];
-}
-
-export function calculateModelMaturityAndSchedule(
-  model: StoredModel,
-  customScenariosCount: number,
-  learnedEntitiesCount: number,
-  overrideCadence?: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked'
-): MaturityScheduleEvaluation {
-  const baseSamples = model.selfLearningSamplesCount || 0;
-  const headVer =
-    model.versions.find((v) => v.versionId === model.currentVersionId) || model.versions[0];
-  const activeLoraRank = headVer ? headVer.loraRank : 32;
-
-  const rawScore =
-    68.0 +
-    Math.min(18.0, baseSamples * 0.65) +
-    Math.min(8.5, customScenariosCount * 0.85) +
-    Math.min(5.3, learnedEntitiesCount * 0.75);
-  const maturityScorePct = Number(Math.min(99.8, Math.max(65.0, rawScore)).toFixed(1));
-
-  let maturityStageLabel: MaturityScheduleEvaluation['maturityStageLabel'];
-  let recommendedCadence: MaturityScheduleEvaluation['recommendedCadence'];
-  let maturityMeaningSummary: string;
-  let outputQualityCapabilitiesUnlocked: string[];
-
-  if (maturityScorePct < 75.0) {
-    maturityStageLabel = 'Stage 1: Nascent (<75%)';
-    recommendedCadence = 'hourly';
-    maturityMeaningSummary =
-      'Stage 1 Nascent means the model is actively bootstrapping baseline weights with hourly prompt & internet delta harvesting (1-pass visual synthesis and single-file code checks).';
-    outputQualityCapabilitiesUnlocked = [
-      'Hourly Prompt + Internet Delta Harvesting',
-      'Baseline Single-Pass Visual & Text Synthesis',
-      'Zero-Assumption Parameter Clarification Gate',
-    ];
-  } else if (maturityScorePct < 90.0) {
-    maturityStageLabel = 'Stage 2: Developing (75%–89%)';
-    recommendedCadence = 'daily';
-    maturityMeaningSummary =
-      'Stage 2 Developing means the model has consolidated multi-domain prompt telemetry + Wikipedia/web facts into QLoRA adapters (r=16+), enabling 2-pass PBR shading and multi-expert verification.';
-    outputQualityCapabilitiesUnlocked = [
-      'Daily Prompt + Internet Knowledge Distillation into Local GGUF Shards',
-      '2-Pass PBR Lighting & Multi-Expert Cross-Verification',
-      'Automated Pre-Generation Static Code Verification',
-    ];
-  } else if (maturityScorePct < 98.0) {
-    maturityStageLabel = 'Stage 3: Mature (90%–97%)';
-    recommendedCadence = 'weekly';
-    maturityMeaningSummary =
-      `Stage 3 Mature (${maturityScorePct}%) means user outputs are powered by QLoRA Rank r=${activeLoraRank}, dual Prompt + Live Internet continual distillation, 4-pass 3D volumetric relighting (Panini-Aether-3D), 100% unknown-attribute alignment, and 4/4 unit-tested multi-format code exports.`;
-    outputQualityCapabilitiesUnlocked = [
-      `Dual Prompt Telemetry (${baseSamples} samples) + Live Internet Grounding (${learnedEntitiesCount + 12} web sources distilled)`,
-      'Panini-Aether-3D 6-DoF Volumetric Relighting & 100% Unknown-Scenario Attribute Alignment',
-      'Panini-Chronos-2M (2,000,000-Token Multi-File Repository & Document Memory)',
-      'Panini-Polyglot-AST 4/4 Unit-Tested Webpage, PPTX, DOCX & Excel Exports',
-    ];
-  } else {
-    maturityStageLabel = 'Stage 4: Sovereign Master (98%+)';
-    recommendedCadence = 'sovereign_locked';
-    maturityMeaningSummary =
-      `Stage 4 Sovereign Master (${maturityScorePct}%) means every user output operates at peak deterministic accuracy (${model.accuracyBenchmarkPct || 99.4}%), combining QLoRA r=${activeLoraRank} weights, ${baseSamples} prompt-tuned samples + ${learnedEntitiesCount + 18} distilled internet sources, 6-DoF 3D volumetric scene synthesis, 2M-token repository memory, and zero-regression self-testing.`;
-    outputQualityCapabilitiesUnlocked = [
-      `Sovereign Master QLoRA r=${activeLoraRank} Weights (${baseSamples} Prompt Samples + ${learnedEntitiesCount + 18} Internet Sources Distilled)`,
-      'Panini-Aether-3D True 6-DoF Volumetric Depth, Cast Shadows & 100% Unknown-Prompt Attribute Alignment',
-      'Panini-Chronos-2M 2,000,000-Token Repository AST & Cross-Document Citation Memory',
-      'Continuous Self-Testing CI/CD Verification & Pure Zero-Clutter Receipt/Document Exports',
-    ];
-  }
-
-  const activeCadence = overrideCadence || recommendedCadence;
-  const intervalHours =
-    activeCadence === 'hourly'
-      ? 1
-      : activeCadence === 'daily'
-      ? 24
-      : activeCadence === 'weekly'
-      ? 168
-      : 0;
-
-  const nextScheduledSyncUtc =
-    activeCadence === 'hourly'
-      ? '2026-10-30 11:30 UTC (Every 1 Hour · Nascent Delta Stream)'
-      : activeCadence === 'daily'
-      ? '2026-10-31 00:00 UTC (Every 24 Hours · Daily LoRA & Use-Case Sync)'
-      : activeCadence === 'weekly'
-      ? '2026-11-06 00:00 UTC (Every 7 Days · Weekly Verified Benchmark Consolidation)'
-      : 'Manual Admin Trigger Only (100% Air-Gapped Sovereign Lock)';
-
-  const sovereignEquivalenceMatrix: SovereignCapabilityEquivalenceItem[] = [
-    {
-      sovereignSubsystem: 'Panini-Mercantile-Doc (v5.1/v5.2)',
-      capabilityDomain: 'Commercial Bar, Cafe & Dubai/Global Hospitality POS Receipts + Pure PDF',
-      onPremQuantSupport: 'Q4_K_M / Q5_K_M Local GGUF',
-      distilledStrengthSummary:
-        'Exact target-total reconciliation (AED, SAR, QAR, USD, INR, EUR, GBP, JPY), pure #000000/#FFFFFF studio rendering, and zero-header pure %PDF-1.4 export.',
-    },
-    {
-      sovereignSubsystem: 'Panini-Synapse-Distiller (v5.2)',
-      capabilityDomain: 'Continual Internet-to-Offline Shard Learning & Self-Updating Use-Case Registry',
-      onPremQuantSupport: 'QLoRA r=16/32 Delta Adapter',
-      distilledStrengthSummary:
-        'Harvests user telemetry & scheduled internet updates (Hourly/Daily/Weekly) into local offline GGUF/BIN shards with zero external model nomenclature.',
-    },
-    {
-      sovereignSubsystem: 'Panini-LyraVox (v5.3)',
-      capabilityDomain: 'Vocal Music with Sung Words, Multi-Verse Lyrics & Visual Background Adaptation',
-      onPremQuantSupport: 'FP8 / Q5_K_M Audio-DiT',
-      distilledStrengthSummary:
-        'Generates 4-stanza lyrics, spoken/sung vocal synthesis, and adapts BPM/reverb/stems to visual backgrounds & Off-the-Hook 10+ language duplex.',
-    },
-    {
-      sovereignSubsystem: 'Panini-Aether-3D, Chronos-2M & Polyglot-AST (v5.4 / v6.0 LTS)',
-      capabilityDomain: '6-DoF Relightable 3D Scenes, 2M-Token Repo Memory & 4-Format Tested Code Sandbox',
-      onPremQuantSupport: 'IQ1_S–Q8_0 Flash Offload',
-      distilledStrengthSummary:
-        '6-DoF volumetric 3D camera/light relighting, 100% unknown-prompt attribute coverage, 2M-token repo memory, and 4/4 unit-tested Webpage, PPTX, DOCX, and Excel exports.',
-    },
-    {
-      sovereignSubsystem: 'Panini-Omni-Flash-1.1-Sovereign & Panini-Lyria-3-Pro-Sovereign (v5.6)',
-      capabilityDomain: 'Zero-External-Model Multi-Shot Cinema Video & Studio Vocal/Stem Stitching + Offline Shard Learning',
-      onPremQuantSupport: 'Q4_K_M On-Prem Synthesis (Laptop/Desktop) + Mobile Internet-Stitch Mode',
-      distilledStrengthSummary:
-        'Built-in sovereign equivalents to Gemini-Omni-1.1-Flash & Lyria-3-Pro-Preview (zero external calls) with online media fetching/stitching, Laptop/Desktop full on-prem synthesis, Mobile internet-data stitching, and offline shard self-learning over time.',
-    },
-  ];
-
-  return {
-    maturityScorePct,
-    maturityStageLabel,
-    maturityMeaningSummary,
-    outputQualityCapabilitiesUnlocked,
-    promptLearnedSamplesCount: baseSamples,
-    internetLearnedSourcesCount: learnedEntitiesCount + 14,
-    activeLoraRank,
-    recommendedCadence,
-    activeCadence,
-    intervalHours,
-    nextScheduledSyncUtc,
-    totalIndexedScenarios: TOTAL_PRETRAINED_SCENARIOS + customScenariosCount,
-    customLearnedCount: customScenariosCount,
-    learnedEntitiesCount,
-    sovereignEquivalenceMatrix,
-  };
-}
-
 export interface ContinualLearningHarvestOptions {
   customLearningPrompt?: string;
   clarificationConfirmed?: boolean;
@@ -6917,12 +6460,8 @@ export interface ContinualLearningHarvestOptions {
   selectedCapabilityOverride?: ChatCapabilityMode;
   recentUserQueries?: string[];
   existingScenarios: UseCaseScenario[];
-  existingLearnedEntities?: LearnedEntityKnowledge[];
-  cadence: 'hourly' | 'daily' | 'weekly' | 'sovereign_locked';
-  activeModel: StoredModel;
   actorName?: string;
   timestampUtc?: string;
-  liveOnlineSnippets?: { title: string; snippet: string; url: string; source: string }[];
 }
 
 export interface ContinualLearningHarvestResult {
@@ -6930,58 +6469,10 @@ export interface ContinualLearningHarvestResult {
   clarificationReason?: string;
   missingParameters?: string[];
   suggestedClarificationPrompts?: string[];
-  harvestedCount: number;
   newScenario?: UseCaseScenario;
-  newLearnedEntity?: LearnedEntityKnowledge;
-  updatedModelVersionNote?: string;
-  modelUpgradeRecord?: ModelContinualLearningUpgradeRecord;
-  updatedModel?: StoredModel;
   timestamp: string;
   syncSummaryNotice: string;
 }
-
-const SOVEREIGN_CURATED_LEARNING_POOL: {
-  prompt: string;
-  domain: DomainCategory;
-  learnedSource: UseCaseScenario['learnedSource'];
-}[] = [
-  {
-    prompt:
-      'Synthesize a 6-DoF relightable 3D volumetric architectural & robotics scene with Panini-Aether-3D and inspect 2M-token repository memory via Panini-Chronos-2M',
-    domain: 'Science',
-    learnedSource: 'Scheduled Internet Sync',
-  },
-  {
-    prompt:
-      'Generate a receipt for 800 AED for Dubai Hotel in Jumeirah area with black background, white receipt paper, real Jumeirah location, 5% UAE VAT, and 10% service charge',
-    domain: 'History',
-    learnedSource: 'User Prompt Telemetry',
-  },
-  {
-    prompt:
-      'Compose a vocal song with sung words and 4-stanza lyrics adapted to an artisanal specialty coffee roastery acoustic background',
-    domain: 'Literature',
-    learnedSource: 'Sovereign Peer Distillation',
-  },
-  {
-    prompt:
-      'Build a zero-allocation Rust and TypeScript financial ledger telemetry workbench with live HTML5 Webpage preview, PowerPoint PPTX, Word DOCX, and Excel CSV exports',
-    domain: 'Computer Programming',
-    learnedSource: 'Scheduled Internet Sync',
-  },
-  {
-    prompt:
-      'Two executive chefs plating artisanal dishes in a commercial hotel kitchen with rising steam, copper cookware, and synchronized sizzling foley audio',
-    domain: 'Science',
-    learnedSource: 'Sovereign Peer Distillation',
-  },
-  {
-    prompt:
-      'Audit post-quantum ML-KEM-1024 lattice key encapsulation and zero-trust DPoP hardware enclave attestation for on-premises sovereign AI clusters',
-    domain: 'Cybersecurity',
-    learnedSource: 'Scheduled Internet Sync',
-  },
-];
 
 export function executeContinualLearningHarvest(
   options: ContinualLearningHarvestOptions
@@ -7004,16 +6495,15 @@ export function executeContinualLearningHarvest(
         needsClarification: true,
         clarificationReason: `Your custom learning topic ("${rawCustom}") is concise and did not specify target domain, capability modality, or concrete scenario parameters. Panini-Synapse-Distiller does not assume missing parameters.`,
         missingParameters: [
-          'Target Capability Modality (Ask/Math, Image/Receipt, Video, Audio/Lyrics, Coding, Deep Research)',
-          'Domain & Regional/Technical Context (e.g., Currency AED/USD, Language, or Architecture)',
-          'Expected Verification Output (e.g., Pure Receipt PDF, Unit-Tested Code, or Multi-Verse Vocal Track)',
+          'Target domain and intended audience',
+          'Desired output or scenario format',
+          'Relevant context, constraints, or source material',
         ],
         suggestedClarificationPrompts: [
-          `Generate a receipt for 800 AED for Dubai Hotel in Jumeirah area with black background, white receipt paper, 5% VAT, and 10% service charge`,
-          `Synthesize a 6-DoF relightable 3D volumetric scene for ${rawCustom} with 100% attribute alignment`,
-          `Implement a unit-tested TypeScript & Rust module for ${rawCustom} with live HTML5 Webpage preview and Excel export`,
+          `What domain and audience should the "${rawCustom}" scenario target?`,
+          `What output format should the "${rawCustom}" scenario produce?`,
+          `What constraints or sources should guide the "${rawCustom}" scenario?`,
         ],
-        harvestedCount: 0,
         timestamp,
         syncSummaryNotice: `Clarification requested for "${rawCustom}" before committing to Use-Case Registry.`,
       };
@@ -7021,8 +6511,6 @@ export function executeContinualLearningHarvest(
   }
 
   let chosenPrompt = rawCustom;
-  let chosenSource: UseCaseScenario['learnedSource'] = 'User Prompt Telemetry';
-
   if (!chosenPrompt && options.recentUserQueries && options.recentUserQueries.length > 0) {
     const unlearnedUserQuery = options.recentUserQueries.find((q) => {
       const cleanQ = q.replace(/^(?:Live\s+Synthesize\s+[^:]+:\s*)+/i, '').trim().toLowerCase();
@@ -7035,26 +6523,23 @@ export function executeContinualLearningHarvest(
     });
     if (unlearnedUserQuery) {
       chosenPrompt = unlearnedUserQuery;
-      chosenSource = 'User Prompt Telemetry';
     }
   }
 
   if (!chosenPrompt) {
-    const poolIdx = options.existingScenarios.length % SOVEREIGN_CURATED_LEARNING_POOL.length;
-    const candidate = SOVEREIGN_CURATED_LEARNING_POOL[poolIdx];
-    chosenPrompt = candidate.prompt;
-    chosenSource =
-      options.cadence === 'sovereign_locked'
-        ? 'Sovereign Peer Distillation'
-        : 'Scheduled Internet Sync';
+    return {
+      needsClarification: true,
+      clarificationReason:
+        'Enter a specific prompt to add a scenario. No preset scenario is selected automatically, and this action does not train a model.',
+      missingParameters: ['A topic or prompt to add to the local scenario library'],
+      suggestedClarificationPrompts: ['Describe the topic, intended use, and desired output.'],
+      timestamp,
+      syncSummaryNotice: 'No scenario was added. Provide a prompt to continue.',
+    };
   }
 
   const nextOffset = options.existingScenarios.length + 1;
-  const baseScenario = translateNlpToUseCase(chosenPrompt, nextOffset, {
-    learnedSource: chosenSource,
-    maturitySyncCadence: options.cadence,
-    learnedTimestamp: timestamp,
-  });
+  const baseScenario = translateNlpToUseCase(chosenPrompt, nextOffset);
 
   const finalDomain = options.selectedDomainOverride || baseScenario.domain;
   const finalCapability =
@@ -7064,242 +6549,22 @@ export function executeContinualLearningHarvest(
     ...baseScenario,
     domain: finalDomain,
     targetCapability: finalCapability,
-    targetMetric: `Synced via Panini-Synapse-Distiller (${options.cadence.toUpperCase()} · Prompt + Internet Grounding · ${
-      options.actorName || 'Admin'
-    })`,
+    targetMetric: `Local scenario outline created by ${options.actorName || 'Admin'}; model weights unchanged.`,
   };
-
-  const liveSnippet = options.liveOnlineSnippets?.[0];
-  const newLearnedEntity: LearnedEntityKnowledge = {
-    id: `learn-sync-${Date.now()}`,
-    topicKey: newScenario.id.toLowerCase(),
-    title: newScenario.title,
-    entityTitle: newScenario.title,
-    domain: newScenario.domain,
-    subDomain: newScenario.sovereignEngineModule || 'Panini-Synapse-Distiller',
-    summaryExtract:
-      liveSnippet?.snippet ||
-      `Distilled dual Prompt Telemetry + Live Internet Knowledge for "${newScenario.starterPrompt}" under ${options.cadence.toUpperCase()} cadence into local GGUF/BIN shard.`,
-    summary:
-      liveSnippet?.snippet ||
-      `Distilled dual Prompt Telemetry + Live Internet Knowledge for "${newScenario.starterPrompt}" under ${options.cadence.toUpperCase()} cadence into local GGUF/BIN shard.`,
-    keyFacts: [
-      `Scenario ${newScenario.id} registered in Self-Updating Use-Case Library (${newScenario.sovereignEngineModule}).`,
-      `Starter Prompt: ${newScenario.starterPrompt}`,
-      `Dual Continual Learning: User Prompt Telemetry + Live Internet Grounding (${options.cadence.toUpperCase()} · Source: ${chosenSource})`,
-    ],
-    sourceUrl: liveSnippet?.url || 'https://en.wikipedia.org/wiki/Panini',
-    publicationOrSource:
-      liveSnippet?.source || `Panini-Synapse-Distiller (Prompt + Internet Sync · ${chosenSource})`,
-    sourceTitle:
-      liveSnippet?.title || `Panini-Synapse-Distiller (${chosenSource})`,
-    learnedAt: timestamp,
-    scenarioId: newScenario.id,
-    trainedModelId: options.activeModel.id,
-  };
-
-  const harvestedCount =
-    options.liveOnlineSnippets && options.liveOnlineSnippets.length > 0
-      ? options.liveOnlineSnippets.length + 3
-      : 4;
-
-  const updatedModelVersionNote = `[v5.4 Panini-Synapse-Distiller ${options.cadence.toUpperCase()} Prompt+Internet Sync -> ${newScenario.id}: "${newScenario.title}"]`;
-
-  const modelLearningRes = applyPromptScenarioToModelLearning(
-    options.activeModel,
-    newScenario.starterPrompt,
-    'Admin Continual Learning Update',
-    options.actorName || 'Admin',
-    harvestedCount
-  );
 
   return {
     needsClarification: false,
-    harvestedCount,
     newScenario,
-    newLearnedEntity,
-    updatedModelVersionNote,
-    modelUpgradeRecord: modelLearningRes.upgradeRecord,
-    updatedModel: modelLearningRes.updatedModel,
     timestamp,
-    syncSummaryNotice: `[${timestamp}] Harvested ${harvestedCount} Prompt + Live Internet deltas (${chosenSource} · ${options.cadence.toUpperCase()}), upgraded ${options.activeModel.name} weights (LoRA r=${modelLearningRes.upgradeRecord.updatedLoraRank} · Acc ${modelLearningRes.upgradeRecord.updatedAccuracyPct}%) & registered ${newScenario.id}: "${newScenario.title}".`,
+    syncSummaryNotice: `[${timestamp}] Added ${newScenario.id}: "${newScenario.title}" to the local scenario library. No external sources or model weights were changed.`,
   };
 }
 
-/**
- * Continually evolves and upgrades an AI model's weights, QLoRA adapter rank, accuracy benchmark,
- * and version history from every prompt execution, scenario run, or Admin Continual Learning update,
- * combining both User Prompt Telemetry and Live Internet Grounding distillation.
- */
-export function applyPromptScenarioToModelLearning(
-  model: StoredModel,
-  prompt: string,
-  triggerSource: ModelContinualLearningUpgradeRecord['triggerSource'] = 'Live Prompt Execution',
-  authorName = 'Sovereign Distiller',
-  samplesDelta = 1
-): { updatedModel: StoredModel; upgradeRecord: ModelContinualLearningUpgradeRecord } {
-  const cleanPrompt = prompt
-    .replace(/^(?:Live\s+Synthesize\s+[^:]+:\s*)+/i, '')
-    .trim();
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-  const lower = cleanPrompt.toLowerCase();
-
-  let targetSubsystem = 'Panini-Veritas-Core & Panini-Chronos-2M (Prompt + Internet Grounded Reasoning)';
-  const learnedCapabilities: string[] = [];
-
-  if (/\b(3d|aether|relight|6-dof|volumetric|depth|perspective|orbit)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-Aether-3D (6-DoF Relightable 3D Volumetric Scene Engine)';
-    learnedCapabilities.push(
-      '6-DoF camera orbit (Yaw/Pitch/Zoom) & dynamic directional light azimuth/elevation relighting',
-      'Universal unknown-scenario prompt attribute alignment (100% subject, prop, material & action coverage)',
-      'Internet-grounded PBR surface normal relief & 3D perspective depth frustum'
-    );
-  } else if (/\b(chefs?|cooks?|kitchen|culinary|cookware|copper\s*pots?|sizzl|plating|dishes)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-Kinesis-Cinema-8K (Culinary Brigade & Foley Physics)';
-    learnedCapabilities.push(
-      'Executive Chef double-breasted white coat & tall pleated toque hat anatomy',
-      'Commercial hotel kitchen stainless hood, hanging copper cookware & active stove burners',
-      'Synchronized copper pan sizzle, knife chop & porcelain clink Foley synthesis + Internet culinary grounding'
-    );
-  } else if (/\b(gandhi|mahatma|dandi|salt\s*march|satyagraha|khadi)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-Kinesis-Cinema-8K (Historical Multi-Shot Persona Grounding)';
-    learnedCapabilities.push(
-      'Mahatma Gandhi historical persona (elder bald head, round wireframe spectacles, white Khadi dhoti & bamboo staff)',
-      'Multi-shot storyboard main-character persistence across Shots 1, 2 & 3',
-      'Dandi Arabian Sea salt shore & Satyagrahi followers in white Khadi + Archival Internet Grounding'
-    );
-  } else if (/\b(receipt|invoice|folio|pos\b|aed|vat|gst|jumeirah|hotel|bar|cafe)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-Mercantile-Doc (Commercial POS & Pure %PDF-1.4 Engine)';
-    learnedCapabilities.push(
-      'Zero-assumption currency/tax parameter lock & exact target total reconciliation',
-      'Pure receipt-only %PDF-1.4 binary synthesis with zero extra headers or footers',
-      'High-contrast white thermal slip on prompt-accurate studio background'
-    );
-  } else if (/\b(music|song|vocal|lyrics?|melody|chords?|tempo|sing|chorus|stanza)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-LyraVox (Vocal Music with Words/Lyrics & Visual Acoustic Adapter)';
-    learnedCapabilities.push(
-      'Multi-stanza vocal lyrics (Verse/Chorus/Bridge/Outro) with word-by-word formant synthesis',
-      'Dynamic acoustic reverb, tempo & harmonic progression adaptation to 6 visual backgrounds'
-    );
-  } else if (/\b(code|rust|typescript|python|sql|html|webpage|pptx|docx|excel|repo|chronos)\b/i.test(lower)) {
-    targetSubsystem = 'Panini-Polyglot-AST & Panini-Chronos-2M (2M-Token Repo Memory & 4-Format Sandbox)';
-    learnedCapabilities.push(
-      'Automated 4/4 unit-test assertion harness before artifact delivery',
-      '2,000,000-token repository AST memory & Live HTML5 Webpage, PPTX, DOCX & Excel exports'
-    );
-  } else {
-    learnedCapabilities.push(
-      `Distilled prompt & live internet knowledge from: "${cleanPrompt.slice(0, 72)}"`,
-      '100% Universal Attribute Alignment for open-world / previously unseen scenario tokens',
-      'Updated local GGUF/BIN shard KV-cache & QLoRA attention weights from Prompt + Web Grounding'
-    );
-  }
-
-  const headVer =
-    model.versions.find((v) => v.versionId === model.currentVersionId) || model.versions[0];
-  const prevLoraRank = headVer ? headVer.loraRank : 16;
-  const nextLoraRank = Math.min(128, prevLoraRank + (triggerSource === 'Admin Continual Learning Update' ? 4 : 2));
-
-  const prevAcc = model.accuracyBenchmarkPct || 98.4;
-  const accDelta = triggerSource === 'Admin Continual Learning Update' ? 0.08 : 0.03;
-  const nextAcc = Number(Math.min(99.98, prevAcc + accDelta).toFixed(2));
-
-  const existingHistory = model.continualLearningHistory || [
-    {
-      id: 'cl-seed-v52-receipt',
-      timestamp: '2026-10-30 18:10:00 UTC',
-      triggerSource: 'Admin Continual Learning Update',
-      promptAnalyzed:
-        'Generate a receipt for 800 AED for Dubai Hotel in Jumeirah area with black background, white receipt paper, 5% VAT, and 10% service charge',
-      targetSubsystem: 'Panini-Mercantile-Doc (Commercial POS & Pure %PDF-1.4 Engine)',
-      learnedCapabilities: [
-        'Strict AED currency lock & 800.00 AED exact subtotal/tax/service reconciliation',
-        'Pure receipt-only %PDF-1.4 export with zero headers, footers, or XAI clutter',
-      ],
-      samplesAdded: 3,
-      previousAccuracyPct: 99.1,
-      updatedAccuracyPct: 99.25,
-      previousLoraRank: 16,
-      updatedLoraRank: 24,
-      versionTagCommitted: 'v5.2.1-synapse',
-    },
-    {
-      id: 'cl-seed-v52-culinary',
-      timestamp: '2026-10-30 19:05:00 UTC',
-      triggerSource: 'Scenario Telemetry',
-      promptAnalyzed:
-        'Two executive chefs plating artisanal dishes in a commercial hotel kitchen with rising steam, copper cookware, and synchronized sizzling foley audio',
-      targetSubsystem: 'Panini-Kinesis-Cinema-8K (Culinary Brigade & Foley Physics)',
-      learnedCapabilities: [
-        'Executive Chef white double-breasted coats, red neckerchiefs & tall pleated white toque hats',
-        'Commercial hotel kitchen stainless steel hood, hanging copper pots, active gas burners & sizzling pan Foley',
-      ],
-      samplesAdded: 2,
-      previousAccuracyPct: 99.25,
-      updatedAccuracyPct: 99.38,
-      previousLoraRank: 24,
-      updatedLoraRank: 32,
-      versionTagCommitted: 'v5.3.0-lyravox',
-    },
-  ];
-
-  const stepIndex = existingHistory.length + 1;
-  const versionTagCommitted = `v5.4.${stepIndex}-continual`;
-
-  const upgradeRecord: ModelContinualLearningUpgradeRecord = {
-    id: `cl-${Date.now()}-${Math.floor(Math.random() * 999)}`,
-    timestamp,
-    triggerSource,
-    promptAnalyzed: cleanPrompt.slice(0, 140),
-    targetSubsystem,
-    learnedCapabilities,
-    samplesAdded: Math.max(1, samplesDelta),
-    previousAccuracyPct: prevAcc,
-    updatedAccuracyPct: nextAcc,
-    previousLoraRank: prevLoraRank,
-    updatedLoraRank: nextLoraRank,
-    versionTagCommitted,
-  };
-
-  const updatedVersions = model.versions.map((v, idx) =>
-    idx === 0
-      ? {
-          ...v,
-          loraRank: nextLoraRank,
-          timestamp,
-          author: authorName,
-          notes: `[Continual Learning ${versionTagCommitted} (Prompt + Internet Sync) · ${targetSubsystem}: "${cleanPrompt.slice(0, 56)}" -> LoRA r=${nextLoraRank}, Acc=${nextAcc}%] ${v.notes}`,
-        }
-      : v
-  );
-
-  const updatedUseCases = Array.from(
-    new Set([
-      `${targetSubsystem.split(' (')[0]}: ${learnedCapabilities[0]}`,
-      ...(model.primaryUseCasesSummary || []),
-    ])
-  ).slice(0, 8);
-
-  const updatedModel: StoredModel = {
-    ...model,
-    selfLearningSamplesCount: model.selfLearningSamplesCount + Math.max(1, samplesDelta),
-    accuracyBenchmarkPct: nextAcc,
-    primaryUseCasesSummary: updatedUseCases,
-    versions: updatedVersions,
-    continualLearningHistory: [upgradeRecord, ...existingHistory].slice(0, 25),
-  };
-
-  return { updatedModel, upgradeRecord };
-}
 
 /**
- * Generates a pure, self-contained %PDF-1.4 document containing ONLY the Self-Updating Use-Case
- * & Continual Learning Ledger (zero unrelated bibliography or XAI clutter).
+ * Generates a self-contained PDF of the scenarios saved in the local workspace.
  */
-export function generatePureLearningLedgerPdfBytes(
-  scenarios: UseCaseScenario[],
-  maturityEval: MaturityScheduleEvaluation
-): Uint8Array {
+export function generatePureLearningLedgerPdfBytes(scenarios: UseCaseScenario[]): Uint8Array {
   const sanitize = (str: string) =>
     str
       .replace(/[^\x20-\x7E]/g, ' ')
@@ -7309,13 +6574,10 @@ export function generatePureLearningLedgerPdfBytes(
 
   const lines: string[] = [
     `========================================================================`,
-    `PANINI-SYNAPSE-DISTILLER (v5.4 SVN-r404.0) - LEARNED USE-CASE LEDGER`,
+    `PANINI LOCAL SCENARIO LEDGER`,
     `========================================================================`,
-    `Maturity Score: ${maturityEval.maturityScorePct}% (${maturityEval.maturityStageLabel})`,
-    `Meaning: ${maturityEval.maturityMeaningSummary.slice(0, 68)}`,
-    `Active Sync Schedule: ${maturityEval.activeCadence.toUpperCase()} | Recommended: ${maturityEval.recommendedCadence.toUpperCase()}`,
-    `Next Scheduled Sync: ${maturityEval.nextScheduledSyncUtc}`,
-    `Total Indexed Scenarios: ${maturityEval.totalIndexedScenarios} (${maturityEval.customLearnedCount} Custom Learned)`,
+    `Model weights and training data are not included or changed by this export.`,
+    `Scenarios in this export are local workspace entries, not verified claims.`,
     `------------------------------------------------------------------------`,
     `ID         MODULE                  SOURCE                     DOMAIN`,
     `------------------------------------------------------------------------`,
@@ -7326,9 +6588,7 @@ export function generatePureLearningLedgerPdfBytes(
     const modCol = (scn.sovereignEngineModule || 'Panini-Veritas-Core')
       .padEnd(23, ' ')
       .slice(0, 23);
-    const srcCol = (scn.learnedSource || 'Pretrained Baseline')
-      .padEnd(26, ' ')
-      .slice(0, 26);
+    const srcCol = 'Local scenario'.padEnd(26, ' ');
     const domCol = scn.domain.slice(0, 14);
     lines.push(`${idCol} ${modCol} ${srcCol} ${domCol}`);
     const promptLine = `  Prompt: ${scn.starterPrompt}`;
