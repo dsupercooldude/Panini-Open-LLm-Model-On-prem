@@ -20,6 +20,16 @@ import {
   AmbiguityClarificationOption,
   ThreadContextMemory,
   PendingDeepResearchPlan,
+  InputGuardrailScanResult,
+  OutputGuardrailScanResult,
+  BoundedAgentOrchestratorResult,
+  SandboxedExpenseDeckBundle,
+  HybridKnowledgeAndMcpPipelineResultV57,
+  AsyncGenerationJobRecordV57,
+  OtelLangfuseTraceWaterfallV57,
+  UserFeedbackRatingV57,
+  ThinkingModeExecutionPlanV59,
+  AutoEngineeredPromptSpecV59,
   analyzeNlpVisualPrompt,
   translateNlpToUseCase,
   executeDeepResearchPlan,
@@ -84,6 +94,16 @@ export interface ChatMessage {
   imageStudio?: ImageStudioSpec;
   mapsGrounding?: MapsGroundingResult;
   searchGrounding?: SearchGroundingResult;
+  inputGuardrail?: InputGuardrailScanResult;
+  outputGuardrail?: OutputGuardrailScanResult;
+  agentOrchestrator?: BoundedAgentOrchestratorResult;
+  expenseDeckBundle?: SandboxedExpenseDeckBundle;
+  knowledgeMcpPipeline?: HybridKnowledgeAndMcpPipelineResultV57;
+  asyncJobRecord?: AsyncGenerationJobRecordV57;
+  otelTraceWaterfall?: OtelLangfuseTraceWaterfallV57;
+  userFeedbackRating?: UserFeedbackRatingV57;
+  thinkingPlanV59?: ThinkingModeExecutionPlanV59;
+  engineeredPromptSpecV59?: AutoEngineeredPromptSpecV59;
 }
 
 export interface ChatThreadSession {

@@ -893,15 +893,7 @@ export const ImageCreateAndEditCard: React.FC<{
       serviceChargePct,
       clarificationConfirmed: true,
     });
-    const updatedScene = buildPromptConstructedScene(imageSpec.prompt, '16:9', undefined, {
-      receiptOverrides: {
-        venueName,
-        currencySymbol: currencySymbol as 'AED' | 'USD' | 'INR' | 'EUR' | 'GBP',
-        taxRatePct,
-        serviceChargePct,
-        clarificationConfirmed: true,
-      },
-    });
+    const updatedScene = buildPromptConstructedScene(imageSpec.prompt, '16:9', undefined);
     updatedScene.commercialReceiptSpec = updatedReceipt;
     setImageSpec((prev) => ({
       ...prev,
@@ -912,7 +904,7 @@ export const ImageCreateAndEditCard: React.FC<{
   const handleDownloadPureReceiptPdf = () => {
     if (!receiptSpec) return;
     const pdfBytes = generatePureReceiptPdfBytes(receiptSpec);
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1160,7 +1152,7 @@ export const LiveVoiceConversationDrawer: React.FC<{
     const cleanPrompt = spokenInput.trim();
     if (!cleanPrompt) return;
     const scenario = translateNlpToUseCase(cleanPrompt, 9);
-    const synthesized = generateOfflineKnowledgeResponse(cleanPrompt, 'Panini-Omega-2.0T', 'Q4_K_M');
+    const synthesized = generateOfflineKnowledgeResponse(cleanPrompt, 'Science', 'Q4_K_M');
     setBuiltUseCase(scenario);
     setReportedResponseText(synthesized.simpleAnswerMarkdown || synthesized.answerMarkdown);
     onSendVoiceTurnToWorkspace(cleanPrompt);
@@ -1189,8 +1181,8 @@ export const LiveVoiceConversationDrawer: React.FC<{
 
       {enableMultilingual && (
         <div className="text-[11px] font-mono text-sky-300">
-          Detected Language: {langDetection.languageName} ({langDetection.bcp47Tag}) · Script:{' '}
-          {langDetection.detectedScript}
+          Detected Language: {langDetection.detectedLanguageLabel} ({langDetection.speechSynthesisBcp47}) · Code:{' '}
+          {langDetection.detectedLanguageCode}
         </div>
       )}
 

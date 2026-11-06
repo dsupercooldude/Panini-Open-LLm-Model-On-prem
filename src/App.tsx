@@ -45,12 +45,33 @@ import {
   buildRetrievedSearchStream,
   executeContinualLearningHarvest,
   ContinualLearningHarvestResult,
+  runInputGuardrailScan,
+  runOutputGuardrailScan,
+  isReceiptToExpenseDeckQuery,
+  executeBoundedAgentOrchestrator,
+  runReceiptVisionOcrAndReconcile,
+  buildSandboxedExpenseDeckBundle,
+  ExpenseDeckBrandStyle,
+  SandboxIsolationRuntime,
+  runHybridKnowledgePipelineV57,
+  DocumentAclRole,
+  buildOtelLangfuseTraceWaterfallV57,
+  submitAsyncGenerationJobV57,
+  extractPresentationSubjectAndIntent,
+  engineerPromptForOptimalAccuracyV59,
+  buildThinkingModeExecutionPlanV59,
+  PreviewableFileArtifactV59,
+  buildPreviewableArtifactsFromCodingResolutionV59,
+  getPersistentSovereignSettingsV61,
+  updatePersistentSovereignSettingsV61,
+  upsertAndIndexKnowledgeShardV61,
 } from './utils/engineLogic';
 import {
   VideoAspectRatio,
   buildPromptConstructedScene,
   savePaniniKnowledgeShard,
   synthesizeMusicTrackSpec,
+  hydratePaniniKnowledgeShards,
 } from './utils/multimodalSuite';
 import {
   INITIAL_MODELS,
@@ -75,6 +96,9 @@ import { ModelRegistryView } from './components/ModelRegistryView';
 import { HardwareThermalView } from './components/HardwareThermalView';
 import { TeamRbacView } from './components/TeamRbacView';
 import { OpsLogsDocsView } from './components/OpsLogsDocsView';
+import { AdminIntegrationsView } from './components/AdminIntegrationsView';
+import { AdminRestMcpDocsView } from './components/AdminRestMcpDocsView';
+import { FilePreviewTabView } from './components/FilePreviewTabView';
 import {
   EnterpriseGovernanceModal,
   AdminResourcePermissionPolicy,
@@ -92,10 +116,20 @@ import {
   Settings,
   X,
   ExternalLink,
+  Globe,
+  Eye,
+  BookOpen,
 } from 'lucide-react';
 
-type WorkspaceMode = 'user' | 'admin';
-type AdminSection = 'registry' | 'hardware' | 'team' | 'ops' | 'governance';
+type WorkspaceMode = 'user' | 'admin' | 'preview';
+type AdminSection =
+  | 'registry'
+  | 'hardware'
+  | 'team'
+  | 'ops'
+  | 'governance'
+  | 'integrations'
+  | 'api_mcp_docs';
 
 const WORKSPACE_LABELS: Record<ChatCapabilityMode, string> = {
   ask_math: 'Ask & Math',
@@ -146,10 +180,14 @@ export default function App() {
   );
   const [ambientTempC, setAmbientTempC] = useState<number>(24);
 
-  // Preset Runtime Environment Variables (Never prompted on startup; editable ONLY in Admin Settings)
-  const [presetOfflineMode, setPresetOfflineMode] = useState<boolean>(true);
+  // Preset Runtime Environment Variables (Persistent across sessions & server restarts; Internet Accessible by default!)
+  const [presetOfflineMode, setPresetOfflineMode] = useState<boolean>(
+    () => !getPersistentSovereignSettingsV61().isOnlineLearning
+  );
   const [presetModelCacheDir, setPresetModelCacheDir] = useState<string>(
-    '/var/lib/panini/models/gguf-shards'
+    () =>
+      getPersistentSovereignSettingsV61().presetModelCacheDir ||
+      '/var/lib/panini/models/gguf-shards'
   );
   const [presetBackupCron, setPresetBackupCron] = useState<string>('0 */4 * * *');
 
@@ -162,8 +200,66 @@ export default function App() {
   // Locally cached source records from explicit online research.
   const [learnedEntities, setLearnedEntities] = useState<LearnedEntityKnowledge[]>([]);
 
-  // Persistent Online / Offline Switch for Multi-Engine Search Stream
-  const [isOnlineLearning, setIsOnlineLearning] = useState<boolean>(false);
+  // Persistent Online / Offline Switch for Multi-Engine Search Stream (Default = true / Internet Accessible)
+  const [isOnlineLearning, setIsOnlineLearning] = useState<boolean>(
+    () => getPersistentSovereignSettingsV61().isOnlineLearning
+  );
+
+  // Release v5.7-beta Phase 2: Active Document ACL & MCP Role ('Viewer' | 'Analyst' | 'Developer' | 'Admin')
+  const [activeAclRole, setActiveAclRole] = useState<DocumentAclRole>(
+    () => getPersistentSovereignSettingsV61().activeAclRole || 'Analyst'
+  );
+
+  // Sync Persistent Sovereign Settings & Knowledge Shards with Backend Disk DB (/api/v61/settings & /api/v61/shards) on startup
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [settingsRes, shardsRes] = await Promise.all([
+          fetch('/api/v61/settings').catch(() => null),
+          fetch('/api/v61/shards').catch(() => null),
+        ]);
+        if (mounted && settingsRes && settingsRes.ok) {
+          const sJson = await settingsRes.json();
+          if (sJson?.settings && typeof sJson.settings.isOnlineLearning === 'boolean') {
+            const hydrated = updatePersistentSovereignSettingsV61(sJson.settings);
+            setIsOnlineLearning(hydrated.isOnlineLearning);
+            setPresetOfflineMode(!hydrated.isOnlineLearning);
+            if (hydrated.activeAclRole) {
+              setActiveAclRole(hydrated.activeAclRole);
+            }
+          }
+        }
+        if (mounted && shardsRes && shardsRes.ok) {
+          const shJson = await shardsRes.json();
+          if (Array.isArray(shJson?.shards)) {
+            const mapObj: Record<string, (typeof shJson.shards)[number]> = {};
+            for (const s of shJson.shards) {
+              if (s?.queryKey) {
+                mapObj[s.queryKey] = s;
+                upsertAndIndexKnowledgeShardV61({
+                  topic: s.queryKey,
+                  sourceTitle: s.cachedWikipediaSources?.[0]?.title || s.queryKey,
+                  sourceUrl: s.cachedWikipediaSources?.[0]?.doiOrUrl || `local://shards/${s.queryKey}.gguf`,
+                  facts:
+                    Array.isArray(s.cachedVerifiedFacts) && s.cachedVerifiedFacts.length > 0
+                      ? s.cachedVerifiedFacts
+                      : [`${s.queryKey} verified local shard.`],
+                  mergeExisting: true,
+                });
+              }
+            }
+            hydratePaniniKnowledgeShards(mapObj);
+          }
+        }
+      } catch {
+        // Local storage persistence already active
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Admin Console Resource & Permission Policy
   const [adminPermissions, setAdminPermissions] = useState<AdminResourcePermissionPolicy>({
@@ -187,6 +283,35 @@ export default function App() {
   ]);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const [mediaGallery, setMediaGallery] = useState<GeneratedMediaItem[]>(INITIAL_MEDIA_GALLERY);
+
+  // Release v5.9-GA: Dedicated File Preview Tab State (Pre-seeded with verified Gurucul multi-format bundle; updated on every generated downloadable file)
+  const [previewFiles, setPreviewFiles] = useState<PreviewableFileArtifactV59[]>(() => {
+    const synth = generateOfflineCodeSynthesis(
+      'Generate a pptx for Gurucul about its company history, product portfolio and its feature about each product. Make sure use actual data and generate relevant images as needed',
+      'Auto (Best Practice)'
+    );
+    return synth.codingResolution
+      ? buildPreviewableArtifactsFromCodingResolutionV59(synth.codingResolution)
+      : [];
+  });
+  const [activePreviewFileId, setActivePreviewFileId] = useState<string>('');
+  const [isPreviewTabOpen, setIsPreviewTabOpen] = useState<boolean>(true);
+
+  const handleOpenFileInPreviewTab = (
+    files: PreviewableFileArtifactV59[],
+    preferredFileId?: string
+  ) => {
+    if (!files || files.length === 0) return;
+    setPreviewFiles((prev) => {
+      const existingIds = new Set(files.map((f) => f.id));
+      const merged = [...files, ...prev.filter((p) => !existingIds.has(p.id))];
+      return merged.slice(0, 20);
+    });
+    const chosenId = preferredFileId || files[0].id;
+    setActivePreviewFileId(chosenId);
+    setIsPreviewTabOpen(true);
+    setWorkspaceMode('preview');
+  };
 
   const appendMessagesToThread = (
     newMessages: ChatMessage[],
@@ -463,12 +588,22 @@ export default function App() {
     const nextState = !isOnlineLearning;
     setIsOnlineLearning(nextState);
     setPresetOfflineMode(!nextState);
+    const updatedSettings = updatePersistentSovereignSettingsV61({
+      isOnlineLearning: nextState,
+      presetOfflineMode: !nextState,
+      networkMode: nextState ? 'online' : 'offline',
+    });
+    fetch('/api/v61/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedSettings),
+    }).catch(() => {});
     appendLog(
       'INFO',
       'QuantEngine',
       nextState
-        ? 'Enabled online search indexes (Wikipedia, OpenAlex, and Crossref; no external AI model calls).'
-        : 'Disabled external search; responses use deterministic local rules.'
+        ? 'Enabled persistent Online mode (Wikipedia, OpenAlex, and Crossref; persisted across sessions & restarts).'
+        : 'Switched to explicit Offline mode via UI toggle (persisted across sessions & restarts).'
     );
   };
 
@@ -540,7 +675,11 @@ export default function App() {
     explicitExpertOverride?: string,
     explicitSenseOption?: AmbiguityClarificationOption
   ) => {
-    const autoCorrect = autoCorrectUserQuery(rawPrompt);
+    // 0. Phase 1 v5.7-alpha Gateway & Input Guardrail (PII Redaction + Prompt-Injection Defense)
+    const inputGuardrail = runInputGuardrailScan(rawPrompt);
+    const sanitizedPromptForProcessing =
+      inputGuardrail.piiRedactedCount > 0 ? inputGuardrail.sanitizedInput : rawPrompt;
+    const autoCorrect = autoCorrectUserQuery(sanitizedPromptForProcessing);
     const effectivePrompt = autoCorrect.correctedQuery;
     const currentThread = chatThreads.find((t) => t.id === activeThreadId);
     const currentThreadCtx = currentThread?.threadContext;
@@ -558,12 +697,154 @@ export default function App() {
       targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
       targetModel.versions[0];
 
+    // If Input Guardrail blocks a prompt-injection or jailbreak attempt, halt before any model or tool runs
+    if (inputGuardrail.isBlocked) {
+      const blockedUserMsg: ChatMessage = {
+        id: `msg-grd-u-${Date.now()}`,
+        role: 'user',
+        authorName: activeProfile.name,
+        timestamp: '08:30 UTC',
+        domain: 'Computer Programming',
+        content: inputGuardrail.sanitizedInput,
+        attachedFile: attachment,
+      };
+      const blockedAssistantMsg: ChatMessage = {
+        id: `msg-grd-a-${Date.now() + 1}`,
+        role: 'assistant',
+        authorName: `${targetModel.name} · Gateway Input Guardrail`,
+        timestamp: '08:30 UTC',
+        domain: 'Computer Programming',
+        content: `### 🛡️ Gateway & Input Guardrail Blocked Request\n- **Threat Category:** \`${inputGuardrail.threatCategory}\`\n- **Security Action:** ${inputGuardrail.guardrailSummary}\n- **Zero-Trust Enforcement:** Execution halted before any LLM, RAG index, or MCP tool received the input.`,
+        simpleAnswerMarkdown: `### 🛡️ Request Blocked by Input Guardrail\nYour request matched a **${inputGuardrail.threatCategory}** signature and was stopped at the gateway before reaching any model or enterprise tool.`,
+        inputGuardrail,
+        verifiedFacts: [inputGuardrail.guardrailSummary],
+        selfLearningCommitted: false,
+      };
+      appendMessagesToThread([blockedUserMsg, blockedAssistantMsg], 'Blocked Request');
+      return;
+    }
+
+    // 0b. BUG-507 Fix: If user submits an explicit video generation request inside standard Chat mode, route to Video Synthesis so video chats always yield a grounded video
+    if (
+      !attachment &&
+      !explicitSenseOption &&
+      /\b(generate\s+a?\s*video|create\s+a?\s*video|make\s+a?\s*video|render\s+a?\s*video|animate\s+a?\s*video|video\s+of\s+|multi-shot\s+video)\b/i.test(
+        effectivePrompt
+      ) &&
+      !isReceiptToExpenseDeckQuery(effectivePrompt, attachment)
+    ) {
+      await handleGenerateMediaInChat(
+        effectivePrompt,
+        'Video',
+        '8K Master',
+        'Smooth Auto-Paced',
+        'Golden-Hour Nature Documentary',
+        'Golden-Hour Chiaroscuro & Subsurface Glow',
+        '65mm IMAX Anamorphic 2.39:1 Dolly',
+        '16:9'
+      );
+      return;
+    }
+
+    // 0c. Phase 1 v5.7-alpha End-to-End "Upload Receipt -> Build Expense Deck" Pipeline
+    if (isReceiptToExpenseDeckQuery(effectivePrompt, attachment)) {
+      const ocrResult = runReceiptVisionOcrAndReconcile(effectivePrompt, attachment);
+      const requestedBrand: ExpenseDeckBrandStyle = /\b(sovereign\s+gold|gold)\b/i.test(
+        effectivePrompt
+      )
+        ? 'Sovereign Gold'
+        : /\b(swiss\s+minimal|minimal)\b/i.test(effectivePrompt)
+        ? 'Swiss Minimal'
+        : 'Executive Slate';
+      const requestedSandbox: SandboxIsolationRuntime = /\b(firecracker|microvm)\b/i.test(
+        effectivePrompt
+      )
+        ? 'Firecracker MicroVM'
+        : 'gVisor (runsc)';
+      const expenseDeckBundle = buildSandboxedExpenseDeckBundle(
+        ocrResult,
+        requestedBrand,
+        requestedSandbox
+      );
+      const agentOrchestrator = executeBoundedAgentOrchestrator(effectivePrompt, {
+        hasAttachment: Boolean(attachment),
+      });
+      const rawMarkdown = `${expenseDeckBundle.executiveSummaryMarkdown}\n\n### Sandboxed Tool Execution (${expenseDeckBundle.sandboxRuntime})\n- **Container ID:** \`${expenseDeckBundle.sandboxContainerId}\`\n- **Tools Invoked:** \`${expenseDeckBundle.toolChainInvoked.join(' → ')}\`\n- **Downloadable Artifacts Ready:** PPTX Expense Deck (\`${expenseDeckBundle.pptxFile.filename}\`), DOCX Audit Memo (\`${expenseDeckBundle.docxFile.filename}\`), XLSX Ledger (\`${expenseDeckBundle.xlsxFile.filename}\`), and Native \`%PDF-1.4\` Voucher (\`${expenseDeckBundle.pdfFile.filename}\`).`;
+      const outputGuardrail = runOutputGuardrailScan(rawMarkdown, [
+        ocrResult.merchantName,
+        `${ocrResult.currency} ${ocrResult.grandTotal.toFixed(2)}`,
+        ocrResult.mathReconciliationStatus,
+      ]);
+
+      const userMsg: ChatMessage = {
+        id: `msg-exp-u-${Date.now()}`,
+        role: 'user',
+        authorName: activeProfile.name,
+        timestamp: '08:30 UTC',
+        domain: 'Mathematics',
+        subDomain: 'Corporate Expense Reconciliation & Sandboxed Deck Generation',
+        content: effectivePrompt,
+        autoCorrectedFrom: autoCorrect.wasCorrected ? rawPrompt : undefined,
+        attachedFile: attachment,
+      };
+
+      const knowledgeMcpPipeline = runHybridKnowledgePipelineV57(
+        effectivePrompt,
+        activeAclRole,
+        activeProfile.handle
+      );
+      const otelTraceWaterfall = buildOtelLangfuseTraceWaterfallV57(
+        effectivePrompt,
+        activeAclRole,
+        targetModel.id,
+        inputGuardrail.piiRedactedCount
+      );
+      const asyncJobRecord = submitAsyncGenerationJobV57(
+        effectivePrompt,
+        'pptx_document_pack'
+      );
+
+      const assistantMsg: ChatMessage = {
+        id: `msg-exp-a-${Date.now() + 1}`,
+        role: 'assistant',
+        authorName: `${targetModel.name} · Receipt-to-Expense-Deck Orchestrator`,
+        timestamp: '08:30 UTC',
+        domain: 'Mathematics',
+        subDomain: 'Vision OCR + gVisor/Firecracker Tool Builder',
+        content: outputGuardrail.sanitizedOutput,
+        simpleAnswerMarkdown: expenseDeckBundle.executiveSummaryMarkdown,
+        verifiedFacts: [
+          `Vision OCR (${ocrResult.ocrEngineUsed}): Extracted ${ocrResult.lineItems.length} line items from ${ocrResult.merchantName} (${ocrResult.ocrConfidencePct}% confidence).`,
+          `Reconciled Math: Subtotal ${ocrResult.currency} ${ocrResult.subtotal.toFixed(2)} + Tax ${ocrResult.currency} ${ocrResult.taxAmount.toFixed(2)} + Service ${ocrResult.currency} ${ocrResult.serviceChargeAmount.toFixed(2)} = ${ocrResult.currency} ${ocrResult.grandTotal.toFixed(2)}.`,
+          `Sandboxed File Builders (${expenseDeckBundle.sandboxRuntime}): Generated OpenXML .pptx (${expenseDeckBundle.pptxFile.filename}), DOCX, XLSX, and %PDF-1.4 without LLM writing raw binary bytes.`,
+        ],
+        inputGuardrail,
+        outputGuardrail,
+        agentOrchestrator,
+        expenseDeckBundle,
+        knowledgeMcpPipeline,
+        otelTraceWaterfall,
+        asyncJobRecord,
+        selfLearningCommitted: false,
+      };
+
+      appendMessagesToThread([userMsg, assistantMsg], `Expense Deck: ${ocrResult.merchantName}`);
+      return;
+    }
+
     if (attachment) {
       const attResult = summarizeUploadedAttachment(
         attachment,
         effectivePrompt,
         targetVer.quantType,
         isOnlineLearning
+      );
+      const agentOrchestrator = executeBoundedAgentOrchestrator(effectivePrompt, {
+        hasAttachment: true,
+      });
+      const outputGuardrail = runOutputGuardrailScan(
+        attResult.answerMarkdown,
+        attResult.verifiedFacts
       );
 
       const userMsg: ChatMessage = {
@@ -577,15 +858,25 @@ export default function App() {
         attachedFile: attachment,
       };
 
+      const knowledgeMcpPipeline = runHybridKnowledgePipelineV57(
+        effectivePrompt,
+        activeAclRole,
+        activeProfile.handle
+      );
+
       const assistantMsg: ChatMessage = {
         id: `msg-att-a-${Date.now() + 1}`,
         role: 'assistant',
         authorName: targetModel.name,
         timestamp: '08:30 UTC',
         domain: attResult.detectedDomain,
-        content: attResult.answerMarkdown,
+        content: outputGuardrail.sanitizedOutput,
         verifiedFacts: attResult.verifiedFacts,
         glassBox: attResult.glassBox,
+        inputGuardrail,
+        outputGuardrail,
+        agentOrchestrator,
+        knowledgeMcpPipeline,
         selfLearningCommitted: false,
       };
 
@@ -710,19 +1001,23 @@ export default function App() {
     // Automatically fetch Wikipedia & online grounding for all user questions and encyclopedic/entity queries
     let liveOnlineSources: LiveOnlineSearchSource[] | undefined;
     let liveSearchWarning: string | undefined;
-    if (isOnlineLearning) {
-      try {
-        const res = await fetch('/api/search/online', {
+    // Release v6.0-GA: Automatically use internet in backend when available (or when Online mode is toggled)
+    try {
+      const res = await fetch(
+        isOnlineLearning ? '/api/search/online' : '/api/v60/research-and-engineer',
+        {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: effectivePrompt }),
-        });
-        const data = await res.json();
-        if (!res.ok || data?.ok === false) {
-          throw new Error(
-            typeof data?.error === 'string' ? data.error : `Online search failed (${res.status}).`
-          );
+          body: JSON.stringify({
+            query: effectivePrompt,
+            prompt: effectivePrompt,
+            mode: 'ask_math',
+            useBackendInternet: true,
+          }),
         }
+      );
+      const data = await res.json();
+      if (res.ok && data?.ok !== false) {
         const rawSources = Array.isArray(data?.sources)
           ? data.sources
           : Array.isArray(data?.liveSources)
@@ -739,15 +1034,33 @@ export default function App() {
             snippet: String(source.snippet || ''),
             url: String(source.url || source.doiOrUrl),
             publicationOrSource: String(source.publicationOrSource || 'Live search index'),
-            sourceEngine: String(source.sourceEngine || source.publicationOrSource || 'Live search index'),
+            sourceEngine: String(
+              source.sourceEngine || source.publicationOrSource || 'Live search index'
+            ),
             year: Number(source.year || 0),
           }));
-        if (liveOnlineSources?.length === 0) {
-          liveSearchWarning =
-            'No live sources were returned. This answer uses deterministic local templates, not source-verified research.';
-        }
+      }
+      if (isOnlineLearning && (!liveOnlineSources || liveOnlineSources.length === 0)) {
+        liveSearchWarning =
+          'No live sources were returned. This answer uses deterministic local templates, not source-verified research.';
+      }
 
-        try {
+      if (liveOnlineSources && liveOnlineSources.length > 0) {
+        const cleanSubj = extractPresentationSubjectAndIntent(effectivePrompt).cleanSubject;
+        savePaniniKnowledgeShard(cleanSubj, {
+          syncedFromOnline: true,
+          cachedWikipediaSources: liveOnlineSources,
+        });
+      }
+    } catch (err) {
+      if (isOnlineLearning) {
+        liveSearchWarning = `Online search failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
+    }
+    if (isOnlineLearning && liveOnlineSources && liveOnlineSources.length > 0) {
+      try {
           const groundingRes = await fetch('/api/multimodal/grounding', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -781,12 +1094,7 @@ export default function App() {
             .filter(Boolean)
             .join(' ');
         }
-      } catch (error) {
-        liveSearchWarning = `${
-          error instanceof Error ? error.message : 'Online search request failed.'
-        } This answer uses deterministic local templates only.`;
       }
-    }
 
     const activeExpertChoice =
       explicitExpertOverride || (selectedExpertId !== 'auto' ? selectedExpertId : undefined);
@@ -830,6 +1138,98 @@ export default function App() {
       );
     }
 
+    const agentOrchestrator = executeBoundedAgentOrchestrator(effectivePrompt, {
+      hasAttachment: Boolean(attachment),
+    });
+    const outputGuardrail = runOutputGuardrailScan(
+      synthesis.answerMarkdown,
+      synthesis.verifiedFacts
+    );
+
+    const knowledgeMcpPipeline = runHybridKnowledgePipelineV57(
+      effectivePrompt,
+      activeAclRole,
+      activeProfile.handle
+    );
+    const otelTraceWaterfall = buildOtelLangfuseTraceWaterfallV57(
+      effectivePrompt,
+      activeAclRole,
+      targetModel.id,
+      inputGuardrail.piiRedactedCount
+    );
+    const asyncJobRecord = submitAsyncGenerationJobV57(
+      effectivePrompt,
+      'pptx_document_pack'
+    );
+
+    const isPptxPresentationRequest =
+      /\b(pptx|powerpoint|presentation|slide\s*deck|slides\s+for|slides\s+about)\b/i.test(
+        effectivePrompt
+      );
+    const attachedCodingResolution = isPptxPresentationRequest
+      ? generateOfflineCodeSynthesis(
+          effectivePrompt,
+          'Python',
+          targetVer.quantType,
+          isOnlineLearning,
+          {
+            liveOnlineSources,
+            learnedEntities,
+            isOnlineMode: isOnlineLearning,
+          }
+        ).codingResolution
+      : undefined;
+
+    // Release v5.9-GA: Backend Auto-Prompt Engineering & 62s Deep Thinking Accuracy Pipeline
+    let engineeredPromptSpecV59 = engineerPromptForOptimalAccuracyV59(
+      effectivePrompt,
+      chatCapability,
+      isOnlineLearning
+    );
+    try {
+      const peRes = await fetch('/api/v59/prompt-engineer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: effectivePrompt,
+          workspaceMode: chatCapability,
+          isOnlineMode: isOnlineLearning,
+        }),
+      });
+      if (peRes.ok) {
+        const peJson = await peRes.json();
+        if (peJson?.spec?.engineeredSystemPrompt) {
+          engineeredPromptSpecV59 = peJson.spec;
+        }
+      }
+    } catch {
+      // Deterministic local fallback already initialized
+    }
+
+    const thinkingPlanV59 = buildThinkingModeExecutionPlanV59(
+      effectivePrompt,
+      chatCapability,
+      isOnlineLearning,
+      liveOnlineSources?.length || 0,
+      synthesis.verifiedFacts.length,
+      outputGuardrail.groundingScorePct,
+      /\bData Not Available\b/i.test(outputGuardrail.sanitizedOutput)
+    );
+
+    if (attachedCodingResolution) {
+      const newPreviewArtifacts = buildPreviewableArtifactsFromCodingResolutionV59(
+        attachedCodingResolution,
+        '08:31 UTC'
+      );
+      if (newPreviewArtifacts.length > 0) {
+        setPreviewFiles((prev) => [...newPreviewArtifacts, ...prev].slice(0, 20));
+        if (!activePreviewFileId) {
+          setActivePreviewFileId(newPreviewArtifacts[0].id);
+        }
+        setIsPreviewTabOpen(true);
+      }
+    }
+
     const userMsg: ChatMessage = {
       id: `msg-u-${Date.now()}`,
       role: 'user',
@@ -850,10 +1250,11 @@ export default function App() {
       timestamp: '08:31 UTC',
       domain: synthesis.detectedDomain,
       subDomain: synthesis.detectedSubDomain,
-      content: synthesis.answerMarkdown,
+      content: outputGuardrail.sanitizedOutput,
       simpleAnswerMarkdown: synthesis.simpleAnswerMarkdown,
       verifiedFacts: synthesis.verifiedFacts,
       mathStages: synthesis.mathStages,
+      codingResolution: attachedCodingResolution,
       multiEngineStream: isOnlineLearning
         ? buildRetrievedSearchStream(
             effectivePrompt,
@@ -887,6 +1288,14 @@ export default function App() {
       imageStudio: synthesis.imageStudio,
       mapsGrounding: synthesis.mapsGrounding,
       searchGrounding: synthesis.searchGrounding,
+      inputGuardrail,
+      outputGuardrail,
+      agentOrchestrator,
+      knowledgeMcpPipeline,
+      otelTraceWaterfall,
+      asyncJobRecord,
+      thinkingPlanV59,
+      engineeredPromptSpecV59,
     };
 
     const nextThreadCtx: ThreadContextMemory = {
@@ -977,10 +1386,14 @@ export default function App() {
   };
 
   /**
-   * Verified & Bug-Checked Coding Handler with Live Output Preview
+   * Verified & Bug-Checked Coding & PPTX Handler with Online Search -> Knowledge Shard Persistence & 4-Tier Grounding (v5.7.2-GA)
    */
-  const handleSendCodingMessage = (rawPrompt: string, languageChoice: CodeLanguageChoice) => {
-    const autoCorrect = autoCorrectUserQuery(rawPrompt);
+  const handleSendCodingMessage = async (
+    rawPrompt: string,
+    languageChoice: CodeLanguageChoice
+  ) => {
+    const inputGuardrail = runInputGuardrailScan(rawPrompt);
+    const autoCorrect = autoCorrectUserQuery(inputGuardrail.sanitizedInput);
     const effectivePrompt = autoCorrect.correctedQuery;
 
     const modelValidation = validateAndSelectOptimalModel('coding', compatibleModels, activeModel);
@@ -992,11 +1405,86 @@ export default function App() {
       targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
       targetModel.versions[0];
 
+    let liveOnlineSources: LiveOnlineSearchSource[] | undefined;
+    // Release v6.0-GA: Automatically use internet in backend when available
+    try {
+      const res = await fetch(
+        isOnlineLearning ? '/api/search' : '/api/v60/research-and-engineer',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: effectivePrompt,
+            prompt: effectivePrompt,
+            mode: 'coding',
+            useBackendInternet: true,
+          }),
+        }
+      );
+      const data = await res.json();
+      const rawSources = Array.isArray(data?.sources)
+        ? data.sources
+        : Array.isArray(data?.liveSources)
+        ? data.liveSources
+        : [];
+      liveOnlineSources = rawSources
+        .filter(
+          (source: Record<string, unknown>) =>
+            typeof (source.url || source.doiOrUrl) === 'string' &&
+            /^https:\/\//i.test(String(source.url || source.doiOrUrl))
+        )
+        .map((source: Record<string, unknown>) => ({
+          title: String(source.title || ''),
+          snippet: String(source.snippet || ''),
+          url: String(source.url || source.doiOrUrl),
+          publicationOrSource: String(source.publicationOrSource || 'Live search index'),
+          sourceEngine: String(
+            source.sourceEngine || source.publicationOrSource || 'Live search index'
+          ),
+          year: Number(source.year || 0),
+        }));
+
+      if (liveOnlineSources && liveOnlineSources.length > 0) {
+        const cleanSubj = extractPresentationSubjectAndIntent(effectivePrompt).cleanSubject;
+        savePaniniKnowledgeShard(cleanSubj, {
+          syncedFromOnline: true,
+          cachedWikipediaSources: liveOnlineSources,
+        });
+      }
+    } catch {
+      // Fallback to cached Knowledge Shard or Built-In Verified KB
+    }
+
     const codeSynth = generateOfflineCodeSynthesis(
       effectivePrompt,
       languageChoice,
       targetVer.quantType,
-      isOnlineLearning
+      isOnlineLearning,
+      {
+        liveOnlineSources,
+        learnedEntities,
+        isOnlineMode: isOnlineLearning,
+      }
+    );
+
+    const outputGuardrail = runOutputGuardrailScan(
+      codeSynth.answerMarkdown,
+      codeSynth.verifiedFacts
+    );
+    const knowledgeMcpPipeline = runHybridKnowledgePipelineV57(
+      effectivePrompt,
+      activeAclRole,
+      activeProfile.handle
+    );
+    const otelTraceWaterfall = buildOtelLangfuseTraceWaterfallV57(
+      effectivePrompt,
+      activeAclRole,
+      targetModel.id,
+      inputGuardrail.piiRedactedCount
+    );
+    const asyncJobRecord = submitAsyncGenerationJobV57(
+      effectivePrompt,
+      'pptx_document_pack'
     );
 
     const newUseCase = translateNlpToUseCase(
@@ -1018,6 +1506,33 @@ export default function App() {
       autoCorrectedFrom: autoCorrect.wasCorrected ? rawPrompt : undefined,
     };
 
+    const engineeredPromptSpecV59 = engineerPromptForOptimalAccuracyV59(
+      effectivePrompt,
+      'coding',
+      isOnlineLearning
+    );
+    const thinkingPlanV59 = buildThinkingModeExecutionPlanV59(
+      effectivePrompt,
+      'coding',
+      isOnlineLearning,
+      liveOnlineSources?.length || 0,
+      codeSynth.verifiedFacts.length,
+      outputGuardrail.groundingScorePct,
+      /\bData Not Available\b/i.test(outputGuardrail.sanitizedOutput)
+    );
+
+    if (codeSynth.codingResolution) {
+      const newPreviewArtifacts = buildPreviewableArtifactsFromCodingResolutionV59(
+        codeSynth.codingResolution,
+        '08:32 UTC'
+      );
+      if (newPreviewArtifacts.length > 0) {
+        setPreviewFiles((prev) => [...newPreviewArtifacts, ...prev].slice(0, 20));
+        setActivePreviewFileId(newPreviewArtifacts[0].id);
+        setIsPreviewTabOpen(true);
+      }
+    }
+
     const assistantMsg: ChatMessage = {
       id: `msg-code-a-${Date.now() + 1}`,
       role: 'assistant',
@@ -1025,7 +1540,7 @@ export default function App() {
       timestamp: '08:32 UTC',
       domain: 'Computer Programming',
       selectedLanguage: codeSynth.resolvedLanguage,
-      content: codeSynth.answerMarkdown,
+      content: outputGuardrail.sanitizedOutput,
       simpleAnswerMarkdown: codeSynth.simpleAnswerMarkdown,
       verifiedFacts: codeSynth.verifiedFacts,
       codingResolution: codeSynth.codingResolution,
@@ -1033,6 +1548,13 @@ export default function App() {
       synthesizedUseCase: newUseCase,
       synthesizedModelName: targetModel.name,
       selfLearningCommitted: false,
+      inputGuardrail,
+      outputGuardrail,
+      knowledgeMcpPipeline,
+      otelTraceWaterfall,
+      asyncJobRecord,
+      thinkingPlanV59,
+      engineeredPromptSpecV59,
     };
 
     appendMessagesToThread(
@@ -1891,6 +2413,94 @@ ${storyboardBullets}
     handleSendMessage(payload.prompt);
   };
 
+  /**
+   * Release v5.7-alpha: Human-in-the-Loop (HITL) Approval or Rejection Handler
+   */
+  const handleHitlDecision = (messageId: string, decision: 'approved' | 'rejected') => {
+    setChatHistory((prev) => {
+      const updated = prev.map((m) => {
+        if (m.id !== messageId || !m.agentOrchestrator) return m;
+        const promptForOrch =
+          m.agentOrchestrator.goalSummary ||
+          m.content.slice(0, 120);
+        const nextOrch = executeBoundedAgentOrchestrator(promptForOrch, {
+          hitlDecision: decision,
+          isExpenseDeckFlow: Boolean(m.expenseDeckBundle),
+          forceRiskyAction: true,
+          hasAttachment: Boolean(m.attachedFile || m.expenseDeckBundle),
+        });
+        return {
+          ...m,
+          agentOrchestrator: nextOrch,
+        };
+      });
+      setChatThreads((threads) =>
+        threads.map((t) => (t.id === activeThreadId ? { ...t, messages: updated } : t))
+      );
+      return updated;
+    });
+    appendLog(
+      decision === 'approved' ? 'INFO' : 'WARN',
+      'AuthRBAC',
+      `Operator ${decision.toUpperCase()} Human-in-the-Loop (HITL) action on message ${messageId}.`
+    );
+  };
+
+  /**
+   * Release v5.7-alpha: Live Brand Style & Sandbox Runtime Switcher for Receipt-to-Expense-Deck Bundle
+   */
+  const handleUpdateExpenseDeckStyle = (
+    messageId: string,
+    brandStyle: ExpenseDeckBrandStyle,
+    sandboxRuntime: SandboxIsolationRuntime
+  ) => {
+    setChatHistory((prev) => {
+      const updated = prev.map((m) => {
+        if (m.id !== messageId || !m.expenseDeckBundle) return m;
+        const rebuilt = buildSandboxedExpenseDeckBundle(
+          m.expenseDeckBundle.receiptOcr,
+          brandStyle,
+          sandboxRuntime
+        );
+        return {
+          ...m,
+          expenseDeckBundle: rebuilt,
+          simpleAnswerMarkdown: rebuilt.executiveSummaryMarkdown,
+        };
+      });
+      setChatThreads((threads) =>
+        threads.map((t) => (t.id === activeThreadId ? { ...t, messages: updated } : t))
+      );
+      return updated;
+    });
+  };
+
+  /**
+   * Release v5.7-beta: Live Document ACL & MCP Role Switcher on Assistant Message Cards
+   */
+  const handleUpdateMessageAclRole = (messageId: string, newRole: DocumentAclRole) => {
+    setActiveAclRole(newRole);
+    setChatHistory((prev) => {
+      const updated = prev.map((m) => {
+        if (m.id !== messageId) return m;
+        const baseQuery = m.knowledgeMcpPipeline?.query || m.agentOrchestrator?.goalSummary || m.content.slice(0, 120);
+        const rebuiltPipeline = runHybridKnowledgePipelineV57(
+          baseQuery,
+          newRole,
+          activeProfile.handle
+        );
+        return {
+          ...m,
+          knowledgeMcpPipeline: rebuiltPipeline,
+        };
+      });
+      setChatThreads((threads) =>
+        threads.map((t) => (t.id === activeThreadId ? { ...t, messages: updated } : t))
+      );
+      return updated;
+    });
+  };
+
   const adminNavItems: {
     id: AdminSection;
     label: string;
@@ -1899,9 +2509,21 @@ ${storyboardBullets}
   }[] = [
     {
       id: 'registry',
-      label: 'Models, Versions & Use Cases',
-      subtitle: 'Version Summary, Search & Clone Use Cases',
+      label: 'Models, GGUF & Use Cases',
+      subtitle: 'GGUF v3 Model Updater, Versions & Use Cases',
       icon: <Database className="w-4 h-4" />,
+    },
+    {
+      id: 'api_mcp_docs',
+      label: 'REST API, MCP Agent & Server Docs',
+      subtitle: 'REST Reference, MCP JSON-RPC & PDF Export',
+      icon: <BookOpen className="w-4 h-4" />,
+    },
+    {
+      id: 'integrations',
+      label: 'Integrations, Shards & MCP Hub',
+      subtitle: 'Websites, RAG, PDF/PPTX/DOCX/XLSX, MCP & Agents',
+      icon: <Globe className="w-4 h-4" />,
     },
     {
       id: 'governance',
@@ -1938,8 +2560,8 @@ ${storyboardBullets}
 
   return (
     <div className={`min-h-screen ${bgCanvas} transition-colors`}>
-      {/* Top Bar: Hidden on ultra-minimal Google-style New Chat screen until a search is submitted or Admin Console tab is opened */}
-      {(workspaceMode === 'admin' || chatHistory.length > 0 || isAdminTabOpen) && (
+      {/* Top Bar: Always visible when Preview tab, Admin tab, or active conversation is open */}
+      {(workspaceMode === 'admin' || workspaceMode === 'preview' || isPreviewTabOpen || chatHistory.length > 0 || isAdminTabOpen) && (
       <header
         className={`sticky top-0 z-30 flex items-center justify-between gap-2 sm:gap-6 px-3 sm:px-6 py-2 border-b ${headerBorder} backdrop-blur`}
       >
@@ -1974,6 +2596,31 @@ ${storyboardBullets}
               <MessageSquare className="w-3.5 h-3.5 text-sky-400" />
               <span>Chat</span>
             </button>
+
+            {isPreviewTabOpen && (
+              <button
+                type="button"
+                data-testid="top-tab-preview"
+                onClick={() => setWorkspaceMode('preview')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border ${
+                  workspaceMode === 'preview'
+                    ? isDark
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                      : 'bg-emerald-50 text-emerald-900 border-emerald-400 shadow-sm'
+                    : isDark
+                    ? 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200 hover:text-slate-900'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Preview</span>
+                {previewFiles.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {previewFiles.length}
+                  </span>
+                )}
+              </button>
+            )}
 
             {isAdminTabOpen && (
               <div
@@ -2080,6 +2727,23 @@ ${storyboardBullets}
             onSwitchMessageExpert={handleSwitchMessageExpert}
             learnedEntities={learnedEntities}
             adminPermissions={adminPermissions}
+            onHitlDecision={handleHitlDecision}
+            onUpdateExpenseDeckStyle={handleUpdateExpenseDeckStyle}
+            activeAclRole={activeAclRole}
+            onChangeAclRole={setActiveAclRole}
+            onUpdateMessageAclRole={handleUpdateMessageAclRole}
+            onOpenFileInPreviewTab={handleOpenFileInPreviewTab}
+            isDark={isDark}
+          />
+        )}
+
+        {/* SCREEN 1B: DEDICATED FILE PREVIEW TAB (KISS File Inspector Before Download) */}
+        {workspaceMode === 'preview' && (
+          <FilePreviewTabView
+            previewFiles={previewFiles}
+            activeFileId={activePreviewFileId}
+            onSelectFile={setActivePreviewFileId}
+            onBackToChat={() => setWorkspaceMode('user')}
             isDark={isDark}
           />
         )}
@@ -2131,6 +2795,7 @@ ${storyboardBullets}
                       <button
                         key={item.id}
                         type="button"
+                        data-testid={`admin-nav-${item.id}`}
                         onClick={() => setAdminSection(item.id)}
                         title={item.label}
                         className={`w-full ${
@@ -2230,6 +2895,30 @@ ${storyboardBullets}
                   </button>
                   <button
                     type="button"
+                    data-testid="open-admin-rest-mcp-docs-btn"
+                    onClick={() => setAdminSection('api_mcp_docs')}
+                    className={`px-3 py-1.5 rounded-lg font-mono text-[11px] font-bold border transition ${
+                      adminSection === 'api_mcp_docs'
+                        ? 'bg-sky-500 text-slate-950 border-sky-400'
+                        : 'bg-sky-500/15 text-sky-300 border-sky-500/40 hover:bg-sky-500/25'
+                    }`}
+                  >
+                    REST API, MCP Agent &amp; Server Docs (PDF)
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="open-admin-integrations-section-btn"
+                    onClick={() => setAdminSection('integrations')}
+                    className={`px-3 py-1.5 rounded-lg font-mono text-[11px] font-bold border transition ${
+                      adminSection === 'integrations'
+                        ? 'bg-indigo-500 text-white border-indigo-400'
+                        : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/40 hover:bg-indigo-500/25'
+                    }`}
+                  >
+                    Integrations, Shards &amp; MCP Hub (v5.8-GA)
+                  </button>
+                  <button
+                    type="button"
                     data-testid="open-admin-governance-section-btn"
                     onClick={() => setAdminSection('governance')}
                     className={`px-3 py-1.5 rounded-lg font-mono text-[11px] font-bold border transition ${
@@ -2242,6 +2931,40 @@ ${storyboardBullets}
                   </button>
                 </div>
               </div>
+
+              {adminSection === 'api_mcp_docs' && (
+                <AdminRestMcpDocsView
+                  isDark={isDark}
+                  onOpenFileInPreviewTab={handleOpenFileInPreviewTab}
+                  onSyncNetworkModeFromCli={(online) => {
+                    setIsOnlineLearning(online);
+                    setPresetOfflineMode(!online);
+                    const updatedSettings = updatePersistentSovereignSettingsV61({
+                      isOnlineLearning: online,
+                      presetOfflineMode: !online,
+                      networkMode: online ? 'online' : 'offline',
+                    });
+                    fetch('/api/v61/settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(updatedSettings),
+                    }).catch(() => {});
+                  }}
+                />
+              )}
+
+              {adminSection === 'integrations' && (
+                <AdminIntegrationsView
+                  activeRole={activeAclRole}
+                  userHandle={activeProfile.handle}
+                  isOnline={isOnlineLearning}
+                  onSendPromptToChat={(promptText) => {
+                    setWorkspaceMode('user');
+                    setChatCapability('coding');
+                    handleSendCodingMessage(promptText, 'Python');
+                  }}
+                />
+              )}
 
               {adminSection === 'governance' && (
                 <EnterpriseGovernanceModal

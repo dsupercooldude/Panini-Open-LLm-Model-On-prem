@@ -510,6 +510,7 @@ export interface ContextualMediaValidationReport {
 
 export interface PaniniOfflineKnowledgeShard {
   shardKey: string;
+  queryKey: string;
   ggufShardFile: string;
   binTensorFile: string;
   query: string;
@@ -560,76 +561,170 @@ export function computeGgufShardFilenames(query: string): {
   };
 }
 
-export function savePaniniKnowledgeShard(
-  query: string,
-  payload: Partial<
-    Omit<
-      PaniniOfflineKnowledgeShard,
-      'shardKey' | 'ggufShardFile' | 'binTensorFile' | 'query' | 'updatedAt'
-    >
-  >
-): PaniniOfflineKnowledgeShard {
-  const shardKey = normalizeShardKey(query) || 'default-shard';
-  const existing = getPaniniKnowledgeShard(query);
-  const { ggufShardFile, binTensorFile } = computeGgufShardFilenames(query);
-  const merged: PaniniOfflineKnowledgeShard = {
-    shardKey,
-    ggufShardFile: existing?.ggufShardFile || ggufShardFile,
-    binTensorFile: existing?.binTensorFile || binTensorFile,
-    query: query.trim() || 'Panini Knowledge Shard',
-    updatedAt: new Date().toISOString(),
-    syncedFromOnline: Boolean(payload.syncedFromOnline || existing?.syncedFromOnline),
-    cachedWikipediaSources:
-      payload.cachedWikipediaSources && payload.cachedWikipediaSources.length > 0
-        ? payload.cachedWikipediaSources
-        : existing?.cachedWikipediaSources,
-    cachedAnswerMarkdown: payload.cachedAnswerMarkdown || existing?.cachedAnswerMarkdown,
-    cachedSimpleMarkdown: payload.cachedSimpleMarkdown || existing?.cachedSimpleMarkdown,
-    cachedVerifiedFacts:
-      payload.cachedVerifiedFacts && payload.cachedVerifiedFacts.length > 0
-        ? payload.cachedVerifiedFacts
-        : existing?.cachedVerifiedFacts,
-    bioscience: payload.bioscience || existing?.bioscience,
-    musicTrack: payload.musicTrack || existing?.musicTrack,
-    imageStudio: payload.imageStudio || existing?.imageStudio,
-    mapsGrounding: payload.mapsGrounding || existing?.mapsGrounding,
-    searchGrounding: payload.searchGrounding || existing?.searchGrounding,
-  };
-  inMemoryPaniniShardMap.set(shardKey, merged);
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      const raw = window.localStorage.getItem(PANINI_SHARD_STORAGE_KEY);
-      const parsed: Record<string, PaniniOfflineKnowledgeShard> = raw ? JSON.parse(raw) : {};
-      parsed[shardKey] = merged;
-      window.localStorage.setItem(PANINI_SHARD_STORAGE_KEY, JSON.stringify(parsed));
-    } catch {
-      // Ignore storage quota errors in restricted environments
-    }
-  }
-  return merged;
-}
-
-export function getPaniniKnowledgeShard(query: string): PaniniOfflineKnowledgeShard | undefined {
-  const shardKey = normalizeShardKey(query);
-  if (!shardKey) return undefined;
-  const fromMem = inMemoryPaniniShardMap.get(shardKey);
-  if (fromMem) return fromMem;
-
+function syncLocalStorageToMemoryShards(): void {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const raw = window.localStorage.getItem(PANINI_SHARD_STORAGE_KEY);
       if (raw) {
         const parsed: Record<string, PaniniOfflineKnowledgeShard> = JSON.parse(raw);
-        if (parsed[shardKey]) {
-          inMemoryPaniniShardMap.set(shardKey, parsed[shardKey]);
-          return parsed[shardKey];
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v && typeof v.shardKey === 'string' && !inMemoryPaniniShardMap.has(k)) {
+            inMemoryPaniniShardMap.set(k, v);
+          }
         }
       }
     } catch {
       // Ignore parse errors
     }
   }
-  return undefined;
+}
+
+function persistMemoryShardsToLocalStorage(): void {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const serialized: Record<string, PaniniOfflineKnowledgeShard> = {};
+      for (const [k, v] of inMemoryPaniniShardMap.entries()) {
+        serialized[k] = v;
+      }
+      window.localStorage.setItem(PANINI_SHARD_STORAGE_KEY, JSON.stringify(serialized));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }
+}
+
+export function savePaniniKnowledgeShard(
+  query: string,
+  payload: Partial<
+    Omit<
+      PaniniOfflineKnowledgeShard,
+      'shardKey' | 'queryKey' | 'ggufShardFile' | 'binTensorFile' | 'query' | 'updatedAt'
+    >
+  >,
+  options?: { mergeExisting?: boolean }
+): PaniniOfflineKnowledgeShard {
+  syncLocalStorageToMemoryShards();
+  const shardKey = normalizeShardKey(query) || 'default-shard';
+  const existing = inMemoryPaniniShardMap.get(shardKey) || getPaniniKnowledgeShard(query);
+  const mergeExisting = options?.mergeExisting !== false;
+  const { ggufShardFile, binTensorFile } = computeGgufShardFilenames(query);
+
+  // Merge and deduplicate sources so saving new sources updates the shard without losing existing sources
+  let mergedSources: CachedGroundingSourceItem[] | undefined = existing?.cachedWikipediaSources;
+  if (payload.cachedWikipediaSources && payload.cachedWikipediaSources.length > 0) {
+    if (mergeExisting && existing?.cachedWikipediaSources && existing.cachedWikipediaSources.length > 0) {
+      const seen = new Set<string>();
+      const combined = [...payload.cachedWikipediaSources, ...existing.cachedWikipediaSources];
+      mergedSources = combined.filter((src) => {
+        const sig = `${(src.url || '').toLowerCase()}|${(src.title || '').toLowerCase()}`;
+        if (seen.has(sig)) return false;
+        seen.add(sig);
+        return true;
+      });
+    } else {
+      mergedSources = payload.cachedWikipediaSources;
+    }
+  }
+
+  // Merge and deduplicate verified facts
+  let mergedFacts: string[] | undefined = existing?.cachedVerifiedFacts;
+  if (payload.cachedVerifiedFacts && payload.cachedVerifiedFacts.length > 0) {
+    if (mergeExisting && existing?.cachedVerifiedFacts && existing.cachedVerifiedFacts.length > 0) {
+      const seenFacts = new Set<string>();
+      const combinedFacts = [...payload.cachedVerifiedFacts, ...existing.cachedVerifiedFacts];
+      mergedFacts = combinedFacts.filter((f) => {
+        const normF = f.trim().toLowerCase();
+        if (!normF || seenFacts.has(normF)) return false;
+        seenFacts.add(normF);
+        return true;
+      });
+    } else {
+      mergedFacts = payload.cachedVerifiedFacts;
+    }
+  }
+
+  const targetShardKey = existing?.shardKey || shardKey;
+  const merged: PaniniOfflineKnowledgeShard = {
+    shardKey: targetShardKey,
+    queryKey: targetShardKey,
+    ggufShardFile: existing?.ggufShardFile || ggufShardFile,
+    binTensorFile: existing?.binTensorFile || binTensorFile,
+    query: existing?.query || query.trim() || 'Panini Knowledge Shard',
+    updatedAt: new Date().toISOString(),
+    syncedFromOnline: Boolean(payload.syncedFromOnline ?? existing?.syncedFromOnline),
+    cachedWikipediaSources: mergedSources,
+    cachedAnswerMarkdown: payload.cachedAnswerMarkdown || existing?.cachedAnswerMarkdown,
+    cachedSimpleMarkdown: payload.cachedSimpleMarkdown || existing?.cachedSimpleMarkdown,
+    cachedVerifiedFacts: mergedFacts,
+    bioscience: payload.bioscience || existing?.bioscience,
+    musicTrack: payload.musicTrack || existing?.musicTrack,
+    imageStudio: payload.imageStudio || existing?.imageStudio,
+    mapsGrounding: payload.mapsGrounding || existing?.mapsGrounding,
+    searchGrounding: payload.searchGrounding || existing?.searchGrounding,
+  };
+  inMemoryPaniniShardMap.set(targetShardKey, merged);
+  if (targetShardKey !== shardKey) {
+    inMemoryPaniniShardMap.set(shardKey, merged);
+  }
+  persistMemoryShardsToLocalStorage();
+  return merged;
+}
+
+export function getPaniniKnowledgeShard(query: string): PaniniOfflineKnowledgeShard | undefined {
+  syncLocalStorageToMemoryShards();
+  const shardKey = normalizeShardKey(query);
+  if (!shardKey) return undefined;
+  const fromMem = inMemoryPaniniShardMap.get(shardKey);
+  if (fromMem) return fromMem;
+
+  // Substring / entity match across all saved shards (longest matching shardKey wins)
+  let bestMatch: PaniniOfflineKnowledgeShard | undefined;
+  let bestMatchLen = 0;
+  for (const [k, shard] of inMemoryPaniniShardMap.entries()) {
+    if (!k || k.length < 3) continue;
+    if (shardKey.includes(k) || k.includes(shardKey)) {
+      if (k.length > bestMatchLen) {
+        bestMatch = shard;
+        bestMatchLen = k.length;
+      }
+    }
+  }
+  return bestMatch;
+}
+
+export function listPaniniKnowledgeShards(): PaniniOfflineKnowledgeShard[] {
+  syncLocalStorageToMemoryShards();
+  const uniqueByFile = new Map<string, PaniniOfflineKnowledgeShard>();
+  for (const shard of inMemoryPaniniShardMap.values()) {
+    uniqueByFile.set(shard.ggufShardFile, shard);
+  }
+  return Array.from(uniqueByFile.values()).sort((a, b) =>
+    (b.updatedAt || '').localeCompare(a.updatedAt || '')
+  );
+}
+
+export function deletePaniniKnowledgeShard(queryOrKey: string): boolean {
+  syncLocalStorageToMemoryShards();
+  const norm = normalizeShardKey(queryOrKey);
+  const existed = inMemoryPaniniShardMap.delete(norm) || inMemoryPaniniShardMap.delete(queryOrKey);
+  persistMemoryShardsToLocalStorage();
+  return existed;
+}
+
+export function hydratePaniniKnowledgeShards(
+  shards: PaniniOfflineKnowledgeShard[] | Record<string, PaniniOfflineKnowledgeShard>
+): void {
+  const list: PaniniOfflineKnowledgeShard[] = Array.isArray(shards)
+    ? shards
+    : shards && typeof shards === 'object'
+    ? Object.values(shards)
+    : [];
+  for (const s of list) {
+    if (s && s.shardKey) {
+      inMemoryPaniniShardMap.set(s.shardKey, s);
+    }
+  }
+  persistMemoryShardsToLocalStorage();
 }
 
 export interface PromptConstructedArchitectureItem {

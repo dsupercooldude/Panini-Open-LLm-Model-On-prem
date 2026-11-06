@@ -1,0 +1,178 @@
+{
+  "schemaVersion": "v6.1-GA (SVN-r411.0-GA)",
+  "persistedAtUtc": "2026-11-05T05:27:38.884Z",
+  "offlineFirstPrepackaged": true,
+  "cloudHosted": false,
+  "settings": {
+    "isOnlineLearning": true,
+    "presetOfflineMode": false,
+    "networkMode": "online",
+    "networkModePolicy": "ONLINE_BY_DEFAULT_UNTIL_USER_SELECTS_OFFLINE",
+    "lastUpdatedBy": "USER_UI_TOGGLE",
+    "activeReleaseVersion": "v6.1-GA",
+    "activeUserId": "usr-local-01",
+    "activeUserEmail": "admin@panini.local",
+    "activeAclRole": "Admin",
+    "activeModelId": "panini-400b-moe",
+    "selectedExpertId": "auto",
+    "contentSafetyMode": "strict_safe",
+    "strictSourceVerification": false,
+    "researchTimerSeconds": 150,
+    "presetModelCacheDir": "/var/panini/models/gguf-v61-vault",
+    "updatedAtUtc": "2026-11-05 05:27:38 UTC"
+  },
+  "rbacUsers": [
+    {
+      "id": "usr-local-01",
+      "username": "arjun_admin",
+      "handle": "@arjun_admin",
+      "email": "admin@panini.local",
+      "displayName": "Arjun Mehta (Sovereign Super Admin)",
+      "fullName": "Arjun Mehta (Sovereign Super Admin)",
+      "role": "Admin",
+      "clearance": "RESTRICTED_EXEC",
+      "clearanceLevel": "RESTRICTED_EXEC",
+      "department": "Sovereign Platform Governance & Security",
+      "passwordHashSha256": "sha256:8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+      "offlinePinOrPasskeyId": "ed25519-passkey-arjun_admin",
+      "authMethod": "Local SHA-256 + Hardware Key",
+      "status": "ACTIVE",
+      "allowedMcpServers": [
+        "mcp://sharepoint",
+        "mcp://erp",
+        "mcp://crm",
+        "mcp://email",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "allowedMcpUris": [
+        "mcp://sharepoint",
+        "mcp://erp",
+        "mcp://crm",
+        "mcp://email",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "prepackagedOfflineReady": true,
+      "createdAtUtc": "2026-01-15 08:00:00 UTC",
+      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+    },
+    {
+      "id": "usr-local-02",
+      "username": "kavita_dev",
+      "handle": "@kavita_dev",
+      "email": "dev.lead@panini.local",
+      "displayName": "Dr. Kavita Rao (Principal AI & GGUF Architect)",
+      "fullName": "Dr. Kavita Rao (Principal AI & GGUF Architect)",
+      "role": "Developer",
+      "clearance": "CONFIDENTIAL",
+      "clearanceLevel": "CONFIDENTIAL",
+      "department": "Core AI, Polyglot-AST & GGUF Engineering",
+      "passwordHashSha256": "sha256:2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+      "offlinePinOrPasskeyId": "ed25519-passkey-kavita_dev",
+      "authMethod": "Local SHA-256 Passkey",
+      "status": "ACTIVE",
+      "allowedMcpServers": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "allowedMcpUris": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "prepackagedOfflineReady": true,
+      "createdAtUtc": "2026-02-01 09:30:00 UTC",
+      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+    },
+    {
+      "id": "usr-local-03",
+      "username": "saryu_analyst",
+      "handle": "@saryu_analyst",
+      "email": "sec.analyst@panini.local",
+      "displayName": "Saryu Verma (SOC & UEBA Threat Analyst)",
+      "fullName": "Saryu Verma (SOC & UEBA Threat Analyst)",
+      "role": "Analyst",
+      "clearance": "INTERNAL",
+      "clearanceLevel": "INTERNAL",
+      "department": "Cybersecurity Operations & Threat Intelligence",
+      "passwordHashSha256": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "offlinePinOrPasskeyId": "ed25519-passkey-saryu_analyst",
+      "authMethod": "Local SHA-256 Passkey",
+      "status": "ACTIVE",
+      "allowedMcpServers": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing"
+      ],
+      "allowedMcpUris": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing"
+      ],
+      "prepackagedOfflineReady": true,
+      "createdAtUtc": "2026-03-10 11:00:00 UTC",
+      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+    },
+    {
+      "id": "usr-local-04",
+      "username": "rohan_viewer",
+      "handle": "@rohan_viewer",
+      "email": "auditor.viewer@panini.local",
+      "displayName": "Rohan Kapoor (External Compliance Viewer)",
+      "fullName": "Rohan Kapoor (External Compliance Viewer)",
+      "role": "Viewer",
+      "clearance": "PUBLIC",
+      "clearanceLevel": "PUBLIC",
+      "department": "External Audit & Regulatory Verification",
+      "passwordHashSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "offlinePinOrPasskeyId": "ed25519-passkey-rohan_viewer",
+      "authMethod": "Local SHA-256 Passkey",
+      "status": "ACTIVE",
+      "allowedMcpServers": [
+        "mcp://sharepoint"
+      ],
+      "allowedMcpUris": [
+        "mcp://sharepoint"
+      ],
+      "prepackagedOfflineReady": true,
+      "createdAtUtc": "2026-04-20 14:00:00 UTC",
+      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+    },
+    {
+      "id": "usr-local-05",
+      "username": "nilesh_mlops",
+      "handle": "@nilesh_mlops",
+      "email": "ops.engineer@panini.local",
+      "displayName": "Nilesh Deshmukh (MLOps & MCP Server Lead)",
+      "fullName": "Nilesh Deshmukh (MLOps & MCP Server Lead)",
+      "role": "Developer",
+      "clearance": "CONFIDENTIAL",
+      "clearanceLevel": "CONFIDENTIAL",
+      "department": "Infrastructure, GPU Queue & MCP Federation",
+      "passwordHashSha256": "sha256:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+      "offlinePinOrPasskeyId": "ed25519-passkey-nilesh_mlops",
+      "authMethod": "Local SHA-256 Passkey",
+      "status": "ACTIVE",
+      "allowedMcpServers": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "allowedMcpUris": [
+        "mcp://sharepoint",
+        "mcp://crm",
+        "mcp://ticketing",
+        "mcp://code-sandbox"
+      ],
+      "prepackagedOfflineReady": true,
+      "createdAtUtc": "2026-05-12 10:15:00 UTC",
+      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+    }
+  ],
+  "knowledgeShards": {}
+}

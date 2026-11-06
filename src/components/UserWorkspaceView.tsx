@@ -27,6 +27,11 @@ import {
   autoCorrectUserQuery,
   generatePdfDocumentBytes,
   parsePromptIntoStoryboardShots,
+  ExpenseDeckBrandStyle,
+  SandboxIsolationRuntime,
+  DocumentAclRole,
+  PreviewableFileArtifactV59,
+  buildPreviewableArtifactsFromCodingResolutionV59,
 } from '../utils/engineLogic';
 import { ChatMessage, ChatThreadSession, GeneratedMediaItem } from '../utils/initialData';
 import {
@@ -55,6 +60,11 @@ import {
 import {
   CodingMultiFormatWorkbenchCard,
   AdminResourcePermissionPolicy,
+  BiDirectionalGuardrailBanner,
+  BoundedAgentOrchestratorCard,
+  ReceiptToExpenseDeckWorkbenchCard,
+  KnowledgePipelineAndMcpCardV57,
+  Phase3ProductionArchitectureCardV57,
 } from './EnterpriseGovernanceAndCodingHub';
 import {
   Send,
@@ -200,6 +210,19 @@ interface UserWorkspaceViewProps {
   onSwitchMessageExpert: (messageId: string, newExpertId: string) => void;
   learnedEntities: LearnedEntityKnowledge[];
   adminPermissions?: AdminResourcePermissionPolicy;
+  onHitlDecision?: (messageId: string, decision: 'approved' | 'rejected') => void;
+  onUpdateExpenseDeckStyle?: (
+    messageId: string,
+    brandStyle: ExpenseDeckBrandStyle,
+    sandboxRuntime: SandboxIsolationRuntime
+  ) => void;
+  activeAclRole?: DocumentAclRole;
+  onChangeAclRole?: (role: DocumentAclRole) => void;
+  onUpdateMessageAclRole?: (messageId: string, role: DocumentAclRole) => void;
+  onOpenFileInPreviewTab?: (
+    files: PreviewableFileArtifactV59[],
+    preferredFileId?: string
+  ) => void;
   isDark: boolean;
 }
 
@@ -3278,9 +3301,56 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
   onSwitchMessageExpert,
   learnedEntities,
   adminPermissions,
+  onHitlDecision,
+  onUpdateExpenseDeckStyle,
+  activeAclRole = 'Analyst',
+  onChangeAclRole,
+  onUpdateMessageAclRole,
+  onOpenFileInPreviewTab,
   isDark,
 }) => {
   const [showActiveModelSummary, setShowActiveModelSummary] = useState(false);
+
+  // Release v5.9-GA: >= 60s (62s) Deep Verification & Accuracy Timer in Thinking Mode
+  const [activeThinkingMsgId, setActiveThinkingMsgId] = useState<string | null>(null);
+  const [thinkingElapsedSec, setThinkingElapsedSec] = useState<number>(0);
+  const [showThinkingDetails, setShowThinkingDetails] = useState<boolean>(false);
+  const completedThinkingMsgIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (chatHistory.length === 0) return;
+    const lastMsg = chatHistory[chatHistory.length - 1];
+    if (
+      lastMsg.role === 'assistant' &&
+      lastMsg.thinkingPlanV59 &&
+      !completedThinkingMsgIdsRef.current.has(lastMsg.id) &&
+      activeThinkingMsgId !== lastMsg.id
+    ) {
+      setActiveThinkingMsgId(lastMsg.id);
+      setThinkingElapsedSec(0);
+      setShowThinkingDetails(false);
+    }
+  }, [chatHistory, activeThinkingMsgId]);
+
+  useEffect(() => {
+    if (!activeThinkingMsgId) return;
+    const targetMsg = chatHistory.find((m) => m.id === activeThinkingMsgId);
+    const requiredSec = targetMsg?.thinkingPlanV59?.totalRequiredSeconds || 150;
+    const timer = window.setInterval(() => {
+      setThinkingElapsedSec((prev) => {
+        const next = prev + 1;
+        if (next >= requiredSec) {
+          completedThinkingMsgIdsRef.current.add(activeThinkingMsgId);
+          setActiveThinkingMsgId(null);
+          setShowThinkingDetails(false);
+          window.clearInterval(timer);
+          return requiredSec;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeThinkingMsgId, chatHistory]);
 
   // Truly Collapsible Left Sidebar (Slim 64px Icon Rail when collapsed, 280px when expanded) + Collapsible History List
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -4684,89 +4754,301 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       <ImageCreateAndEditCard initialImageSpec={msg.imageStudio} />
                     )}
 
-                    {/* MAPS & SEARCH GROUNDING (Shown when Show more is active) */}
-                    {!isUser && isDetailsExpanded && (msg.mapsGrounding || msg.searchGrounding) && (
-                      <SpatialMapsAndSearchCard
-                        mapsGrounding={msg.mapsGrounding}
-                        searchGrounding={msg.searchGrounding}
-                      />
-                    )}
-
-                    {!isUser && msg.researchError && (
+                    {/* RELEASE v5.9-GA: >= 60s (62s) THINKING MODE TIMER & LIVE STREAM (Hidden automatically once output is generated) */}
+                    {!isUser &&
+                    activeThinkingMsgId === msg.id &&
+                    msg.thinkingPlanV59 &&
+                    thinkingElapsedSec < (msg.thinkingPlanV59.totalRequiredSeconds || 62) ? (
                       <div
-                        role="alert"
-                        data-testid="deep-research-error"
-                        className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300"
+                        data-testid="thinking-mode-active-card"
+                        className={`p-4 rounded-xl border ${
+                          isDark
+                            ? 'border-sky-500/40 bg-slate-900/90'
+                            : 'border-sky-300 bg-sky-50/70'
+                        } space-y-3`}
                       >
-                        {msg.researchError}
-                      </div>
-                    )}
-                    {!isUser && msg.researchWarning && (
-                      <div
-                        role="status"
-                        data-testid="deep-research-warning"
-                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
-                      >
-                        {msg.researchWarning}
-                      </div>
-                    )}
-                    {!isUser && msg.searchWarning && (
-                      <div
-                        role="status"
-                        data-testid="search-warning"
-                        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
-                      >
-                        {msg.searchWarning}
-                      </div>
-                    )}
-
-                    {/* PRIMARY TEXT / CODE / RESEARCH / ASK-MATH CONTENT */}
-                    {isUser ? (
-                      renderFormattedMessage(msg.content, isDark)
-                    ) : isPureImageMsg || isPureVideoMsg || isPureAudioMsg ? (
-                      isDetailsExpanded ? (
-                        renderFormattedMessage(msg.content, isDark)
-                      ) : msg.simpleAnswerMarkdown ? (
-                        <div data-testid="ask-math-quick-answer-view">
-                          {renderFormattedMessage(msg.simpleAnswerMarkdown, isDark)}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping" />
+                            <span className={`text-xs font-bold ${headingText}`}>
+                              Thinking Mode — Deep Data Collection, Structuring &amp; Accuracy Verification
+                            </span>
+                            <span
+                              data-testid="thinking-mode-timer-badge"
+                              className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                            >
+                              {thinkingElapsedSec}s / {msg.thinkingPlanV59.totalRequiredSeconds}s (150s Deep Research &amp; Accuracy Gate)
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              data-testid="thinking-mode-show-details-btn"
+                              onClick={() => setShowThinkingDetails((prev) => !prev)}
+                              className="px-2.5 py-1 rounded-lg border border-sky-500/50 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                            >
+                              {showThinkingDetails ? (
+                                <>
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                  <span>Hide Details</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Show Details</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="thinking-mode-fast-forward-btn"
+                              onClick={() => {
+                                completedThinkingMsgIdsRef.current.add(msg.id);
+                                setThinkingElapsedSec(
+                                  msg.thinkingPlanV59?.totalRequiredSeconds || 150
+                                );
+                                setActiveThinkingMsgId(null);
+                                setShowThinkingDetails(false);
+                              }}
+                              className="px-2.5 py-1 rounded-lg border border-emerald-500/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Complete Verification Now</span>
+                            </button>
+                          </div>
                         </div>
-                      ) : null
-                    ) : isCodingMsg && !isDetailsExpanded ? (
-                      /* CODE DEFAULT: Show ONLY pure code + multi-format tabs/exports without prose explanation */
-                      <div data-testid="coding-pure-code-view">
-                        {msg.codingResolution ? (
-                          <CodingMultiFormatWorkbenchCard
-                            codingResolution={msg.codingResolution}
-                            isDark={isDark}
-                            isDetailsExpanded={false}
+
+                        {/* Progress Bar */}
+                        <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all duration-500"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round(
+                                  (thinkingElapsedSec /
+                                    (msg.thinkingPlanV59.totalRequiredSeconds || 150)) *
+                                    100
+                                )
+                              )}%`,
+                            }}
                           />
-                        ) : (
+                        </div>
+
+                        {/* Compact 5-Stage Status Strip */}
+                        <div className="grid grid-cols-1 sm:grid-cols-5 gap-1.5 text-[11px]">
+                          {msg.thinkingPlanV59.stages.map((stg) => {
+                            const isDone = thinkingElapsedSec >= stg.endSec;
+                            const isCurrent =
+                              thinkingElapsedSec >= stg.startSec &&
+                              thinkingElapsedSec < stg.endSec;
+                            return (
+                              <div
+                                key={stg.stageId}
+                                className={`px-2.5 py-1.5 rounded-lg border font-mono ${
+                                  isDone
+                                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                    : isCurrent
+                                    ? 'border-sky-500/50 bg-sky-500/15 text-sky-200 font-semibold'
+                                    : `${borderClass} ${surfaceClass} ${mutedText}`
+                                }`}
+                              >
+                                <div>
+                                  {isDone ? '✓ ' : isCurrent ? '● ' : '○ '}
+                                  {stg.title}
+                                </div>
+                                <div className="text-[10px] opacity-75">
+                                  {stg.startSec}s–{stg.endSec}s
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* ONLY IF USER CLICKS "Show Details" IN THINKING MODE: Present Live Data Stream & Backend Engineered Prompt */}
+                        {showThinkingDetails && (
+                          <div
+                            data-testid="thinking-mode-live-stream"
+                            className="p-3 rounded-xl border border-slate-800 bg-slate-950 font-mono text-[11px] text-emerald-300 space-y-2 max-h-64 overflow-y-auto"
+                          >
+                            <div className="text-sky-400 font-bold border-b border-slate-800 pb-1">
+                              [LIVE DATA STREAM — BACKEND PROMPT ENGINEERING &amp; MULTI-SOURCE VERIFICATION]
+                            </div>
+                            {msg.engineeredPromptSpecV59 && (
+                              <div className="text-slate-300 space-y-0.5 border-b border-slate-800/80 pb-2">
+                                <div>
+                                  <span className="text-amber-300">Target Entity:</span>{' '}
+                                  {msg.engineeredPromptSpecV59.extractedEntityTarget} ·{' '}
+                                  <span className="text-amber-300">Abstention Token:</span> &quot;
+                                  {msg.engineeredPromptSpecV59.strictAbstentionRule.slice(0, 60)}...&quot;
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Engineered Prompt:{' '}
+                                  {msg.engineeredPromptSpecV59.engineeredSystemPrompt}
+                                </div>
+                              </div>
+                            )}
+                            {msg.thinkingPlanV59.stages
+                              .filter((stg) => thinkingElapsedSec >= stg.startSec)
+                              .map((stg) => (
+                                <div key={stg.stageId} className="space-y-1">
+                                  <div className="text-sky-300 font-semibold">
+                                    [{stg.startSec}s–{stg.endSec}s] {stg.title}: {stg.detail}
+                                  </div>
+                                  {stg.liveStreamLines.map((line, lIdx) => (
+                                    <div key={lIdx} className="pl-3 text-emerald-300/90">
+                                      ↳ {line}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {/* RELEASE v5.7-ALPHA: BI-DIRECTIONAL INPUT & OUTPUT GUARDRAILS BANNER (Hidden unless Show more or blocked) */}
+                        {!isUser &&
+                          (msg.inputGuardrail || msg.outputGuardrail) &&
+                          (isDetailsExpanded || msg.inputGuardrail?.isBlocked) && (
+                            <BiDirectionalGuardrailBanner
+                              inputGuardrail={msg.inputGuardrail}
+                              outputGuardrail={msg.outputGuardrail}
+                              isDark={isDark}
+                            />
+                          )}
+
+                        {/* RELEASE v5.7-ALPHA: BOUNDED AGENT ORCHESTRATOR & HITL APPROVAL GATE (Hidden unless Show more or pending HITL) */}
+                        {!isUser &&
+                          msg.agentOrchestrator &&
+                          (isDetailsExpanded ||
+                            Boolean(msg.agentOrchestrator.pendingHitlApproval)) && (
+                            <BoundedAgentOrchestratorCard
+                              orchestrator={msg.agentOrchestrator}
+                              onHitlDecision={(decision) => onHitlDecision?.(msg.id, decision)}
+                              isDark={isDark}
+                            />
+                          )}
+
+                        {/* RELEASE v5.7-ALPHA: END-TO-END RECEIPT-TO-EXPENSE-DECK WORKBENCH */}
+                        {!isUser && msg.expenseDeckBundle && (
+                          <ReceiptToExpenseDeckWorkbenchCard
+                            bundle={msg.expenseDeckBundle}
+                            onChangeBrandOrRuntime={(brandStyle, sandboxRuntime) =>
+                              onUpdateExpenseDeckStyle?.(msg.id, brandStyle, sandboxRuntime)
+                            }
+                            onOpenFileInPreviewTab={onOpenFileInPreviewTab}
+                            isDark={isDark}
+                          />
+                        )}
+
+                        {/* RELEASE v5.7-BETA: PHASE 2 KNOWLEDGE PIPELINE (Shown only when Show more is expanded) */}
+                        {!isUser && isDetailsExpanded && msg.knowledgeMcpPipeline && (
+                          <KnowledgePipelineAndMcpCardV57
+                            pipeline={msg.knowledgeMcpPipeline}
+                            onChangeAclRole={(newRole) => onUpdateMessageAclRole?.(msg.id, newRole)}
+                            isDark={isDark}
+                          />
+                        )}
+
+                        {/* RELEASE v5.7-GA: PHASE 3 PRODUCTION ARCHITECTURE (Shown only when Show more is expanded) */}
+                        {!isUser && isDetailsExpanded && (
+                          <Phase3ProductionArchitectureCardV57
+                            messageId={msg.id}
+                            referenceId={activeThread?.referenceId || 'REF-1042'}
+                            promptText={msg.content.slice(0, 140)}
+                            activeRole={msg.knowledgeMcpPipeline?.activeRole || 'Analyst'}
+                            initialOtelTrace={msg.otelTraceWaterfall}
+                            initialAsyncJob={msg.asyncJobRecord}
+                            initialFeedback={msg.userFeedbackRating}
+                            isDark={isDark}
+                          />
+                        )}
+
+                        {/* MAPS & SEARCH GROUNDING (Shown when Show more is active) */}
+                        {!isUser &&
+                          isDetailsExpanded &&
+                          (msg.mapsGrounding || msg.searchGrounding) && (
+                            <SpatialMapsAndSearchCard
+                              mapsGrounding={msg.mapsGrounding}
+                              searchGrounding={msg.searchGrounding}
+                            />
+                          )}
+
+                        {!isUser && msg.researchError && (
+                          <div
+                            role="alert"
+                            data-testid="deep-research-error"
+                            className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300"
+                          >
+                            {msg.researchError}
+                          </div>
+                        )}
+                        {!isUser && msg.researchWarning && (
+                          <div
+                            role="status"
+                            data-testid="deep-research-warning"
+                            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                          >
+                            {msg.researchWarning}
+                          </div>
+                        )}
+                        {!isUser && msg.searchWarning && (
+                          <div
+                            role="status"
+                            data-testid="search-warning"
+                            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                          >
+                            {msg.searchWarning}
+                          </div>
+                        )}
+
+                        {/* PRIMARY TEXT / CODE / RESEARCH / ASK-MATH FORMATTED OUTPUT (Only formatted output visible once Thinking Mode completes) */}
+                        {isUser ? (
                           renderFormattedMessage(msg.content, isDark)
-                        )}
-                      </div>
-                    ) : isCodingMsg && isDetailsExpanded ? (
-                      /* CODE EXPANDED ("Show more"): Multi-format code + Live Webpage Preview + Unit Tests + Full Prose Explanation */
-                      <div data-testid="coding-expanded-view" className="space-y-3">
-                        {msg.codingResolution && (
-                          <CodingMultiFormatWorkbenchCard
-                            codingResolution={msg.codingResolution}
-                            isDark={isDark}
-                            isDetailsExpanded={true}
-                          />
-                        )}
-                        {renderFormattedMessage(msg.content, isDark)}
-                      </div>
-                    ) : isDeepResearchMsg && !isDetailsExpanded ? (
-                      /* DEEP RESEARCH DEFAULT: Show ONLY synthesized research findings (not the stage flow) */
-                      <div data-testid="deep-research-findings-view">
-                        {renderFormattedMessage(msg.content, isDark)}
-                      </div>
-                    ) : !isDetailsExpanded ? (
-                      /* ASK / MATH DEFAULT: Show ONLY quick answer and basic explanation */
-                      <div data-testid="ask-math-quick-answer-view">
-                        {renderFormattedMessage(msg.simpleAnswerMarkdown || msg.content, isDark)}
-                      </div>
-                    ) : msg.simpleAnswerMarkdown ? (
+                        ) : isPureImageMsg || isPureVideoMsg || isPureAudioMsg ? (
+                          isDetailsExpanded ? (
+                            renderFormattedMessage(msg.content, isDark)
+                          ) : msg.simpleAnswerMarkdown ? (
+                            <div data-testid="ask-math-quick-answer-view">
+                              {renderFormattedMessage(msg.simpleAnswerMarkdown, isDark)}
+                            </div>
+                          ) : null
+                        ) : isCodingMsg && !isDetailsExpanded ? (
+                          <div data-testid="coding-pure-code-view" className="space-y-3">
+                            {msg.codingResolution ? (
+                              <CodingMultiFormatWorkbenchCard
+                                codingResolution={msg.codingResolution}
+                                isDark={isDark}
+                                isDetailsExpanded={false}
+                                onOpenFileInPreviewTab={onOpenFileInPreviewTab}
+                              />
+                            ) : (
+                              renderFormattedMessage(msg.content, isDark)
+                            )}
+                          </div>
+                        ) : isCodingMsg && isDetailsExpanded ? (
+                          <div data-testid="coding-expanded-view" className="space-y-3">
+                            {msg.codingResolution && (
+                              <CodingMultiFormatWorkbenchCard
+                                codingResolution={msg.codingResolution}
+                                isDark={isDark}
+                                isDetailsExpanded={true}
+                                onOpenFileInPreviewTab={onOpenFileInPreviewTab}
+                              />
+                            )}
+                            {renderFormattedMessage(msg.content, isDark)}
+                          </div>
+                        ) : isDeepResearchMsg && !isDetailsExpanded ? (
+                          <div data-testid="deep-research-findings-view">
+                            {renderFormattedMessage(msg.content, isDark)}
+                          </div>
+                        ) : !isDetailsExpanded ? (
+                          /* ASK / MATH DEFAULT: Show full formatted output with grounded tables & citations */
+                          <div data-testid="ask-math-quick-answer-view">
+                            {renderFormattedMessage(msg.content, isDark)}
+                          </div>
+                        ) : msg.simpleAnswerMarkdown ? (
                       /* EXPANDED ("Show more"): Full Side-by-Side / Simple / Expert View Tabs */
                       <div data-testid="answer-clarity-container" className="space-y-3 pt-1">
                         <div
@@ -4926,6 +5208,8 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       </div>
                     ) : (
                       renderFormattedMessage(msg.content, isDark)
+                    )}
+                      </>
                     )}
 
                     {/* CODING LIVE EXECUTION OUTPUT PREVIEW SECTION (Shown on Show more) */}
@@ -5416,6 +5700,42 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                               </>
                             )}
                           </button>
+                          {onOpenFileInPreviewTab && activeThinkingMsgId !== msg.id && (
+                            <button
+                              type="button"
+                              data-testid="message-open-preview-tab-btn"
+                              onClick={() => {
+                                if (msg.codingResolution) {
+                                  const files = buildPreviewableArtifactsFromCodingResolutionV59(
+                                    msg.codingResolution,
+                                    msg.timestamp
+                                  );
+                                  onOpenFileInPreviewTab(files, files[0]?.id);
+                                } else {
+                                  const reportArtifact: PreviewableFileArtifactV59 = {
+                                    id: `prev-pdf-${msg.id}`,
+                                    fileName: `panini-report-${msg.id.slice(-5)}.pdf`,
+                                    fileExtension: 'pdf',
+                                    mimeType: 'application/pdf',
+                                    sourceCapability: `${msg.domain} Workspace`,
+                                    createdAt: msg.timestamp,
+                                    subjectTitle: `${msg.domain} Grounded Report — ${msg.authorName}`,
+                                    summaryDescription: `Verified report preview before PDF download (${msg.verifiedFacts?.length || 0} grounded citations)`,
+                                    rawTextOrHtmlContent: msg.content,
+                                  };
+                                  onOpenFileInPreviewTab([reportArtifact], reportArtifact.id);
+                                }
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>
+                                {msg.codingResolution?.researchedPptxDeck
+                                  ? 'Preview .PPTX & Files in Preview Tab'
+                                  : 'Preview Downloadable File in Preview Tab'}
+                              </span>
+                            </button>
+                          )}
                           {msg.pendingResearchPlan &&
                             (msg.pendingResearchPlan.status === 'awaiting_approval' ||
                               msg.pendingResearchPlan.status === 'failed') &&
@@ -6144,6 +6464,58 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                   <Paperclip className="w-3.5 h-3.5 text-sky-400" />
                   <span>Attach</span>
                 </button>
+                <button
+                  type="button"
+                  data-testid="quick-receipt-expense-deck-btn"
+                  onClick={() => {
+                    const sampleReceiptAttachment: UploadedAttachment = {
+                      id: `att-receipt-${Date.now()}`,
+                      name: 'jumeirah-dubai-hotel-receipt-800aed.jpg',
+                      mimeType: 'image/jpeg',
+                      sizeKb: 184,
+                      kind: 'image',
+                      textContentPreview:
+                        'Jumeirah Al Naseem Hotel Dubai · Folio #JUM-800 · Grand Total: 800.00 AED (5% VAT + 10% Service Charge Included)',
+                    };
+                    onSendMessage(
+                      'Upload receipt for Jumeirah Dubai Hotel 800 AED (contact Card 4532-1111-2222-3333 or finance@acme.com): build me an expense deck and post to SAP ERP',
+                      'Mathematics',
+                      sampleReceiptAttachment
+                    );
+                  }}
+                  title="Run v5.7-alpha End-to-End Receipt -> Expense Deck Pipeline (Guardrails + Bounded Orchestrator + HITL + Sandboxed PPTX/DOCX/XLSX/PDF)"
+                  className={`px-2.5 py-1.5 text-[11px] font-mono rounded-xl border border-amber-500/50 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap`}
+                >
+                  Receipt → Expense Deck
+                </button>
+                <button
+                  type="button"
+                  data-testid="quick-hybrid-rag-mcp-btn"
+                  onClick={() => {
+                    onSendMessage(
+                      'Audit SAP S/4HANA VAT reconciliation, SharePoint Dubai 800 AED hospitality policy, and MCP Server Registry permissions',
+                      'Science'
+                    );
+                  }}
+                  title="Run v5.7-beta Phase 2 Hybrid Search (BM25 + Vector + Reranker), OCR Table Extraction, Document ACL Filtering & 6-Server MCP Registry Audit"
+                  className="px-2.5 py-1.5 text-[11px] font-mono rounded-xl border border-sky-500/50 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 transition-colors whitespace-nowrap"
+                >
+                  Hybrid RAG + MCP Audit
+                </button>
+                <label className="flex items-center gap-1 text-[11px] font-mono text-slate-300">
+                  <span>ACL:</span>
+                  <select
+                    data-testid="composer-acl-role-selector"
+                    value={activeAclRole}
+                    onChange={(e) => onChangeAclRole?.(e.target.value as DocumentAclRole)}
+                    className="px-2 py-1 rounded-lg bg-slate-900 text-sky-300 border border-slate-700 font-mono text-[11px]"
+                  >
+                    <option value="Viewer">Viewer</option>
+                    <option value="Analyst">Analyst</option>
+                    <option value="Developer">Developer</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </label>
                 {isChatExpanded && (
                   <button
                     type="button"

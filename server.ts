@@ -9,8 +9,64 @@ import {
   generateDeepResearchPlan,
   verifyExistingUseCaseMatch,
   extractCleanEntityTopic,
+  extractPresentationSubjectAndIntent,
+  runInputGuardrailScan,
+  runOutputGuardrailScan,
+  executeReGroundLoopV572,
+  executeBoundedAgentOrchestrator,
+  runReceiptVisionOcrAndReconcile,
+  buildSandboxedExpenseDeckBundle,
+  ExpenseDeckBrandStyle,
+  SandboxIsolationRuntime,
+  runHybridKnowledgePipelineV57,
+  setStrictSourceVerificationPolicyV572,
+  evaluateMcpToolAccessV57,
+  DocumentAclRole,
+  McpServerUri,
+  submitAsyncGenerationJobV57,
+  advanceAsyncJobStatusV57,
+  getAsyncJobQueueSnapshotV57,
+  buildOtelLangfuseTraceWaterfallV57,
+  recordUserMessageFeedbackV57,
+  getEvaluationObservabilityDashboardV57,
+  getApiAndSdkExplorerSnippetsV57,
+  generateDynamicRandomAccuracyUseCasesV57,
+  buildResearchedPptxPresentationSpecV57,
+  AsyncJobKind,
+  GpuServingEngineName,
+  UserFeedbackRatingV57,
+  ingestWebsiteToKnowledgeShardV58,
+  connectExternalRagServerToShardV58,
+  ingestDocumentOrFlatfileToShardV58,
+  registerCustomMcpServerV58,
+  setPaniniInboundMcpServerEnabledV58,
+  getPaniniMcpServerManifestV58,
+  handleInboundMcpJsonRpcRequestV58,
+  delegateTaskToSubAgentsV58,
+  getIntegrationsHubSnapshotV58,
+  engineerPromptForOptimalAccuracyV59,
+  buildThinkingModeExecutionPlanV59,
+  parseGgufFileAndBuildModelUpdateV60,
+  applyGgufUpdateToPaniniModelsV60,
+  PREBUILT_GGUF_MODEL_PACKAGES_V60,
+  getRestApiAndMcpDocumentationSpecV60,
+  generateRestApiAndMcpDocumentationPdfBytesV60,
+  QuantizationType,
+  upsertAndIndexKnowledgeShardV61,
+  listLocalRbacUsersV61,
+  upsertLocalRbacUserV61,
+  deleteLocalRbacUserV61,
+  verifyLocalRbacAccessV61,
+  getPersistentSovereignSettingsV61,
+  updatePersistentSovereignSettingsV61,
+  getPaniniBackendCliReferenceV61,
+  executePaniniBackendCliCommandV61,
+  runAllApiEndpointsVerificationSuiteV61,
+  getDynamicRoadmapAutoDrafterSuggestionsV61,
+  CURRENT_ACTIVE_RELEASE_VERSION,
+  syncReleaseDocumentationAndArtifactsV61,
 } from './src/utils/engineLogic';
-import { INITIAL_CUSTOM_SCENARIOS } from './src/utils/initialData';
+import { INITIAL_CUSTOM_SCENARIOS, INITIAL_MODELS } from './src/utils/initialData';
 import {
   analyzeBioscienceQuery,
   synthesizeMusicTrackSpec,
@@ -23,7 +79,10 @@ import {
   VideoAspectRatio,
   ImageStudioSpec,
   SovereignV56HardwareFormFactor,
+  listPaniniKnowledgeShards,
+  hydratePaniniKnowledgeShards,
 } from './src/utils/multimodalSuite';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,9 +162,16 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     });
   });
 
-  // Helper: Fetch live internet search results from public APIs (Wikipedia + OpenAlex + Crossref) with fast timeout
+  // Helper: Fetch live internet search results from public APIs (Wikipedia Multi-Section + Wikidata + OpenAlex + Crossref) with fast timeout
   async function fetchLiveInternetSources(query: string, maxResults = 4) {
-    const cleanQ = extractCleanEntityTopic(query.trim() || 'quantum computing');
+    const rawTrimmed = query.trim() || 'quantum computing';
+    const isPptxPrompt =
+      /\b(pptx|powerpoint|presentation|slide\s*deck|slides\s+for|slides\s+about)\b/i.test(
+        rawTrimmed
+      );
+    const cleanQ = isPptxPrompt
+      ? extractPresentationSubjectAndIntent(rawTrimmed).cleanSubject
+      : extractCleanEntityTopic(rawTrimmed);
     const encoded = encodeURIComponent(cleanQ.slice(0, 90));
     const results: {
       title: string;
@@ -427,21 +493,25 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // Backend endpoint: Live Multi-Engine Online Search Stream (zero 3rd-party AI models, real web search indices)
-  app.post('/api/search/online', async (req, res) => {
+  // Backend endpoint: Live Multi-Engine Online Search Stream (/api/search and /api/search/online)
+  const handleOnlineSearchRequest = async (req: express.Request, res: express.Response) => {
     try {
       const rawQuery = typeof req.body?.query === 'string' ? req.body.query : '';
       const liveSources = await fetchLiveInternetSources(rawQuery, 4);
       res.json({
         ok: true,
         query: rawQuery,
+        cleanSubject: extractPresentationSubjectAndIntent(rawQuery).cleanSubject,
         sources: liveSources,
         liveSources,
       });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
-  });
+  };
+
+  app.post('/api/search', handleOnlineSearchRequest);
+  app.post('/api/search/online', handleOnlineSearchRequest);
 
   // Backend endpoint: Verify if an existing use case fulfills user needs
   app.post('/api/nlp/verify-usecase', (req, res) => {
@@ -792,6 +862,929 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
+
+  // 7. Release v5.7-alpha: Bi-Directional Guardrails & Bounded Agent Orchestrator Endpoint
+  app.post('/api/v57/guardrail-orchestrate', (req, res) => {
+    try {
+      const prompt = String(
+        req.body?.prompt ||
+          'Upload receipt for Jumeirah Dubai Hotel 800 AED and build me an expense deck'
+      );
+      const maxSteps = Number(req.body?.maxSteps || 6);
+      const timeoutMs = Number(req.body?.timeoutMs || 8000);
+      const hitlDecision =
+        req.body?.hitlDecision === 'approved' || req.body?.hitlDecision === 'rejected'
+          ? req.body.hitlDecision
+          : undefined;
+
+      const inputGuardrail = runInputGuardrailScan(prompt);
+      const orchestrator = executeBoundedAgentOrchestrator(inputGuardrail.sanitizedInput, {
+        maxSteps,
+        timeoutMs,
+        hitlDecision,
+        hasAttachment: Boolean(req.body?.hasAttachment),
+      });
+      const outputGuardrail = runOutputGuardrailScan(
+        orchestrator.steps.map((s) => s.observationSummary).join(' '),
+        orchestrator.steps.map((s) => s.toolOrModelCalled)
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-alpha (SVN-r407.0-alpha)',
+        inputGuardrail,
+        orchestrator,
+        outputGuardrail,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 8. Release v5.7-alpha: End-to-End Receipt-to-Expense-Deck Sandboxed Pipeline Endpoint
+  app.post('/api/v57/expense-deck', (req, res) => {
+    try {
+      const prompt = String(
+        req.body?.prompt ||
+          'Upload receipt for Jumeirah Al Naseem Hotel Dubai 800 AED and build me an expense deck'
+      );
+      const brandStyle: ExpenseDeckBrandStyle =
+        req.body?.brandStyle === 'Sovereign Gold' || req.body?.brandStyle === 'Swiss Minimal'
+          ? req.body.brandStyle
+          : 'Executive Slate';
+      const sandboxRuntime: SandboxIsolationRuntime =
+        req.body?.sandboxRuntime === 'Firecracker MicroVM'
+          ? 'Firecracker MicroVM'
+          : 'gVisor (runsc)';
+
+      const inputGuardrail = runInputGuardrailScan(prompt);
+      const ocrResult = runReceiptVisionOcrAndReconcile(
+        inputGuardrail.sanitizedInput,
+        req.body?.attachment
+      );
+      const bundle = buildSandboxedExpenseDeckBundle(ocrResult, brandStyle, sandboxRuntime);
+      const orchestrator = executeBoundedAgentOrchestrator(inputGuardrail.sanitizedInput, {
+        hasAttachment: true,
+      });
+      const outputGuardrail = runOutputGuardrailScan(bundle.executiveSummaryMarkdown, [
+        ocrResult.merchantName,
+        `${ocrResult.currency} ${ocrResult.grandTotal.toFixed(2)}`,
+      ]);
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-alpha (SVN-r407.0-alpha)',
+        inputGuardrail,
+        ocrResult,
+        bundle,
+        orchestrator,
+        outputGuardrail,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 9. Release v5.7-beta & v5.7.2-GA: Hybrid Knowledge Pipeline (OCR Tables + BM25/Vector + Reranker + Document ACLs + Source Verification Toggle) & Formal 6-Server MCP Registry Endpoint
+  const handleKnowledgePipelineRequest = (req: express.Request, res: express.Response) => {
+    try {
+      const query = String(
+        req.body?.query ||
+          'Audit SAP S/4HANA VAT reconciliation, SharePoint Dubai 800 AED hospitality policy, and MCP Server Registry permissions'
+      );
+      const role: DocumentAclRole =
+        req.body?.role === 'Viewer' ||
+        req.body?.role === 'Analyst' ||
+        req.body?.role === 'Developer' ||
+        req.body?.role === 'Admin'
+          ? req.body.role
+          : 'Analyst';
+      const userHandle = String(req.body?.userHandle || 'dsupercooldude@gmail.com');
+      const requestedUri = req.body?.requestedUri as McpServerUri | undefined;
+      const operation: 'read' | 'write' | 'exec' =
+        req.body?.operation === 'write' || req.body?.operation === 'exec'
+          ? req.body.operation
+          : 'read';
+      const enforceSourceVerification =
+        typeof req.body?.enforceStrictSourceVerification === 'boolean'
+          ? req.body.enforceStrictSourceVerification
+          : undefined;
+      if (typeof enforceSourceVerification === 'boolean') {
+        setStrictSourceVerificationPolicyV572(enforceSourceVerification);
+      }
+
+      const pipeline = runHybridKnowledgePipelineV57(
+        query,
+        role,
+        userHandle,
+        enforceSourceVerification
+      );
+      const explicitMcpEval = requestedUri
+        ? evaluateMcpToolAccessV57(role, requestedUri, operation, userHandle)
+        : pipeline.activeMcpEvaluation;
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7.2-GA (SVN-r407.5-GA)',
+        pipeline,
+        mcpEvaluation: explicitMcpEval,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  };
+
+  app.post('/api/v57/knowledge-mcp-pipeline', handleKnowledgePipelineRequest);
+  app.post('/api/v57/knowledge-pipeline', handleKnowledgePipelineRequest);
+
+  app.post('/api/v57/reground', (req, res) => {
+    try {
+      const rawOutput = String(req.body?.rawOutput || '');
+      const prompt = String(req.body?.prompt || 'Enterprise factual verification');
+      const existingSources = Array.isArray(req.body?.existingSources)
+        ? req.body.existingSources.map(String)
+        : [];
+      const reGrounded = executeReGroundLoopV572(rawOutput, prompt, existingSources);
+      const otelTrace = buildOtelLangfuseTraceWaterfallV57(
+        prompt,
+        String(req.body?.role || 'Analyst'),
+        'panini-400b-moe',
+        0,
+        { reGroundExecuted: true }
+      );
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7.2-GA (SVN-r407.5-GA)',
+        outputGuardrail: reGrounded,
+        otelTrace,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ==========================================================================
+  // RELEASE v5.7-GA (SVN-r407.3-GA) — PHASE 3 PRODUCTION ARCHITECTURE ROUTES
+  // 1. POST /api/jobs/submit — Asynchronous Job Queue returning JOB-900XX
+  //    immediately with vLLM / SGLang / TensorRT-LLM & Kubernetes GPU telemetry
+  // 2. POST /api/jobs/:jobId/advance & GET /api/jobs — Poll / advance job queue
+  // 3. POST /api/v57/feedback — Log per-message User Feedback (Thumbs Up/Down,
+  //    Flag Hallucination) to Evaluation Dashboard
+  // 4. GET /api/v57/evals-and-random-tests — Evaluation Dashboard, OTel Trace,
+  //    API/SDK Explorer Snippets & Dynamic Random Data-Accuracy Scenarios
+  // ==========================================================================
+  app.post('/api/jobs/submit', (req, res) => {
+    try {
+      const prompt = String(
+        req.body?.prompt ||
+          'Synthesize researched OpenXML .pptx presentation and 8K multi-shot media asset'
+      );
+      const rawKind = String(req.body?.jobKind || 'pptx_document_pack');
+      const jobKind: AsyncJobKind =
+        rawKind === 'video_gen' ||
+        rawKind === 'image_gen' ||
+        rawKind === 'pptx_document_pack' ||
+        rawKind === 'deep_research_batch'
+          ? rawKind
+          : 'pptx_document_pack';
+      const servingEngine = req.body?.servingEngine as GpuServingEngineName | undefined;
+
+      const job = submitAsyncGenerationJobV57(prompt, jobKind, servingEngine);
+      const otelTrace = buildOtelLangfuseTraceWaterfallV57(
+        prompt,
+        String(req.headers['x-panini-role'] || req.body?.role || 'Analyst')
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-GA (SVN-r407.3-GA)',
+        jobId: job.jobId,
+        job,
+        queueSnapshot: getAsyncJobQueueSnapshotV57(),
+        otelTrace,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/jobs', (_req, res) => {
+    res.json({
+      ok: true,
+      releaseVersion: 'v5.7-GA (SVN-r407.3-GA)',
+      queueSnapshot: getAsyncJobQueueSnapshotV57(),
+    });
+  });
+
+  app.post('/api/jobs/:jobId/advance', (req, res) => {
+    const updated = advanceAsyncJobStatusV57(String(req.params.jobId || ''));
+    res.json({
+      ok: Boolean(updated),
+      job: updated,
+      queueSnapshot: getAsyncJobQueueSnapshotV57(),
+    });
+  });
+
+  app.post('/api/v57/feedback', (req, res) => {
+    try {
+      const messageId = String(req.body?.messageId || `msg-${Date.now()}`);
+      const rawRating = String(req.body?.rating || 'thumbs_up');
+      const rating: UserFeedbackRatingV57 =
+        rawRating === 'thumbs_down' || rawRating === 'flag_hallucination'
+          ? rawRating
+          : 'thumbs_up';
+      const referenceId = String(req.body?.referenceId || 'REF-1042');
+      const comment = String(req.body?.comment || '');
+
+      const dashboard = recordUserMessageFeedbackV57(
+        messageId,
+        rating,
+        referenceId,
+        comment
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-GA (SVN-r407.3-GA)',
+        dashboard,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v57/evals-and-random-tests', (req, res) => {
+    try {
+      const seedParam = req.query.seed ? Number(req.query.seed) : undefined;
+      const roleParam = String(req.query.role || 'Analyst');
+      const dashboard = getEvaluationObservabilityDashboardV57();
+      const randomAccuracyReport = generateDynamicRandomAccuracyUseCasesV57(seedParam);
+      const sdkSnippets = getApiAndSdkExplorerSnippetsV57(roleParam);
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-GA (SVN-r407.3-GA)',
+        dashboard,
+        randomAccuracyReport,
+        sdkSnippets,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v57/pptx-research-deck', (req, res) => {
+    try {
+      const topicPrompt = String(
+        req.body?.topicPrompt ||
+          'Dubai 800 AED Jumeirah Hospitality Receipt & SAP S/4HANA GL 6420-HOSP Audit'
+      );
+      const primaryLanguage = String(req.body?.primaryLanguage || 'Python');
+      const spec = buildResearchedPptxPresentationSpecV57(topicPrompt, primaryLanguage);
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.7-GA (SVN-r407.3-GA)',
+        deckTitle: spec.deckTitle,
+        researchedDomain: spec.researchedDomain,
+        citationsUsed: spec.citationsUsed,
+        slidesCount: spec.slides.length,
+        byteLength: spec.pptxBinaryBytes.byteLength,
+        pptxDataUrl: spec.pptxDataUrl,
+        pythonPptxCodeMarkdown: spec.pythonPptxCodeMarkdown,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ==========================================================================
+  // RELEASE v5.8-GA (SVN-r408.0-GA) — ADMIN INTEGRATIONS HUB, KNOWLEDGE SHARD
+  // INGESTION, INBOUND MCP JSON-RPC 2.0 SERVER & SUB-AGENT DELEGATION ROUTES
+  // ==========================================================================
+  app.get('/api/mcp/manifest', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        manifest: getPaniniMcpServerManifestV58(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/mcp/rpc', (req, res) => {
+    try {
+      const rpcResponse = handleInboundMcpJsonRpcRequestV58(req.body || {});
+      res.json(rpcResponse);
+    } catch (err) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        id: req.body?.id ?? 'err',
+        error: { code: -32603, message: String(err) },
+      });
+    }
+  });
+
+  app.get('/api/v58/integrations/snapshot', (req, res) => {
+    try {
+      const role = String(req.query.role || 'Admin');
+      const userHandle = String(req.query.userHandle || 'dsupercooldude@gmail.com');
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        snapshot: getIntegrationsHubSnapshotV58(role, userHandle),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v58/integrations/ingest-website', async (req, res) => {
+    try {
+      const url = String(req.body?.url || 'https://en.wikipedia.org/wiki/Model_Context_Protocol');
+      const topicTitle = String(req.body?.topicTitle || '');
+      const isOnline = req.body?.isOnline !== false;
+      let liveFacts: string[] | undefined = Array.isArray(req.body?.fetchedFactsOverride)
+        ? req.body.fetchedFactsOverride.map(String)
+        : undefined;
+
+      if (isOnline && (!liveFacts || liveFacts.length === 0)) {
+        const searchTopic =
+          topicTitle ||
+          url
+            .replace(/^https?:\/\/(www\.)?/i, '')
+            .replace(/[/#?_-]+/g, ' ')
+            .trim();
+        const liveSources = await fetchLiveInternetSources(searchTopic, 3);
+        if (liveSources.length > 0) {
+          liveFacts = liveSources.map(
+            (s) => `${s.title} (${s.publicationOrSource}): ${s.snippet}`
+          );
+        }
+      }
+
+      const shard = ingestWebsiteToKnowledgeShardV58({
+        url,
+        topicTitle: topicTitle || undefined,
+        crawlMode: req.body?.crawlMode,
+        classification: req.body?.classification,
+        allowedRoles: req.body?.allowedRoles,
+        fetchedFactsOverride: liveFacts,
+      });
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        shard,
+        snapshot: getIntegrationsHubSnapshotV58(req.body?.role || 'Admin'),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v58/integrations/sync-rag-server', (req, res) => {
+    try {
+      const ragServer = connectExternalRagServerToShardV58(req.body || {});
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        ragServer,
+        snapshot: getIntegrationsHubSnapshotV58(req.body?.role || 'Admin'),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v58/integrations/ingest-file', (req, res) => {
+    try {
+      const docRecord = ingestDocumentOrFlatfileToShardV58(req.body || {});
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        docRecord,
+        snapshot: getIntegrationsHubSnapshotV58(req.body?.role || 'Admin'),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v58/integrations/register-mcp', (req, res) => {
+    try {
+      if (typeof req.body?.inboundServerEnabled === 'boolean') {
+        setPaniniInboundMcpServerEnabledV58(req.body.inboundServerEnabled);
+      }
+      const entry = req.body?.uri
+        ? registerCustomMcpServerV58(req.body, req.body?.role || 'Admin')
+        : undefined;
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        entry,
+        manifest: getPaniniMcpServerManifestV58(),
+        snapshot: getIntegrationsHubSnapshotV58(req.body?.role || 'Admin'),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v58/agents/delegate', (req, res) => {
+    try {
+      const goalPrompt = String(
+        req.body?.goalPrompt ||
+          'Coordinate Web Shard, Federated RAG, Flatfile, and OpenXML sub-agents to build an executive compliance pack'
+      );
+      const role = String(req.body?.role || 'Admin');
+      const delegation = delegateTaskToSubAgentsV58(goalPrompt, role);
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.8-GA (SVN-r408.0-GA)',
+        delegation,
+        snapshot: getIntegrationsHubSnapshotV58(role),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ============================================================================
+  // RELEASE v5.9-GA (SVN-r409.0-GA) — AUTOMATIC BACKEND PROMPT ENGINEERING &
+  // 60+ SECOND DEEP COLLECTION, ANALYSIS, STRUCTURING & ACCURACY CHECK PIPELINE
+  // ============================================================================
+  app.post('/api/v59/prompt-engineer', (req, res) => {
+    try {
+      const rawPrompt = String(req.body?.prompt || req.body?.query || '');
+      const capabilityMode = String(req.body?.capabilityMode || 'ask_math');
+      const isOnline = Boolean(req.body?.isOnline);
+      const engineeredSpec = engineerPromptForOptimalAccuracyV59(
+        rawPrompt,
+        capabilityMode,
+        isOnline
+      );
+      res.json({
+        ok: true,
+        releaseVersion: 'v5.9-GA (SVN-r409.0-GA)',
+        engineeredSpec,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v59/thinking-accuracy-pipeline', async (req, res) => {
+    try {
+      const rawPrompt = String(req.body?.prompt || req.body?.query || '');
+      const capabilityMode = String(req.body?.capabilityMode || req.body?.mode || 'ask_math');
+      // Release v6.0-GA: Automatically use internet in backend when available unless explicitly blocked
+      const disableBackendInternet = Boolean(req.body?.disableBackendInternet);
+      const isOnline =
+        typeof req.body?.isOnline === 'boolean'
+          ? req.body.isOnline
+          : !disableBackendInternet;
+
+      let liveSources: Awaited<ReturnType<typeof fetchLiveInternetSources>> = [];
+      if (!disableBackendInternet && rawPrompt.trim().length > 0) {
+        try {
+          liveSources = await fetchLiveInternetSources(rawPrompt, 6);
+        } catch {
+          liveSources = [];
+        }
+      }
+
+      const effectiveOnline = isOnline || liveSources.length > 0;
+      const engineeredSpec = engineerPromptForOptimalAccuracyV59(
+        rawPrompt,
+        capabilityMode,
+        effectiveOnline
+      );
+
+      const thinkingPlan = buildThinkingModeExecutionPlanV59(
+        rawPrompt,
+        capabilityMode,
+        effectiveOnline,
+        liveSources.length
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.0-GA (SVN-r410.0-GA)',
+        totalRequiredSeconds: thinkingPlan.totalRequiredSeconds,
+        backendInternetUsed: liveSources.length > 0,
+        engineeredSpec,
+        thinkingPlan,
+        liveSources,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ============================================================================
+  // RELEASE v6.0-GA (SVN-r410.0-GA) — 150s BACKEND INTERNET RESEARCH PIPELINE,
+  // GGUF v3 MODEL REGISTRY UPDATER, AND REST API + MCP AGENT/SERVER PDF DOCS
+  // ============================================================================
+  app.post('/api/v60/research-and-engineer', async (req, res) => {
+    try {
+      const rawPrompt = String(req.body?.prompt || req.body?.query || '');
+      const capabilityMode = String(req.body?.capabilityMode || req.body?.mode || 'ask_math');
+      const useBackendInternet =
+        typeof req.body?.useBackendInternet === 'boolean' ? req.body.useBackendInternet : true;
+
+      let liveSources: Awaited<ReturnType<typeof fetchLiveInternetSources>> = [];
+      if (useBackendInternet && rawPrompt.trim().length > 0) {
+        try {
+          liveSources = await fetchLiveInternetSources(rawPrompt, 6);
+        } catch {
+          liveSources = [];
+        }
+      }
+
+      const effectiveOnline = useBackendInternet || liveSources.length > 0;
+      const engineeredSpec = engineerPromptForOptimalAccuracyV59(
+        rawPrompt,
+        capabilityMode,
+        effectiveOnline
+      );
+
+      const thinkingPlan = buildThinkingModeExecutionPlanV59(
+        rawPrompt,
+        capabilityMode,
+        effectiveOnline,
+        liveSources.length
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.0-GA (SVN-r410.0-GA)',
+        totalRequiredSeconds: thinkingPlan.totalRequiredSeconds,
+        backendInternetUsed: liveSources.length > 0,
+        liveSourcesCount: liveSources.length,
+        liveSources,
+        engineeredSpec,
+        thinkingPlan,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v60/gguf-parse-and-update', (req, res) => {
+    try {
+      const fileName = String(
+        req.body?.fileName || 'panini-400b-moe-flagship-v6.0-q5_k_m.gguf'
+      );
+      const targetModelId = req.body?.targetModelId
+        ? String(req.body.targetModelId)
+        : undefined;
+      const rawContentOrBase64 = req.body?.rawContentOrBase64
+        ? String(req.body.rawContentOrBase64)
+        : undefined;
+      const customQuantType = req.body?.customQuantType as QuantizationType | undefined;
+      const customContextLength = req.body?.customContextLength
+        ? Number(req.body.customContextLength)
+        : undefined;
+      const customActiveLayers = req.body?.customActiveLayers
+        ? Number(req.body.customActiveLayers)
+        : undefined;
+      const customLoraRank = req.body?.customLoraRank
+        ? Number(req.body.customLoraRank)
+        : undefined;
+      const customSystemDirective = req.body?.customSystemDirective
+        ? String(req.body.customSystemDirective)
+        : undefined;
+
+      const ggufDescriptor = parseGgufFileAndBuildModelUpdateV60({
+        fileName,
+        targetModelId,
+        rawContentOrBase64,
+        customQuantType,
+        customContextLength,
+        customActiveLayers,
+        customLoraRank,
+        customSystemDirective,
+      });
+
+      const appliedResult = applyGgufUpdateToPaniniModelsV60(
+        INITIAL_MODELS,
+        ggufDescriptor,
+        String(req.body?.author || 'dsupercooldude@gmail.com')
+      );
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.0-GA (SVN-r410.0-GA)',
+        ggufDescriptor,
+        committedVersion: appliedResult.committedVersion,
+        updatedModelName: appliedResult.updatedModel.name,
+        persistedShardFile: appliedResult.persistedShardFile,
+        prebuiltPackages: PREBUILT_GGUF_MODEL_PACKAGES_V60,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v60/docs/rest-mcp-spec', (_req, res) => {
+    try {
+      const spec = getRestApiAndMcpDocumentationSpecV60();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.0-GA (SVN-r410.0-GA)',
+        spec,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v60/docs/rest-mcp-pdf', (_req, res) => {
+    try {
+      const pdfBundle = generateRestApiAndMcpDocumentationPdfBytesV60();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${pdfBundle.fileName}"`
+      );
+      res.send(Buffer.from(pdfBundle.pdfBytes));
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ============================================================================
+  // RELEASE v6.1-GA (SVN-r411.0-GA) — PERSISTENT LOCAL SOVEREIGN DB (SHARDS,
+  // PREPACKAGED OFFLINE RBAC USERS, INTERNET-BY-DEFAULT SETTINGS), BACKEND CLI
+  // (`panini-cli` & OLLAMA GGUF), AND 100% ALL-ENDPOINTS SWAGGER TEST RUNNER
+  // ============================================================================
+  const LOCAL_DB_PATH = path.join(__dirname, 'data', 'panini-local-sovereign-db.json');
+
+  function persistLocalSovereignDbToDisk() {
+    try {
+      const dataDir = path.dirname(LOCAL_DB_PATH);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      const shardEntries = listPaniniKnowledgeShards();
+      const shardsMap: Record<string, (typeof shardEntries)[number]> = {};
+      for (const s of shardEntries) {
+        shardsMap[s.queryKey] = s;
+      }
+      const dbSnapshot = {
+        schemaVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        persistedAtUtc: new Date().toISOString(),
+        offlineFirstPrepackaged: true,
+        cloudHosted: false,
+        activeReleaseVersion: CURRENT_ACTIVE_RELEASE_VERSION,
+        settings: getPersistentSovereignSettingsV61(),
+        rbacUsers: listLocalRbacUsersV61(),
+        knowledgeShards: shardsMap,
+      };
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(dbSnapshot, null, 2), 'utf-8');
+    } catch {
+      // Ignore write errors on read-only filesystems
+    }
+  }
+
+  function hydrateLocalSovereignDbFromDisk() {
+    try {
+      if (fs.existsSync(LOCAL_DB_PATH)) {
+        const parsed = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, 'utf-8'));
+        if (parsed?.settings && typeof parsed.settings === 'object') {
+          updatePersistentSovereignSettingsV61(parsed.settings);
+        }
+        if (Array.isArray(parsed?.rbacUsers)) {
+          for (const u of parsed.rbacUsers) {
+            if (u?.handle && u?.fullName && u?.role) {
+              upsertLocalRbacUserV61(u);
+            }
+          }
+        }
+        if (parsed?.knowledgeShards && typeof parsed.knowledgeShards === 'object') {
+          hydratePaniniKnowledgeShards(parsed.knowledgeShards);
+        }
+      } else {
+        // Initialize prepackaged local DB on first boot (Internet Accessible by default)
+        persistLocalSovereignDbToDisk();
+      }
+    } catch {
+      persistLocalSovereignDbToDisk();
+    }
+  }
+
+  hydrateLocalSovereignDbFromDisk();
+
+  // 1. Knowledge Shards CRUD & Merge Updater (/api/v61/shards)
+  app.get('/api/v61/shards', (_req, res) => {
+    try {
+      const shards = listPaniniKnowledgeShards();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        totalShards: shards.length,
+        shards,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v61/shards', (req, res) => {
+    try {
+      const topic = String(req.body?.topic || req.body?.query || 'Enterprise Knowledge Shard');
+      const sourceTitle = req.body?.sourceTitle ? String(req.body.sourceTitle) : undefined;
+      const sourceUrl = req.body?.sourceUrl ? String(req.body.sourceUrl) : undefined;
+      const sourceAuthorOrOrg = req.body?.sourceAuthorOrOrg
+        ? String(req.body.sourceAuthorOrOrg)
+        : undefined;
+      const facts: string[] = Array.isArray(req.body?.facts)
+        ? req.body.facts.map(String)
+        : typeof req.body?.facts === 'string'
+        ? req.body.facts
+            .split(/\r?\n|;/)
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [`${topic} verified enterprise knowledge shard fact.`];
+      const mergeExisting = req.body?.mergeExisting !== false;
+
+      const result = upsertAndIndexKnowledgeShardV61({
+        topic,
+        sourceTitle,
+        sourceUrl,
+        sourceAuthorOrOrg,
+        facts,
+        classification: req.body?.classification,
+        mergeExisting,
+      });
+      persistLocalSovereignDbToDisk();
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        ...result,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 2. Prepackaged Local Offline RBAC User Database (/api/v61/rbac/users)
+  app.get('/api/v61/rbac/users', (_req, res) => {
+    try {
+      const users = listLocalRbacUsersV61();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        offlineFirstPrepackaged: true,
+        cloudHosted: false,
+        totalUsers: users.length,
+        users,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v61/rbac/users', (req, res) => {
+    try {
+      if (req.body?.action === 'delete' && req.body?.idOrHandle) {
+        const users = deleteLocalRbacUserV61(String(req.body.idOrHandle));
+        persistLocalSovereignDbToDisk();
+        res.json({
+          ok: true,
+          releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+          users,
+        });
+        return;
+      }
+      if (req.body?.action === 'verify' && req.body?.handleOrId) {
+        const verification = verifyLocalRbacAccessV61(
+          String(req.body.handleOrId),
+          req.body.requiredClearance || 'INTERNAL'
+        );
+        res.json({
+          ok: true,
+          releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+          verification,
+        });
+        return;
+      }
+
+      const user = upsertLocalRbacUserV61({
+        id: req.body?.id,
+        handle: String(req.body?.handle || '@local_operator'),
+        fullName: String(req.body?.fullName || 'Local Sovereign Operator'),
+        email: req.body?.email ? String(req.body.email) : undefined,
+        role:
+          req.body?.role === 'Viewer' ||
+          req.body?.role === 'Analyst' ||
+          req.body?.role === 'Developer' ||
+          req.body?.role === 'Admin'
+            ? req.body.role
+            : 'Analyst',
+        department: req.body?.department ? String(req.body.department) : undefined,
+        clearanceLevel: req.body?.clearanceLevel,
+        offlinePinOrPasskeyId: req.body?.offlinePinOrPasskeyId,
+      });
+      persistLocalSovereignDbToDisk();
+
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        user,
+        users: listLocalRbacUsersV61(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 3. Persistent Sovereign Settings — Online by Default (/api/v61/settings)
+  app.get('/api/v61/settings', (_req, res) => {
+    try {
+      const settings = getPersistentSovereignSettingsV61();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        settings,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v61/settings', (req, res) => {
+    try {
+      const updated = updatePersistentSovereignSettingsV61(req.body || {});
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        settings: updated,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 4. Backend CLI Executor (`panini-cli` & Ollama GGUF) (/api/v61/cli/exec)
+  app.post('/api/v61/cli/exec', (req, res) => {
+    try {
+      const command = String(req.body?.command || 'panini-cli doctor');
+      const execution = executePaniniBackendCliCommandV61(command);
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: execution.exitCode === 0,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        execution,
+        cliReference: getPaniniBackendCliReferenceV61(),
+        settings: getPersistentSovereignSettingsV61(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 5. 100% API Endpoint Verification Suite (/api/v61/test-all-endpoints)
+  app.post('/api/v61/test-all-endpoints', (_req, res) => {
+    try {
+      const report = runAllApiEndpointsVerificationSuiteV61();
+      res.json({
+        ok: true,
+        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        report,
+        dynamicRoadmapSuggestions: getDynamicRoadmapAutoDrafterSuggestionsV61(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // 6. Automatic Release Documentation & Artifact Sync (/api/v61/releases/sync-artifacts)
+  const handleSyncReleaseArtifacts = (req: express.Request, res: express.Response) => {
+    try {
+      const activeReleaseVersion = req.body?.activeReleaseVersion;
+      const newRoadmapItem = req.body?.newRoadmapItem;
+      const syncReport = syncReleaseDocumentationAndArtifactsV61({
+        activeReleaseVersion,
+        newRoadmapItem,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${syncReport.activeReleaseVersion} (${syncReport.activeSvnRevision})`,
+        syncReport,
+        docsSpec: getRestApiAndMcpDocumentationSpecV60(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  };
+  app.get('/api/v61/releases/sync-artifacts', handleSyncReleaseArtifacts);
+  app.post('/api/v61/releases/sync-artifacts', handleSyncReleaseArtifacts);
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

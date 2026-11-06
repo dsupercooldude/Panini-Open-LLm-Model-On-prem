@@ -1,6 +1,18 @@
 import React, { useState } from 'react';
-import { UserRole, evaluateRbacPermission } from '../utils/engineLogic';
+import {
+  UserRole,
+  DocumentAclRole,
+  evaluateRbacPermission,
+  normalizeToAclRole,
+  runHybridKnowledgePipelineV57,
+  getStrictSourceVerificationPolicyV572,
+  setStrictSourceVerificationPolicyV572,
+} from '../utils/engineLogic';
 import { CentralizedLogEntry, BackupSnapshot } from '../utils/initialData';
+import {
+  Phase3ProductionArchitectureCardV57,
+  KnowledgePipelineAndMcpCardV57,
+} from './EnterpriseGovernanceAndCodingHub';
 import {
   AlertTriangle,
   Bell,
@@ -141,6 +153,28 @@ export const OpsLogsDocsView: React.FC<OpsLogsDocsViewProps> = ({
   const [cicdRunStatus, setCicdRunStatus] = useState<
     'Passing (48/48 Checks)' | 'Running Verification Suite...'
   >('Passing (48/48 Checks)');
+  const [adminOpsSourceVerification, setAdminOpsSourceVerification] = useState<boolean>(() =>
+    getStrictSourceVerificationPolicyV572()
+  );
+  const [adminOpsAclRole, setAdminOpsAclRole] = useState<DocumentAclRole>(() =>
+    normalizeToAclRole(currentUserRole)
+  );
+  const [adminOpsRagQuery, setAdminOpsRagQuery] = useState<string>(
+    'Audit SAP S/4HANA VAT reconciliation, SharePoint Dubai 800 AED hospitality policy, and Gurucul REVEAL SIEM/UEBA shards'
+  );
+
+  const handleToggleAdminSourceVerification = () => {
+    const nextVal = !adminOpsSourceVerification;
+    setStrictSourceVerificationPolicyV572(nextVal);
+    setAdminOpsSourceVerification(nextVal);
+  };
+
+  const adminKnowledgePipeline = runHybridKnowledgePipelineV57(
+    adminOpsRagQuery,
+    adminOpsAclRole,
+    'dsupercooldude@gmail.com',
+    adminOpsSourceVerification
+  );
 
   const canBackupCicd = evaluateRbacPermission(currentUserRole, 'trigger_backup_and_cicd');
   const canClearLogs = evaluateRbacPermission(currentUserRole, 'clear_central_logs');
@@ -1027,6 +1061,66 @@ jobs:
           </div>
         </div>
       )}
+
+      {/* RELEASE v5.7.2-GA: ADMIN OPS RAG/MCP SOURCE VERIFICATION TOGGLE (>=2 CROSS-REFERENCED SHARDS & INLINE CITATIONS) */}
+      <div className={`rounded-xl border p-4 space-y-3 ${borderClass} ${surfaceClass}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className={`text-xs font-bold ${headingText}`}>
+              RAG / MCP Knowledge Pipeline — Source Verification &amp; Cross-Shard Anti-Hallucination Control (v5.7.2-GA)
+            </div>
+            <p className={`text-[11px] ${mutedText}`}>
+              Enforces inline chunk citations (<span className="font-mono">[Cite-N: DOC-ID · Shard.gguf]</span>) and requires at least 2 independent cross-referenced knowledge shards before synthesis passes verification.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="admin-ops-source-verification-toggle"
+              onClick={handleToggleAdminSourceVerification}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-semibold border transition-colors ${
+                adminOpsSourceVerification
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              }`}
+            >
+              Source Verification: {adminOpsSourceVerification ? 'ON (≥2 Shards Enforced)' : 'OFF (Advisory Mode)'}
+            </button>
+            <button
+              type="button"
+              data-testid="admin-ops-test-single-shard-btn"
+              onClick={() =>
+                setAdminOpsRagQuery(
+                  adminOpsAclRole === 'Viewer'
+                    ? 'Public onboarding summary only'
+                    : 'Audit SAP S/4HANA VAT reconciliation, SharePoint Dubai 800 AED hospitality policy, and Gurucul REVEAL SIEM/UEBA shards'
+                )
+              }
+              className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono border border-indigo-500/40 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25"
+            >
+              Refresh Cross-Shard Audit ({adminKnowledgePipeline.sourceVerificationPolicy?.crossReferencedSourcesCount ?? 0}/
+              {adminKnowledgePipeline.sourceVerificationPolicy?.minimumCrossReferencesRequired ?? 2} Shards)
+            </button>
+          </div>
+        </div>
+        <KnowledgePipelineAndMcpCardV57
+          pipeline={adminKnowledgePipeline}
+          onChangeAclRole={setAdminOpsAclRole}
+          isDark={isDark}
+        />
+      </div>
+
+      {/* RELEASE v5.7-GA: ADMIN OPS API & SDK EXPLORER (cURL / TypeScript / Python), EVALUATION DASHBOARD, ASYNC GPU QUEUE & RANDOM ACCURACY TESTER */}
+      <div className="pt-2">
+        <Phase3ProductionArchitectureCardV57
+          messageId="admin-ops-v57ga"
+          referenceId="OPS-ADMIN-GA"
+          promptText="Admin Ops API & SDK Explorer, 99.95% SLA Evaluation Dashboard, OTel 6-Span Waterfall & Dynamic Random Data-Accuracy Suite"
+          activeRole={normalizeToAclRole(currentUserRole)}
+          isDark={isDark}
+          defaultExpanded={true}
+        />
+      </div>
     </div>
   );
 };

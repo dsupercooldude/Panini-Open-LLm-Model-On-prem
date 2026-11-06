@@ -17,11 +17,17 @@ import {
   evaluateRbacPermission,
   queryScenarioCatalog,
   verifyExistingUseCaseMatch,
+  PREBUILT_GGUF_MODEL_PACKAGES_V60,
+  parseGgufFileAndBuildModelUpdateV60,
+  GgufModelUpdateDescriptorV60,
 } from '../utils/engineLogic';
+import { savePaniniKnowledgeShard } from '../utils/multimodalSuite';
 import {
   Copy,
   RotateCcw,
   Activity,
+  Upload,
+  Database,
   Eye,
   EyeOff,
   Plus,
@@ -196,6 +202,117 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
     'Customized Glass-Box layer routing & quantization bitrate'
   );
   const [formError, setFormError] = useState<string>('');
+
+  // Release v6.0-GA: GGUF (GPT-Generated Unified Format) Panini Model Updater State
+  const [selectedGgufPackageId, setSelectedGgufPackageId] = useState<string>(
+    PREBUILT_GGUF_MODEL_PACKAGES_V60[0].packageId
+  );
+  const [ggufTargetModelId, setGgufTargetModelId] = useState<string>(
+    models[0]?.id || 'panini-400b-flagship'
+  );
+  const [ggufCustomFileName, setGgufCustomFileName] = useState<string>(
+    PREBUILT_GGUF_MODEL_PACKAGES_V60[0].ggufFileName
+  );
+  const [ggufCustomCalibrationFact, setGgufCustomCalibrationFact] = useState<string>(
+    'GGUF v3 tensor & KV calibration data synced with Panini v6.0-GA sovereign shard registry.'
+  );
+  const [parsedGgufDescriptor, setParsedGgufDescriptor] = useState<GgufModelUpdateDescriptorV60>(
+    () => PREBUILT_GGUF_MODEL_PACKAGES_V60[0]
+  );
+  const [ggufUpdateBanner, setGgufUpdateBanner] = useState<string | null>(null);
+
+  const handleSelectGgufPreset = (pkg: GgufModelUpdateDescriptorV60) => {
+    setSelectedGgufPackageId(pkg.packageId);
+    setGgufCustomFileName(pkg.ggufFileName);
+    const matchingModel =
+      models.find(
+        (m) =>
+          m.id === pkg.targetModelId ||
+          m.name.toLowerCase() === pkg.targetModelName.toLowerCase()
+      ) || models[0];
+    if (matchingModel) {
+      setGgufTargetModelId(matchingModel.id);
+    }
+    setParsedGgufDescriptor(pkg);
+  };
+
+  const handleUploadGgufFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setGgufCustomFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const buf = reader.result as ArrayBuffer;
+      const bytes = buf ? new Uint8Array(buf.slice(0, 64)) : undefined;
+      const parsed = parseGgufFileAndBuildModelUpdateV60({
+        fileName: file.name,
+        targetModelId: ggufTargetModelId,
+        binaryBytes: bytes,
+        customKnowledgeFacts: ggufCustomCalibrationFact.trim()
+          ? [ggufCustomCalibrationFact.trim()]
+          : undefined,
+      });
+      setParsedGgufDescriptor(parsed);
+    };
+    reader.readAsArrayBuffer(file.slice(0, 4096));
+  };
+
+  const handleApplyGgufUpdateToPaniniModel = () => {
+    const parsed = parseGgufFileAndBuildModelUpdateV60({
+      fileName: ggufCustomFileName || parsedGgufDescriptor.ggufFileName,
+      targetModelId: ggufTargetModelId,
+      customQuantType: parsedGgufDescriptor.quantType,
+      customContextLength: parsedGgufDescriptor.contextLength,
+      customActiveLayers: parsedGgufDescriptor.activeLayers,
+      customLoraRank: parsedGgufDescriptor.loraRank,
+      customSystemDirective: parsedGgufDescriptor.systemDirective,
+      customKnowledgeFacts: ggufCustomCalibrationFact.trim()
+        ? [ggufCustomCalibrationFact.trim()]
+        : undefined,
+    });
+    setParsedGgufDescriptor(parsed);
+
+    const targetModel =
+      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
+    const baseVer =
+      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
+      targetModel.versions[0];
+
+    onCommitModelVersion(targetModel.id, {
+      versionTag: parsed.versionTag,
+      author: currentUserName,
+      quantType: parsed.quantType,
+      activeLayers: Math.min(parsed.activeLayers, baseVer.totalLayers),
+      totalLayers: baseVer.totalLayers,
+      moeActiveExperts: Math.min(parsed.moeActiveExperts, baseVer.moeTotalExperts),
+      moeTotalExperts: baseVer.moeTotalExperts,
+      contextLength: parsed.contextLength,
+      systemDirective: parsed.systemDirective,
+      loraRank: parsed.loraRank,
+      notes: parsed.commitNotes,
+    });
+
+    const shard = savePaniniKnowledgeShard(
+      `${targetModel.name} (${parsed.versionTag})`,
+      {
+        syncedFromOnline: false,
+        cachedWikipediaSources: [
+          {
+            title: `GGUF v3 Model Update: ${parsed.ggufFileName}`,
+            snippet: `${parsed.commitNotes} | Facts: ${parsed.embeddedKnowledgeFacts.join(' ; ')}`,
+            url: `https://localhost:3000/models/gguf/${encodeURIComponent(parsed.ggufFileName)}`,
+            publicationOrSource: 'GGUF v3 Calibration Registry',
+            year: 2026,
+          },
+        ],
+      }
+    );
+
+    setInspectedModelId(targetModel.id);
+    setGgufUpdateBanner(
+      `Updated ${targetModel.name} to ${parsed.versionTag} (${parsed.quantType} · ${parsed.tensorCount} tensors · ${parsed.contextLength.toLocaleString()} ctx) from ${parsed.ggufFileName} and synced shard ${shard.ggufShardFile}.`
+    );
+  };
 
   const canEditOrClone = evaluateRbacPermission(currentUserRole, 'clone_and_edit_model');
   const canRollback = evaluateRbacPermission(currentUserRole, 'rollback_version');
@@ -565,6 +682,185 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 </div>
               );
             })}
+          </div>
+
+          {/* RELEASE v6.0-GA: GGUF (GPT-Generated Unified Format) PANINI MODEL UPDATER */}
+          <div
+            data-testid="gguf-model-updater-panel"
+            className={`p-5 rounded-xl border ${borderClass} ${surfaceClass} space-y-4`}
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div>
+                <div className={`text-xs font-mono ${mutedText}`}>
+                  GGUF v3 Binary & KV Tensor Format (Magic 0x47475546) · Panini Model Registry Updater
+                </div>
+                <h3 className={`text-base font-semibold flex items-center gap-2 mt-0.5 ${headingText}`}>
+                  <Database className="w-4 h-4 text-sky-400" />
+                  <span>Update Panini Models via GGUF (GPT-Generated Unified Format)</span>
+                </h3>
+                <p className={`text-xs ${mutedText}`}>
+                  Select a GGUF v3 update package or upload a custom .gguf file to parse tensor count, quantization, active layers, context window, and KV calibration data and apply it directly to the target Panini model.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="apply-gguf-model-update-btn"
+                onClick={handleApplyGgufUpdateToPaniniModel}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 inline-flex items-center gap-2 transition shrink-0 shadow-sm"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Apply GGUF Update to Panini Model</span>
+              </button>
+            </div>
+
+            {ggufUpdateBanner && (
+              <div
+                data-testid="gguf-model-update-success-banner"
+                className="px-3.5 py-2.5 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-emerald-200 text-xs font-mono flex items-center justify-between gap-2"
+              >
+                <span>{ggufUpdateBanner}</span>
+                <button
+                  type="button"
+                  onClick={() => setGgufUpdateBanner(null)}
+                  className="text-emerald-300 hover:underline text-[11px]"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {/* Prebuilt GGUF v3 Packages */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {PREBUILT_GGUF_MODEL_PACKAGES_V60.map((pkg) => {
+                const isSelected = selectedGgufPackageId === pkg.packageId;
+                return (
+                  <button
+                    key={pkg.packageId}
+                    type="button"
+                    data-testid={`gguf-preset-btn-${pkg.packageId}`}
+                    onClick={() => handleSelectGgufPreset(pkg)}
+                    className={`p-3 rounded-lg border text-left transition-colors space-y-1 ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-500/10'
+                        : `${borderClass} ${subSurfaceClass} hover:border-slate-700`
+                    }`}
+                  >
+                    <div className="text-xs font-mono text-sky-400 font-semibold truncate">
+                      {pkg.ggufFileName}
+                    </div>
+                    <div className={`text-xs font-semibold ${headingText}`}>
+                      {pkg.targetModelName}
+                    </div>
+                    <div className={`text-[11px] font-mono ${mutedText}`}>
+                      {pkg.quantType} · {pkg.tensorCount} tensors · {(pkg.contextLength / 1024).toFixed(0)}K ctx
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Target Model, File Upload & Custom GGUF Parameters */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label
+                  htmlFor="gguf-target-model-select"
+                  className={`block text-xs font-medium ${mutedText} mb-1`}
+                >
+                  Target Panini Model to Update
+                </label>
+                <select
+                  id="gguf-target-model-select"
+                  data-testid="gguf-target-model-select"
+                  value={ggufTargetModelId}
+                  onChange={(e) => setGgufTargetModelId(e.target.value)}
+                  className={`w-full px-3 py-2 text-xs font-mono rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
+                >
+                  {models.map((m) => {
+                    const ver =
+                      m.versions.find((v) => v.versionId === m.currentVersionId) || m.versions[0];
+                    return (
+                      <option key={m.id} value={m.id}>
+                        {m.name} (Current: {ver.versionTag} · {ver.quantType})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="gguf-file-name-input"
+                  className={`block text-xs font-medium ${mutedText} mb-1`}
+                >
+                  GGUF File Name / Upload (.gguf)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="gguf-file-name-input"
+                    data-testid="gguf-file-name-input"
+                    type="text"
+                    value={ggufCustomFileName}
+                    onChange={(e) => {
+                      setGgufCustomFileName(e.target.value);
+                      setParsedGgufDescriptor(
+                        parseGgufFileAndBuildModelUpdateV60({
+                          fileName: e.target.value,
+                          targetModelId: ggufTargetModelId,
+                        })
+                      );
+                    }}
+                    className={`w-full px-3 py-2 text-xs font-mono rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
+                  />
+                  <label
+                    htmlFor="gguf-binary-upload"
+                    className={`px-3 py-2 rounded-lg border ${borderClass} ${subSurfaceClass} text-xs font-medium cursor-pointer hover:border-sky-500/50 whitespace-nowrap`}
+                  >
+                    Browse .gguf
+                    <input
+                      id="gguf-binary-upload"
+                      data-testid="gguf-file-input"
+                      type="file"
+                      accept=".gguf,.bin,.json"
+                      onChange={handleUploadGgufFile}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="gguf-calibration-input"
+                  className={`block text-xs font-medium ${mutedText} mb-1`}
+                >
+                  Embedded GGUF Domain Calibration Data
+                </label>
+                <input
+                  id="gguf-calibration-input"
+                  data-testid="gguf-calibration-input"
+                  type="text"
+                  value={ggufCustomCalibrationFact}
+                  onChange={(e) => setGgufCustomCalibrationFact(e.target.value)}
+                  className={`w-full px-3 py-2 text-xs rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
+                />
+              </div>
+            </div>
+
+            {/* Parsed GGUF v3 Header & KV Tensor Metadata Summary Table */}
+            <div className={`p-3.5 rounded-lg border ${borderClass} ${subSurfaceClass} space-y-2`}>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                <span className={headingText}>
+                  Parsed GGUF Header: Magic={parsedGgufDescriptor.magicHeader} (0x47475546) · Version=v
+                  {parsedGgufDescriptor.ggufFormatVersion} · Tensors={parsedGgufDescriptor.tensorCount} · KV Entries=
+                  {parsedGgufDescriptor.metadataKvCount}
+                </span>
+                <span className="text-sky-400">
+                  Target Version Tag: {parsedGgufDescriptor.versionTag} ({parsedGgufDescriptor.quantType} ·{' '}
+                  {parsedGgufDescriptor.activeLayers}/{parsedGgufDescriptor.totalLayers} Layers ·{' '}
+                  {parsedGgufDescriptor.contextLength.toLocaleString()} Tokens)
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Inline Glass-Box Editor Modal / Panel when cloning or editing */}
