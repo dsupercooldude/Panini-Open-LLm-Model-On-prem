@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import * as d3 from 'd3';
 import {
   Globe,
   Database,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Copy,
   Check,
+  Download,
 } from 'lucide-react';
 import {
   DocumentAclRole,
@@ -32,6 +34,10 @@ import {
   getIntegrationsHubSnapshotV58,
   InboundMcpJsonRpcResponseV58,
   upsertAndIndexKnowledgeShardV61,
+  buildKnowledgeGraphD3SpecV63,
+  KnowledgeGraphNodeCategoryV63,
+  KnowledgeGraphNodeV63,
+  exportD3SubGraphToGgufShardV64,
 } from '../utils/engineLogic';
 import { listPaniniKnowledgeShards } from '../utils/multimodalSuite';
 
@@ -46,7 +52,8 @@ type IntegrationSubTab =
   | 'website_shards'
   | 'rag_servers'
   | 'flatfiles_docs'
-  | 'mcp_agent_hub';
+  | 'mcp_agent_hub'
+  | 'knowledge_graph';
 
 export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
   activeRole = 'Admin',
@@ -161,8 +168,114 @@ export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
     'Coordinate Web Shard Harvester, Federated RAG, Flatfile Schema, and OpenXML Synthesis sub-agents to audit our ingested Website & PDF/CSV shards and prepare an executive summary'
   );
 
+  // 5. D3 Interactive Knowledge Graph Visualization State (v6.3-GA)
+  const [graphFocusQuery, setGraphFocusQuery] = useState<string>('Gurucul');
+  const [graphCategoryFilter, setGraphCategoryFilter] = useState<
+    'ALL' | KnowledgeGraphNodeCategoryV63
+  >('ALL');
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null);
+  const [graphRefreshTick, setGraphRefreshTick] = useState<number>(0);
+
+  const knowledgeGraphSpec = useMemo(
+    () =>
+      buildKnowledgeGraphD3SpecV63({
+        focusQuery: graphFocusQuery,
+        categoryFilter: graphCategoryFilter,
+      }),
+    [graphFocusQuery, graphCategoryFilter, liveStoredShards.length, graphRefreshTick]
+  );
+
+  // Run D3 forceSimulation synchronously across 120 ticks for crisp, deterministic layout
+  const d3Layout = useMemo(() => {
+    const width = 760;
+    const height = 430;
+    type SimNode = KnowledgeGraphNodeV63 & d3.SimulationNodeDatum & { x: number; y: number };
+    type SimLink = d3.SimulationLinkDatum<SimNode> & {
+      id: string;
+      relationship: string;
+      weight: number;
+      sourceNode: SimNode;
+      targetNode: SimNode;
+    };
+
+    const simNodes: SimNode[] = knowledgeGraphSpec.nodes.map((n, idx) => {
+      const angle = (idx / Math.max(1, knowledgeGraphSpec.nodes.length)) * 2 * Math.PI;
+      const radius = n.category === 'ENTITY' ? 95 : n.category === 'DOCUMENT_CHUNK' ? 150 : 185;
+      return {
+        ...n,
+        x: width / 2 + Math.cos(angle) * radius,
+        y: height / 2 + Math.sin(angle) * radius,
+      };
+    });
+
+    const nodeById = new Map(simNodes.map((n) => [n.id, n]));
+    const rawLinks = knowledgeGraphSpec.links
+      .filter((l) => nodeById.has(l.source) && nodeById.has(l.target))
+      .map((l) => ({
+        ...l,
+        source: l.source,
+        target: l.target,
+      }));
+
+    const simulation = d3
+      .forceSimulation<SimNode>(simNodes)
+      .force(
+        'link',
+        d3
+          .forceLink<SimNode, (typeof rawLinks)[number]>(rawLinks)
+          .id((d) => d.id)
+          .distance(118)
+          .strength(0.65)
+      )
+      .force('charge', d3.forceManyBody().strength(-290))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collide', d3.forceCollide(38))
+      .stop();
+
+    for (let i = 0; i < 120; i++) {
+      simulation.tick();
+    }
+
+    // Clamp coordinates inside SVG viewBox
+    simNodes.forEach((n) => {
+      n.x = Math.max(58, Math.min(width - 58, Number.isFinite(n.x) ? n.x : width / 2));
+      n.y = Math.max(44, Math.min(height - 44, Number.isFinite(n.y) ? n.y : height / 2));
+    });
+
+    const resolvedLinks: SimLink[] = knowledgeGraphSpec.links.flatMap((l) => {
+      const sNode = nodeById.get(l.source);
+      const tNode = nodeById.get(l.target);
+      if (!sNode || !tNode) return [];
+      return [
+        {
+          id: l.id,
+          source: sNode,
+          target: tNode,
+          sourceNode: sNode,
+          targetNode: tNode,
+          relationship: l.relationship,
+          weight: l.weight,
+        },
+      ];
+    });
+
+    return { width, height, nodes: simNodes, links: resolvedLinks };
+  }, [knowledgeGraphSpec]);
+
+  const activeSelectedNode =
+    d3Layout.nodes.find((n) => n.id === selectedGraphNodeId) || d3Layout.nodes[0] || null;
+
+  const connectedEdgesForSelectedNode = useMemo(() => {
+    if (!activeSelectedNode) return [];
+    return d3Layout.links.filter(
+      (l) =>
+        l.sourceNode.id === activeSelectedNode.id || l.targetNode.id === activeSelectedNode.id
+    );
+  }, [activeSelectedNode, d3Layout.links]);
+
   const refreshSnapshot = () => {
     setSnapshot(getIntegrationsHubSnapshotV58(activeRole, userHandle));
+    setGraphRefreshTick((t) => t + 1);
     setLiveStoredShards(listPaniniKnowledgeShards());
   };
 
@@ -591,8 +704,8 @@ export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
           </div>
         )}
 
-        {/* KISS 4-Tab Navigation Bar */}
-        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-2 pt-3 border-t border-slate-800/80">
+        {/* KISS 5-Tab Navigation Bar */}
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-5 gap-2 pt-3 border-t border-slate-800/80">
           <button
             type="button"
             data-testid="integrations-tab-website_shards"
@@ -665,6 +778,25 @@ export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
               <div>4. MCP & Agentic Hub</div>
               <div className="text-[10px] font-normal text-slate-400">
                 Client + Inbound REST/MCP + Agents
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            data-testid="integrations-tab-knowledge_graph"
+            onClick={() => setActiveTab('knowledge_graph')}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left text-xs font-semibold transition-all border ${
+              activeTab === 'knowledge_graph'
+                ? 'bg-violet-600/25 border-violet-500 text-white shadow-sm'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            }`}
+          >
+            <Network className="w-4 h-4 text-violet-400 shrink-0" />
+            <div>
+              <div>5. D3 Knowledge Graph</div>
+              <div className="text-[10px] font-normal text-slate-400">
+                Chunks ↔ Entities ↔ .gguf Shards
               </div>
             </div>
           </button>
@@ -1779,6 +1911,327 @@ export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* =====================================================================
+          D3-BASED INTERACTIVE KNOWLEDGE GRAPH VISUALIZATION (v6.3-GA · KISS)
+          Displays relationships between retrieved Document Chunks, Entities,
+          .gguf Shards, and Enterprise Connectors
+          ===================================================================== */}
+      <div
+        data-testid="admin-d3-knowledge-graph-panel"
+        className="bg-slate-900/90 border border-violet-500/35 rounded-2xl p-5 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Network className="w-5 h-5 text-violet-400" />
+            <div>
+              <h3 className="text-sm font-bold text-white">
+                D3 Interactive Knowledge Graph Visualization — Document Chunks ↔ Entities ↔ .gguf Shards (v6.3-GA)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Force-directed D3 topology (`d3.forceSimulation`) mapping semantic relationships between retrieved Hybrid RAG document chunks, extracted named entities, `.gguf` Knowledge Shards, and enterprise connectors.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+            <span className="px-2.5 py-1 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              {knowledgeGraphSpec.stats.chunkNodesCount} Document Chunks
+            </span>
+            <span className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              {knowledgeGraphSpec.stats.entityNodesCount} Entities
+            </span>
+            <span className="px-2.5 py-1 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30">
+              {knowledgeGraphSpec.stats.shardNodesCount} .gguf Shards
+            </span>
+            <span className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              {knowledgeGraphSpec.stats.totalLinks} Edges
+            </span>
+            <button
+              type="button"
+              data-testid="d3-export-subgraph-shard-btn"
+              onClick={async () => {
+                const exp = exportD3SubGraphToGgufShardV64({
+                  focusQuery: graphFocusQuery || 'Gurucul',
+                  selectedNodeId: selectedGraphNodeId || undefined,
+                });
+                const a = document.createElement('a');
+                a.href = exp.ggufDownloadDataUrl;
+                a.download = exp.ggufShardFile;
+                a.click();
+                refreshSnapshot();
+                setStatusBanner(
+                  `Exported D3 Sub-Graph (${exp.focusQuery} · ${exp.exportedNodesCount} nodes · ${exp.exportedLinksCount} edges) to standalone shard ${exp.ggufShardFile} (${exp.indexedChunkId}).`
+                );
+                try {
+                  await fetch('/api/v64/integrations/d3-subgraph-export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      focusQuery: graphFocusQuery || 'Gurucul',
+                      selectedNodeId: selectedGraphNodeId || undefined,
+                    }),
+                  });
+                } catch {
+                  // Local sub-graph export already completed
+                }
+              }}
+              className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold inline-flex items-center gap-1 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Sub-Graph to .GGUF Shard</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter & Query Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              data-testid="d3-knowledge-graph-query-input"
+              value={graphFocusQuery}
+              onChange={(e) => setGraphFocusQuery(e.target.value)}
+              placeholder="Filter graph by entity or topic (e.g. Gurucul, SIEM, Databricks)..."
+              className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white font-mono w-64"
+            />
+            {['Gurucul', 'Databricks', 'Palo Alto Networks', 'SAP S/4HANA'].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                data-testid={`d3-kg-preset-${preset.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                onClick={() => setGraphFocusQuery(preset)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono border transition-colors ${
+                  graphFocusQuery.toLowerCase() === preset.toLowerCase()
+                    ? 'bg-violet-500/25 border-violet-400 text-violet-200 font-semibold'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { id: 'ALL', label: 'All Nodes' },
+                { id: 'DOCUMENT_CHUNK', label: 'Doc Chunks' },
+                { id: 'ENTITY', label: 'Entities' },
+                { id: 'KNOWLEDGE_SHARD', label: '.gguf Shards' },
+                { id: 'CONNECTOR_SOURCE', label: 'Connectors' },
+              ] as const
+            ).map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                data-testid={`d3-kg-filter-${cat.id.toLowerCase()}`}
+                onClick={() => setGraphCategoryFilter(cat.id)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors ${
+                  graphCategoryFilter === cat.id
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-300 font-semibold'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main D3 Force Graph SVG + Right Node Relationship Inspector */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-xl p-2 overflow-hidden">
+            <svg
+              data-testid="d3-knowledge-graph-svg"
+              viewBox={`0 0 ${d3Layout.width} ${d3Layout.height}`}
+              className="w-full h-[390px] select-none"
+            >
+              <defs>
+                <marker
+                  id="kg-arrow"
+                  viewBox="0 -5 10 10"
+                  refX={22}
+                  refY={0}
+                  markerWidth={5}
+                  markerHeight={5}
+                  orient="auto"
+                >
+                  <path d="M0,-5L10,0L0,5" fill="#64748b" />
+                </marker>
+              </defs>
+
+              {/* Edges */}
+              <g>
+                {d3Layout.links.map((link) => {
+                  const isHighlighted =
+                    activeSelectedNode &&
+                    (link.sourceNode.id === activeSelectedNode.id ||
+                      link.targetNode.id === activeSelectedNode.id);
+                  const midX = (link.sourceNode.x + link.targetNode.x) / 2;
+                  const midY = (link.sourceNode.y + link.targetNode.y) / 2;
+                  return (
+                    <g key={link.id}>
+                      <line
+                        x1={link.sourceNode.x}
+                        y1={link.sourceNode.y}
+                        x2={link.targetNode.x}
+                        y2={link.targetNode.y}
+                        stroke={isHighlighted ? '#38bdf8' : '#334155'}
+                        strokeWidth={isHighlighted ? 2.2 : 1.2}
+                        strokeOpacity={isHighlighted ? 0.95 : 0.65}
+                        markerEnd="url(#kg-arrow)"
+                      />
+                      {isHighlighted && (
+                        <text
+                          x={midX}
+                          y={midY - 4}
+                          textAnchor="middle"
+                          fill="#94a3b8"
+                          fontSize={8.5}
+                          fontFamily="monospace"
+                        >
+                          {link.relationship}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+
+              {/* Nodes */}
+              <g>
+                {d3Layout.nodes.map((node) => {
+                  const isSelected = activeSelectedNode?.id === node.id;
+                  const fillByCat: Record<KnowledgeGraphNodeCategoryV63, string> = {
+                    DOCUMENT_CHUNK: '#0284c7',
+                    ENTITY: '#059669',
+                    KNOWLEDGE_SHARD: '#7c3aed',
+                    CONNECTOR_SOURCE: '#d97706',
+                  };
+                  const strokeByCat: Record<KnowledgeGraphNodeCategoryV63, string> = {
+                    DOCUMENT_CHUNK: '#38bdf8',
+                    ENTITY: '#34d399',
+                    KNOWLEDGE_SHARD: '#c084fc',
+                    CONNECTOR_SOURCE: '#fbbf24',
+                  };
+                  const radius =
+                    node.category === 'ENTITY'
+                      ? 16
+                      : node.category === 'DOCUMENT_CHUNK'
+                      ? 14
+                      : 13;
+
+                  return (
+                    <g
+                      key={node.id}
+                      data-testid={`d3-kg-node-${node.id}`}
+                      transform={`translate(${node.x},${node.y})`}
+                      onClick={() => setSelectedGraphNodeId(node.id)}
+                      className="cursor-pointer"
+                    >
+                      {isSelected && (
+                        <circle
+                          r={radius + 6}
+                          fill="none"
+                          stroke="#f8fafc"
+                          strokeWidth={1.8}
+                          strokeDasharray="3 2"
+                        />
+                      )}
+                      <circle
+                        r={radius}
+                        fill={fillByCat[node.category]}
+                        stroke={strokeByCat[node.category]}
+                        strokeWidth={isSelected ? 2.5 : 1.5}
+                      />
+                      <text
+                        y={radius + 12}
+                        textAnchor="middle"
+                        fill={isSelected ? '#f8fafc' : '#cbd5e1'}
+                        fontSize={10}
+                        fontWeight={isSelected ? 700 : 500}
+                        fontFamily="system-ui, sans-serif"
+                      >
+                        {node.label.slice(0, 24)}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+          </div>
+
+          {/* Right Column: Selected Node & Relationship Inspector */}
+          <div
+            data-testid="d3-knowledge-graph-inspector"
+            className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3 text-xs"
+          >
+            {activeSelectedNode ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    {activeSelectedNode.category}
+                  </span>
+                  <span className="font-mono text-[11px] text-emerald-400">
+                    Relevance: {(activeSelectedNode.relevanceWeight * 100).toFixed(0)}%
+                  </span>
+                </div>
+
+                <div>
+                  <div className="text-sm font-bold text-white">{activeSelectedNode.label}</div>
+                  <div className="text-[11px] font-mono text-sky-400 mt-0.5">
+                    Ref: {activeSelectedNode.sourceRef}
+                  </div>
+                </div>
+
+                <p className="text-slate-300 leading-relaxed bg-slate-900/90 border border-slate-800 rounded-lg p-2.5 text-[11px]">
+                  {activeSelectedNode.summary}
+                </p>
+
+                <div className="space-y-1.5">
+                  <div className="font-mono text-[11px] font-semibold text-slate-300">
+                    Connected Graph Relationships ({connectedEdgesForSelectedNode.length}):
+                  </div>
+                  <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+                    {connectedEdgesForSelectedNode.map((edge) => {
+                      const peerNode =
+                        edge.sourceNode.id === activeSelectedNode.id
+                          ? edge.targetNode
+                          : edge.sourceNode;
+                      return (
+                        <button
+                          key={edge.id}
+                          type="button"
+                          onClick={() => setSelectedGraphNodeId(peerNode.id)}
+                          className="w-full text-left p-2 rounded-lg bg-slate-900/80 border border-slate-800 hover:border-sky-500/50 transition-colors flex items-center justify-between gap-2"
+                        >
+                          <div className="truncate">
+                            <span className="font-mono text-[10px] text-amber-300 mr-1.5">
+                              [{edge.relationship}]
+                            </span>
+                            <span className="text-white font-medium">{peerNode.label}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                            {peerNode.category.split('_')[0]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-slate-400">Select any node in the D3 graph to inspect.</div>
+            )}
+
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>Graph ID: {knowledgeGraphSpec.graphId}</span>
+              <span>d3.forceSimulation (120 ticks)</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

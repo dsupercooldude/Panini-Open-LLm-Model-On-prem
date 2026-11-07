@@ -1,5 +1,5 @@
 {
-  "summary": "Updated Cumulative Release Verification, Feature Inventory & Bug Regression Ledger to v6.1-GA (SVN-r411.0-GA), added the BUG-516 row to Section 2, updated Section 3 item 14 and Gate 22 with Automatic Release & Artifact Synchronization Engine details (syncReleaseDocumentationAndArtifactsV61, POST /api/v61/releases/sync-artifacts, panini-cli release sync), and added Section 5 documenting all 16/16 verified REST/MCP endpoints and automatic release synchronization.",
-  "updatedAt": "2026-11-05T05:26:11.642181919Z",
-  "userFacing": true
+  "summary":  "Updated Cumulative Release Verification, Feature Inventory & Bug Regression Ledger to include BUG-519, Release v6.4-GA (SVN-r414.0-GA) features, Gate 25 (25/25 passing gates), and 30/30 verified REST/MCP/CLI endpoints.",
+  "updatedAt":  "2026-11-07T14:11:34.324536677Z",
+  "userFacing":  true
 }

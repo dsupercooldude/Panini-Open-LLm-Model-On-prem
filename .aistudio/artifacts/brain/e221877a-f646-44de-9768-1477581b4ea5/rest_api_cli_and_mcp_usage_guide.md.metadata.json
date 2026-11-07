@@ -1,0 +1,5 @@
+{
+  "summary":  "Updated REST API, Backend CLI (panini-cli) & MCP Usage Guide for Release v6.4-GA (SVN-r414.0-GA), covering all 30 REST endpoints, 22 panini-cli commands (including model-menu, export-gguf, self-learn tune, /? command guides, and INFO/DEBUG/VERBOSE modes), and MCP JSON-RPC 2.0 specifications.",
+  "updatedAt":  "2026-11-07T14:11:34.381643871Z",
+  "userFacing":  true
+}

@@ -81,6 +81,32 @@ import {
   appendDynamicRoadmapSuggestionV61,
   syncReleaseDocumentationAndArtifactsV61,
   CURRENT_ACTIVE_RELEASE_VERSION,
+  CURRENT_ACTIVE_SVN_REVISION,
+  buildGoogleSearchGroundedSourcesV62,
+  getPeerToPeerShardMeshStatusV62,
+  syncPeerToPeerGgufShardMeshV62,
+  signRbacActionWithFido2WebAuthnV62,
+  getFido2SignatureLedgerV62,
+  recordSwaggerRequestAndExportReplayV62,
+  getSwaggerRequestHistoryV62,
+  listLocalTtsVoiceProfilesV63,
+  synthesizeLocalModelTtsAudioV63,
+  buildKnowledgeGraphD3SpecV63,
+  listHostedOnlineGgufCatalogV63,
+  executeGgufModelTerminalCommandV63,
+  recordMcpAgentDagExecutionV63,
+  getMcpAgentDagHistoryV63,
+  verifyOpenXmlPptxPackageWasmV63,
+  exportPaniniModelGgufAndInstallBundleV64,
+  listOnlineExternalModelCatalogV64,
+  installOnlineCatalogModelV64,
+  getTerminalAutocompleteSuggestionsV64,
+  resolveTerminalOutputModeV64,
+  buildTerminalCommandGuideV64,
+  runAutonomousModelSelfLearningAndTuningV64,
+  getModelSelfLearningStateV64,
+  exportD3SubGraphToGgufShardV64,
+  runDuplexVoiceToVoiceTurnV64,
 } from './engineLogic';
 import {
   INITIAL_MODELS,
@@ -2810,7 +2836,7 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
   const doctorOut = executePaniniBackendCliCommandV61('panini-cli doctor');
   assert.equal(doctorOut.exitCode, 0);
   assert.ok(doctorOut.stdout.includes('Panini Backend CLI Doctor'));
-  assert.ok(doctorOut.stdout.includes('v6.1-GA'));
+  assert.ok(doctorOut.stdout.includes('v6.4-GA'));
 
   const ollamaListOut = executePaniniBackendCliCommandV61('panini-cli ollama list');
   assert.equal(ollamaListOut.exitCode, 0);
@@ -2860,39 +2886,45 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
   executePaniniBackendCliCommandV61('panini-cli config --mode online');
   assert.equal(getPersistentSovereignSettingsV61().isOnlineLearning, true);
 
-  // 5. Interactive Swagger UI & 100% All-Endpoints Verification Suite (18/18 endpoints)
+  // 5. Interactive Swagger UI & 100% All-Endpoints Verification Suite (30/30 endpoint probes)
   const suite = runAllApiEndpointsVerificationSuiteV61();
   assert.equal(suite.coveragePercentage, 100);
   assert.equal(suite.passedEndpoints, suite.totalEndpoints);
-  assert.equal(suite.totalEndpoints, 18);
+  assert.equal(suite.totalEndpoints, 30);
 
-  // 6. Release Version Selector Auto-Selects v6.1-GA + Automatic Release & Artifact Synchronization Engine
-  assert.equal(CURRENT_ACTIVE_RELEASE_VERSION, 'v6.1-GA');
+  // 6. Release Version Selector Auto-Selects v6.4-GA + Automatic Release & Artifact Synchronization Engine
+  assert.equal(CURRENT_ACTIVE_RELEASE_VERSION, 'v6.4-GA');
   const roadmapSuggestions = getDynamicRoadmapAutoDrafterSuggestionsV61();
   assert.ok(roadmapSuggestions.length >= 3);
-  assert.ok(roadmapSuggestions[0].versionTag.includes('v6.2-GA'));
+  assert.ok(roadmapSuggestions[0].versionTag.includes('v6.4-GA'));
 
   const syncReport = syncReleaseDocumentationAndArtifactsV61({
     activeReleaseVersion: 'v6.1-GA',
   });
   assert.equal(syncReport.autoSyncedWithEachRelease, true);
   assert.equal(syncReport.activeReleaseVersion, 'v6.1-GA');
-  assert.equal(syncReport.totalDocumentedRestEndpoints, 18);
-  assert.equal(syncReport.syncedArtifacts.length, 3);
+  assert.equal(syncReport.totalDocumentedRestEndpoints, 30);
+  assert.equal(syncReport.syncedArtifacts.length, 4);
   assert.ok(syncReport.syncedArtifacts.includes('implementation_plan.md'));
   assert.ok(syncReport.syncedArtifacts.includes('release_verification_and_bug_ledger.md'));
+  assert.ok(syncReport.syncedArtifacts.includes('rest_api_cli_and_mcp_usage_guide.md'));
+
+  // Restore active release back to CURRENT_ACTIVE_RELEASE_VERSION ('v6.4-GA')
+  syncReleaseDocumentationAndArtifactsV61({
+    activeReleaseVersion: 'v6.4-GA',
+  });
 
   const cliSyncOut = executePaniniBackendCliCommandV61('panini-cli release sync');
   assert.equal(cliSyncOut.exitCode, 0);
-  assert.ok(cliSyncOut.stdout.includes('Auto-Synced Release v6.1-GA'));
+  assert.ok(cliSyncOut.stdout.includes('Auto-Synced Release v6.4-GA'));
 
   const addedRoadmap = appendDynamicRoadmapSuggestionV61({
-    versionTag: 'v6.2-GA (Auto-Synced Blueprint)',
-    svnRevision: 'SVN-r412.1-GA',
+    versionTag: 'v6.4-GA (Auto-Synced Blueprint)',
+    svnRevision: 'SVN-r414.1-GA',
     releaseTier: 'Minor Feature Release',
     title: 'Continuous Release-to-Artifact Attestation',
     basedOnGeneratedCapabilities: ['v6.1-GA Automatic Release & Artifact Synchronization Engine'],
-    deliverables: ['Automatic PDF & Markdown Sync', '18/18 Endpoint Verification Gate'],
+    deliverables: ['Automatic PDF & Markdown Sync', '30/30 Endpoint Verification Gate'],
     qaGateStatus: 'AUTO-DRAFTED & DOCUMENTED IN IMPLEMENTATION PLAN + REST/MCP PDF MANUAL',
   });
   assert.ok(addedRoadmap.some((r) => r.title === 'Continuous Release-to-Artifact Attestation'));
@@ -2901,12 +2933,12 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
     true
   );
 
-  // 7. Autonomous CI/CD Self-Test Audit passes 22/22 gates & BUG-516
+  // 7. Autonomous CI/CD Self-Test Audit passes 25/25 gates & BUG-516 + BUG-517 + BUG-518 + BUG-519
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
   assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, 22);
-  assert.equal(audit.totalSelfTests, 22);
-  assert.equal(audit.resolvedBugLedger.length, 16);
+  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.totalSelfTests, 25);
+  assert.equal(audit.resolvedBugLedger.length, 19);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-516'));
   assert.ok(
     audit.selfTests.some(
@@ -2917,6 +2949,419 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
     )
   );
 });
+
+test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine, Fixed Image Studio, P2P GGUF Shard Mesh, FIDO2/WebAuthn RBAC Signing, Swagger Request Replay & Separate REST/CLI/MCP Artifact Guide', () => {
+  // 1. Active Release Version is promoted to v6.4-GA (SVN-r414.0-GA)
+  assert.equal(CURRENT_ACTIVE_RELEASE_VERSION, 'v6.4-GA');
+  assert.equal(CURRENT_ACTIVE_SVN_REVISION, 'SVN-r414.0-GA');
+
+  // 2. Google Search & Knowledge Graph Engine is primary in Online Search & buildGoogleSearchGroundedSourcesV62
+  const googleSources = buildGoogleSearchGroundedSourcesV62(
+    'Search Google for Gurucul company history and REVEAL UEBA platform'
+  );
+  assert.ok(googleSources.length >= 2);
+  assert.ok((googleSources[0].sourceEngine || '').includes('Google Search'));
+  assert.ok(googleSources[0].snippet.includes('Gurucul'));
+
+  const crowdStrikeGoogleSources = buildGoogleSearchGroundedSourcesV62(
+    'Tell me about CrowdStrike Falcon platform and its architecture',
+    [
+      {
+        title: 'CrowdStrike (Wikipedia)',
+        authorsOrInstitution: 'Wikipedia Contributors',
+        publicationOrSource: 'Wikipedia Live REST Engine',
+        year: 2026,
+        url: 'https://en.wikipedia.org/wiki/CrowdStrike',
+        snippet: 'CrowdStrike Holdings, Inc. is an American cybersecurity technology company.',
+        sourceEngine: 'Wikipedia Live REST Engine',
+      },
+    ]
+  );
+  const searchStream = buildRetrievedSearchStream(
+    'Tell me about CrowdStrike Falcon platform and its architecture',
+    crowdStrikeGoogleSources
+  );
+  assert.ok(searchStream.activeEnginesCount >= 2);
+  assert.ok(
+    searchStream.engines[0].engineName.includes('Google Search'),
+    'First search stream engine in Online mode must be Google Search & Knowledge Graph Engine'
+  );
+  assert.ok(searchStream.engines[0].streamedSnippet.includes('CrowdStrike'));
+
+  // 3. CLI Google Search command works (`panini-cli search "<query>" --engine google`)
+  const cliGoogleOut = executePaniniBackendCliCommandV61(
+    'panini-cli search "Snowflake AI Data Cloud" --engine google'
+  );
+  assert.equal(cliGoogleOut.exitCode, 0);
+  assert.ok(cliGoogleOut.stdout.includes('Google Search Grounding'));
+  assert.ok(cliGoogleOut.stdout.includes('Snowflake'));
+
+  // 4. Image Generation & Multimodal Scene Synthesis (No false Data Not Available bleed)
+  const imageScene = buildPromptConstructedScene(
+    'Create a 4K image of a futuristic sovereign AI data center in Bengaluru with liquid cooling racks',
+    '16:9'
+  );
+  assert.equal(imageScene.promptDecomposition.canGenerateVisual, true);
+  assert.equal(imageScene.validationReport.isValidated, true);
+  assert.ok(imageScene.aether3DSpec?.isTrue3DVolumetric);
+
+  // 5. Distributed Peer-to-Peer GGUF Shard Mesh (`syncPeerToPeerGgufShardMeshV62` & `panini-cli mesh sync`)
+  const meshBefore = getPeerToPeerShardMeshStatusV62();
+  assert.ok(meshBefore.peerNodes.length >= 3);
+  const meshAfter = syncPeerToPeerGgufShardMeshV62({
+    targetPeerNodes: ['node-alpha-gpu', 'node-beta-airgap', 'node-gamma-edge'],
+  });
+  assert.equal(meshAfter.status, 'SYNCHRONIZED_ZERO_DRIFT');
+  assert.ok(meshAfter.syncedShardsCount >= meshBefore.syncedShardsCount);
+  assert.ok(meshAfter.merkleRootHash.startsWith('0x'));
+
+  const cliMeshOut = executePaniniBackendCliCommandV61('panini-cli mesh sync');
+  assert.equal(cliMeshOut.exitCode, 0);
+  assert.ok(cliMeshOut.stdout.includes('SYNCHRONIZED_ZERO_DRIFT'));
+
+  // 6. Cryptographic RBAC Hardware-Key (FIDO2 / WebAuthn) Signing (`signRbacActionWithFido2WebAuthnV62` & `panini-cli rbac sign`)
+  const fidoAttestation = signRbacActionWithFido2WebAuthnV62({
+    userEmail: 'admin@panini.local',
+    actionType: 'RESTRICTED_EXEC_DOCUMENT_ACCESS',
+    targetResource: 'DOC-EXEC-401',
+  });
+  assert.equal(fidoAttestation.verified, true);
+  assert.equal(fidoAttestation.algorithm, 'Ed25519-WebAuthn-L3');
+  assert.ok(fidoAttestation.cryptographicSignatureHex.startsWith('0xed25519_'));
+  assert.ok(getFido2SignatureLedgerV62().length >= 2);
+
+  const cliFidoOut = executePaniniBackendCliCommandV61(
+    'panini-cli rbac sign --user admin@panini.local --action RESTRICTED_EXEC'
+  );
+  assert.equal(cliFidoOut.exitCode, 0);
+  assert.ok(cliFidoOut.stdout.includes('FIDO2'));
+
+  // 7. Interactive Swagger UI Request History Recorder & Webhook Replay (`recordSwaggerRequestAndExportReplayV62`)
+  const replayEntry = recordSwaggerRequestAndExportReplayV62({
+    endpointId: 'api-search-google',
+    method: 'POST',
+    path: '/api/search/google',
+    requestBody: '{"query":"Databricks Lakehouse IQ architecture"}',
+  });
+  assert.equal(replayEntry.path, '/api/search/google');
+  assert.ok(replayEntry.curlScript.includes('/api/search/google'));
+  assert.ok(replayEntry.typescriptScript.includes("fetch('http://localhost:3000/api/search/google'"));
+  assert.ok(replayEntry.pythonScript.includes('requests.post'));
+  assert.ok(getSwaggerRequestHistoryV62().length >= 2);
+
+  // 8. 30/30 REST API & MCP Endpoint Probes Verified + Separate Artifact `rest_api_cli_and_mcp_usage_guide.md` Synced
+  const allEndpointsSuite = runAllApiEndpointsVerificationSuiteV61();
+  assert.equal(allEndpointsSuite.totalEndpoints, 30);
+  assert.equal(allEndpointsSuite.passedEndpoints, 30);
+  assert.equal(allEndpointsSuite.coveragePercentage, 100);
+
+  const docsSpec = getRestApiAndMcpDocumentationSpecV60();
+  assert.equal(docsSpec.docVersion, 'v6.4-GA (SVN-r414.0-GA)');
+  assert.equal(docsSpec.restEndpoints.length, 30);
+  assert.ok(
+    docsSpec.releaseAutoSyncStatus?.syncedArtifacts.some((a) =>
+      a.includes('rest_api_cli_and_mcp_usage_guide.md')
+    )
+  );
+
+  // 9. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-517
+  const audit = runAutonomousCiCdSelfTestAndBugAudit();
+  assert.equal(audit.overallHealthPct, 100);
+  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.totalSelfTests, 25);
+  assert.equal(audit.resolvedBugLedger.length, 19);
+  assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-517'));
+  assert.ok(
+    audit.selfTests.some(
+      (s) =>
+        s.id ===
+          'st-v62-ga-google-search-image-studio-p2p-shard-mesh-fido2-and-swagger-replay' &&
+        s.status === 'PASSED'
+    )
+  );
+});
+
+test('Release v6.3-GA (SVN-r413.0-GA) & BUG-518: Local Model TTS Accessibility & Voice Selection, D3 Interactive Knowledge Graph, Interactive GGUF Fetch & Auto-Apply Terminal (ollama/curl/irm/wget), Streaming Multi-Agent MCP DAG Recorder & Creative Image Prompt Fix', () => {
+  // 1. BUG-518: Creative 4K Image Studio prompt in Chat never triggers false Data Not Available or unrelated shard bleed
+  const creativeImgPrompt =
+    'Create a 4K image of a futuristic sovereign AI data center in Bengaluru with liquid cooling racks';
+  const shardMatch = getPaniniKnowledgeShard(creativeImgPrompt);
+  assert.equal(
+    shardMatch,
+    undefined,
+    'Creative image prompt must not falsely match an unrelated cached shard on short stopwords'
+  );
+  const chatVisualRes = generateOfflineKnowledgeResponse(
+    creativeImgPrompt,
+    undefined,
+    'Q4_K_M',
+    12,
+    false
+  );
+  assert.ok(
+    !chatVisualRes.answerMarkdown.includes('Data Not Available — Strict Anti-Hallucination Gate'),
+    'Creative 4K image prompt must produce grounded visual scene architecture instead of Data Not Available abstention'
+  );
+  assert.ok(
+    chatVisualRes.answerMarkdown.includes('Grounded 4K Vision Studio & 6-DoF Scene Specification'),
+    'Must include Grounded 4K Vision Studio & 6-DoF Scene Specification section'
+  );
+
+  // 2. Local Model Text-to-Speech (TTS) Module (`synthesizeLocalModelTtsAudioV63`) & Voice Profiles
+  const voices = listLocalTtsVoiceProfilesV63();
+  assert.equal(voices.length, 6);
+  const ttsResult = synthesizeLocalModelTtsAudioV63({
+    text: 'Panini v6.3 local model neural audio synthesis verified for accessibility.',
+    voiceId: voices[1].voiceId,
+    speechRate: 1.05,
+  });
+  assert.equal(ttsResult.voiceProfile.voiceId, voices[1].voiceId);
+  assert.ok(ttsResult.audioDataUrl.startsWith('data:audio/wav;base64,'));
+  assert.ok(ttsResult.wavByteLength > 2000);
+  assert.ok(ttsResult.phonemeFramesCount > 10);
+
+  // Verify persistent TTS settings in Hardware & Preset Env Settings
+  const updatedTtsSettings = updatePersistentSovereignSettingsV61({
+    ttsVoiceId: 'panini-rishi-en-in-m1',
+    ttsSpeechRate: 1.1,
+    ttsAutoReadResponses: true,
+  });
+  assert.equal(updatedTtsSettings.ttsVoiceId, 'panini-rishi-en-in-m1');
+  assert.equal(updatedTtsSettings.ttsSpeechRate, 1.1);
+  assert.equal(updatedTtsSettings.ttsAutoReadResponses, true);
+  // Restore auto-read default false
+  updatePersistentSovereignSettingsV61({
+    ttsVoiceId: 'panini-aura-en-us-f1',
+    ttsSpeechRate: 1.0,
+    ttsAutoReadResponses: false,
+  });
+
+  // 3. D3-Based Interactive Knowledge Graph Visualization (`buildKnowledgeGraphD3SpecV63`)
+  const graphSpec = buildKnowledgeGraphD3SpecV63({
+    focusQuery: 'Snowflake AI Data Cloud',
+  });
+  assert.ok(graphSpec.nodes.length >= 10);
+  assert.ok(graphSpec.links.length >= 10);
+  assert.ok(graphSpec.nodes.some((n) => n.category === 'DOCUMENT_CHUNK'));
+  assert.ok(graphSpec.nodes.some((n) => n.category === 'ENTITY'));
+  assert.ok(graphSpec.nodes.some((n) => n.category === 'KNOWLEDGE_SHARD'));
+  assert.ok(graphSpec.nodes.some((n) => n.category === 'CONNECTOR_SOURCE'));
+
+  // 4. Interactive GGUF Model Terminal (`executeGgufModelTerminalCommandV63`) supporting ollama, curl, irm, wget & online hosted files
+  const hostedCatalog = listHostedOnlineGgufCatalogV63();
+  assert.ok(hostedCatalog.length >= 4);
+
+  const curlExec = executeGgufModelTerminalCommandV63({
+    command:
+      'curl -fsSL https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf -o panini-400b-moe-flagship-v6.3-q5_k_m.gguf --apply',
+  });
+  assert.equal(curlExec.exitCode, 0);
+  assert.equal(curlExec.detectedTool, 'curl');
+  assert.equal(curlExec.autoAppliedToModel, true);
+  assert.ok(curlExec.parsedGgufUpdate.versionTag);
+  assert.ok(curlExec.terminalStdout.includes('[AUTO-APPLY]'));
+
+  const wgetExec = executeGgufModelTerminalCommandV63({
+    command:
+      'wget https://models.panini.local/gguf/panini-coder-polyglot-v6.3-q8_0.gguf',
+  });
+  assert.equal(wgetExec.exitCode, 0);
+  assert.equal(wgetExec.detectedTool, 'wget');
+  assert.equal(wgetExec.autoAppliedToModel, true);
+
+  const irmExec = executeGgufModelTerminalCommandV63({
+    command:
+      'irm https://models.panini.local/gguf/panini-vision-omni-v6.3-q4_k_m.gguf -OutFile omni.gguf',
+  });
+  assert.equal(irmExec.exitCode, 0);
+  assert.equal(irmExec.detectedTool, 'irm');
+  assert.equal(irmExec.autoAppliedToModel, true);
+
+  const ollamaRunExec = executeGgufModelTerminalCommandV63({
+    command: 'ollama pull panini-secops-reveal-v6.3-iq3_xxs.gguf',
+  });
+  assert.equal(ollamaRunExec.exitCode, 0);
+  assert.equal(ollamaRunExec.detectedTool, 'ollama');
+  assert.equal(ollamaRunExec.autoAppliedToModel, true);
+
+  // 5. Roadmap v6.3-GA Features: Streaming Multi-Agent MCP DAG Recorder, WASM OpenXML PPTX Verifier & `panini-cli top/tts/graph`
+  const dagRecord = recordMcpAgentDagExecutionV63({
+    workflowPrompt: 'Verify multi-agent MCP DAG execution and logit-variance diffing',
+    slideCount: 6,
+  });
+  assert.equal(dagRecord.deterministicReplayVerified, true);
+  assert.equal(dagRecord.steps.length, 3);
+  assert.ok(getMcpAgentDagHistoryV63().length >= 2);
+
+  const wasmCheck = verifyOpenXmlPptxPackageWasmV63(6);
+  assert.equal(wasmCheck.verified, true);
+  assert.equal(wasmCheck.schemaCompliance, 'ECMA-376-OPENXML-STRICT');
+  assert.ok(wasmCheck.slideXmlCount >= 6);
+
+  const cliTopOut = executePaniniBackendCliCommandV61('panini-cli top');
+  assert.equal(cliTopOut.exitCode, 0);
+  assert.ok(cliTopOut.stdout.includes('PANINI-CLI TOP TUI'));
+
+  const cliTtsOut = executePaniniBackendCliCommandV61(
+    'panini-cli tts "Testing local neural voice synthesis" --voice panini-aura-en-us-f1'
+  );
+  assert.equal(cliTtsOut.exitCode, 0);
+  assert.ok(cliTtsOut.stdout.includes('Local Model TTS Synthesized'));
+
+  const cliGraphOut = executePaniniBackendCliCommandV61(
+    'panini-cli graph --query "Snowflake AI Data Cloud"'
+  );
+  assert.equal(cliGraphOut.exitCode, 0);
+  assert.ok(cliGraphOut.stdout.includes('D3 Knowledge Graph Built'));
+
+  // 6. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-518
+  const audit = runAutonomousCiCdSelfTestAndBugAudit();
+  assert.equal(audit.overallHealthPct, 100);
+  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.totalSelfTests, 25);
+  assert.equal(audit.resolvedBugLedger.length, 19);
+  assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-518'));
+  assert.ok(
+    audit.selfTests.some(
+      (s) =>
+        s.id ===
+          'st-v63-ga-local-tts-d3-knowledge-graph-gguf-terminal-and-mcp-dag' &&
+        s.status === 'PASSED'
+    )
+  );
+});
+
+test('Release v6.4-GA (SVN-r414.0-GA) & BUG-519: Downloadable GGUF / Ollama Modelfile / Installer Exporter, Terminal Auto-Complete, INFO/DEBUG/VERBOSE Output Modes & /? Command Guide, Online Frontier Model Hub Menu (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen), Autonomous Self-Learning Model Auto-Updater, D3 Sub-Graph Export & Duplex Voice-to-Voice', () => {
+  // 1. Portable GGUF v3 Binary, Ollama Modelfile & Installer Exporter (`exportPaniniModelGgufAndInstallBundleV64`)
+  const bundle = exportPaniniModelGgufAndInstallBundleV64({
+    modelId: 'panini-400b-flagship',
+    modelName: 'Panini-400B-MoE-Flagship',
+    quantType: 'Q5_K_M',
+    contextLength: 262144,
+    activeLayers: 96,
+    totalLayers: 96,
+    loraRank: 96,
+  });
+  assert.ok(bundle.ggufFileName.endsWith('.gguf'));
+  assert.equal(bundle.ggufBytes[0], 0x47); // 'G'
+  assert.equal(bundle.ggufBytes[1], 0x47); // 'G'
+  assert.equal(bundle.ggufBytes[2], 0x55); // 'U'
+  assert.equal(bundle.ggufBytes[3], 0x46); // 'F'
+  assert.equal(bundle.ggufBytes[4], 3); // GGUF v3
+  assert.ok(bundle.ggufDataUrl.startsWith('data:application/octet-stream;base64,'));
+  assert.ok(bundle.modelfileContent.includes('FROM ./'));
+  assert.ok(bundle.shellInstallerContent.includes('ollama create'));
+  assert.ok(bundle.powershellInstallerContent.includes('ollama create'));
+  assert.ok(bundle.compatibleRuntimes.includes('Ollama'));
+
+  // 2. Terminal Auto-Complete (`getTerminalAutocompleteSuggestionsV64`), Output Modes (`INFO`/`DEBUG`/`VERBOSE`), and `/?` Command Guide
+  const autoCompleteList = getTerminalAutocompleteSuggestionsV64('panini-cli model-menu');
+  assert.ok(autoCompleteList.length >= 2);
+  assert.ok(autoCompleteList.some((s) => s.command.includes('panini-cli model-menu')));
+
+  assert.equal(resolveTerminalOutputModeV64('panini-cli doctor --debug'), 'DEBUG');
+  assert.equal(resolveTerminalOutputModeV64('ollama pull model.gguf --verbose'), 'VERBOSE');
+  assert.equal(resolveTerminalOutputModeV64('panini-cli doctor --info'), 'INFO');
+
+  const helpGuide = buildTerminalCommandGuideV64('all');
+  assert.ok(helpGuide.includes('PANINI SOVEREIGN TERMINAL COMMAND GUIDE'));
+  assert.ok(helpGuide.includes('panini-cli model-menu'));
+
+  const ggufHelpExec = executeGgufModelTerminalCommandV63({
+    command: '/?',
+    outputMode: 'DEBUG',
+  });
+  assert.equal(ggufHelpExec.isHelpGuide, true);
+  assert.equal(ggufHelpExec.outputMode, 'DEBUG');
+  assert.ok(ggufHelpExec.terminalStdout.includes('[MODE: DEBUG'));
+  assert.ok(ggufHelpExec.terminalStdout.includes('COMMAND GUIDE'));
+
+  const cliHelpExec = executePaniniBackendCliCommandV61('panini-cli /?', {
+    outputMode: 'DEBUG',
+  });
+  assert.equal(cliHelpExec.exitCode, 0);
+  assert.equal(cliHelpExec.outputMode, 'DEBUG');
+  assert.ok(cliHelpExec.stdout.includes('[MODE: DEBUG'));
+
+  // 3. Online Frontier Model Hub Menu (`DeepSeek`, `Llama`, `GLM`, `MiMo`, `Kimi`, `Bonsai D3`, `Qwen`) & Auto-Installation
+  const onlineCatalog = listOnlineExternalModelCatalogV64();
+  assert.equal(onlineCatalog.length, 7);
+  for (const requiredFamily of ['DeepSeek', 'Llama', 'GLM', 'MiMo', 'Kimi', 'Bonsai D3', 'Qwen']) {
+    assert.ok(
+      onlineCatalog.some((m) => m.family === requiredFamily),
+      `Online model catalog must include ${requiredFamily}`
+    );
+  }
+
+  const menuExec = executeGgufModelTerminalCommandV63({
+    command: 'panini-cli model-menu',
+    outputMode: 'INFO',
+  });
+  assert.equal(menuExec.isMenuOpened, true);
+  assert.ok(menuExec.terminalStdout.includes('DeepSeek'));
+  assert.ok(menuExec.terminalStdout.includes('Bonsai D3'));
+
+  const deepseekInstall = installOnlineCatalogModelV64({
+    modelKeyOrFamily: 'deepseek',
+    outputMode: 'DEBUG',
+  });
+  assert.equal(deepseekInstall.catalogEntry.family, 'DeepSeek');
+  assert.equal(deepseekInstall.installedModel.name, 'DeepSeek-R1-671B-Sovereign-Q4_K_M');
+  assert.ok(deepseekInstall.persistedShardFile.endsWith('.gguf'));
+  assert.ok(deepseekInstall.terminalStdout.includes('[MODE: DEBUG'));
+
+  const bonsaiInstallExec = executeGgufModelTerminalCommandV63({
+    command: 'panini-cli model-menu install bonsai-d3',
+    outputMode: 'INFO',
+  });
+  assert.ok(bonsaiInstallExec.installedExternalModel);
+  assert.equal(
+    bonsaiInstallExec.installedExternalModel?.name,
+    'Bonsai-D3-Graph-Reasoner-14B-Q5_K_M'
+  );
+
+  // 4. Autonomous Self-Learning Model Auto-Updater (`runAutonomousModelSelfLearningAndTuningV64`)
+  const tuneRes = runAutonomousModelSelfLearningAndTuningV64({
+    targetModelId: 'panini-400b-flagship',
+    tuningStrategy: 'QLoRA-Differential-HotSwap',
+    enableAutoContinuousLearning: true,
+  });
+  assert.equal(tuneRes.autoContinuousLearningEnabled, true);
+  assert.ok(tuneRes.validationPerplexityAfter < tuneRes.validationPerplexityBefore);
+  assert.ok(tuneRes.maturityScoreAfter > tuneRes.maturityScoreBefore);
+  assert.equal(tuneRes.tunedHyperparameters.loraRank, 96);
+  assert.ok(getModelSelfLearningStateV64().totalAutoTuningRuns >= 2);
+
+  // 5. v6.4-GA Roadmap Deliverables: D3 Sub-Graph Export to GGUF Shard & Duplex Voice-to-Voice Turn
+  const d3Export = exportD3SubGraphToGgufShardV64({ focusQuery: 'Gurucul' });
+  assert.ok(d3Export.ggufShardFile.endsWith('.gguf'));
+  assert.ok(d3Export.exportedNodesCount >= 5);
+  assert.ok(d3Export.ggufDownloadDataUrl.startsWith('data:application/octet-stream;base64,'));
+
+  const duplexTurn = runDuplexVoiceToVoiceTurnV64({
+    spokenTranscript: 'Summarize Gurucul REVEAL SIEM and UEBA architecture',
+  });
+  assert.ok(duplexTurn.groundedResponseText.includes('Gurucul'));
+  assert.ok(duplexTurn.ttsAudio.audioDataUrl.startsWith('data:audio/wav;base64,'));
+
+  // 6. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-519
+  const audit = runAutonomousCiCdSelfTestAndBugAudit();
+  assert.equal(audit.overallHealthPct, 100);
+  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.totalSelfTests, 25);
+  assert.equal(audit.resolvedBugLedger.length, 19);
+  assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-519'));
+  assert.ok(
+    audit.selfTests.some(
+      (s) =>
+        s.id ===
+          'st-v64-ga-gguf-export-terminal-autocomplete-model-menu-and-self-learning-autotune' &&
+        s.status === 'PASSED'
+    )
+  );
+});
+
+
 
 
 

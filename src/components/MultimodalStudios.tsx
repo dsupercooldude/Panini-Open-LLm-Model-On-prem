@@ -827,6 +827,7 @@ export const ImageCreateAndEditCard: React.FC<{
 }> = ({ initialImageSpec }) => {
   const [imageSpec, setImageSpec] = useState<ImageStudioSpec>(initialImageSpec);
   const [editInstruction, setEditInstruction] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'hybrid' | 'photo_plate' | 'volumetric_3d'>('hybrid');
   const [yawDeg, setYawDeg] = useState<number>(
     initialImageSpec.sceneElements.aether3DSpec?.cameraYawDeg || 0
   );
@@ -851,6 +852,10 @@ export const ImageCreateAndEditCard: React.FC<{
   );
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activePhotoPlateUrl =
+    imageSpec.photographicPlateUrl ||
+    imageSpec.sceneElements.photographicPlateUrl ||
+    imageSpec.sourceImageDataUrl;
 
   useEffect(() => {
     setImageSpec(initialImageSpec);
@@ -878,11 +883,45 @@ export const ImageCreateAndEditCard: React.FC<{
     });
   }, [imageSpec, yawDeg, pitchDeg, lightAzimuthDeg]);
 
-  const handleApplyEdit = () => {
-    if (!editInstruction.trim()) return;
-    const updated = applyImageEditInstruction(imageSpec, editInstruction.trim());
-    setImageSpec(updated);
+  const handleApplyEdit = async () => {
+    const cleanEdit = editInstruction.trim();
+    if (!cleanEdit) return;
+    const localUpdated = applyImageEditInstruction(imageSpec, cleanEdit);
+    setImageSpec(localUpdated);
     setEditInstruction('');
+    try {
+      const res = await fetch('/api/multimodal/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: imageSpec.prompt,
+          editInstruction: cleanEdit,
+          currentSpec: localUpdated,
+          isOnline: true,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.imageSpec) {
+          setImageSpec(data.imageSpec);
+        }
+      }
+    } catch {
+      // Local deterministic edit already applied
+    }
+  };
+
+  const handleDownloadCanvasPng = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const pngDataUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = pngDataUrl;
+    a.download = `${(imageSpec.prompt || 'panini-studio-image')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .slice(0, 40)}-4k.png`;
+    a.click();
   };
 
   const handleConfirmReceiptClarification = () => {
@@ -922,18 +961,52 @@ export const ImageCreateAndEditCard: React.FC<{
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-sky-400" />
           <span className="text-xs font-semibold text-slate-100">
-            Panini-Aether-3D Relightable 3D Scene & 8K Image Studio
+            Panini-Aether-3D Relightable 3D Scene & 8K Grounded Image Studio
           </span>
         </div>
-        <span
-          data-testid="image-3d-alignment-badge"
-          className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-        >
-          True 3D Volumetric · Alignment:{' '}
-          {imageSpec.sceneElements.aether3DSpec?.universalAttributeAlignment
-            ?.alignmentCoveragePct ?? 100}
-          %
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5 text-[10px]">
+            <button
+              type="button"
+              data-testid="image-view-mode-hybrid"
+              onClick={() => setViewMode('hybrid')}
+              className={`px-2 py-0.5 rounded font-medium ${
+                viewMode === 'hybrid' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Hybrid 3D + Grounded Plate
+            </button>
+            <button
+              type="button"
+              data-testid="image-view-mode-plate"
+              onClick={() => setViewMode('photo_plate')}
+              className={`px-2 py-0.5 rounded font-medium ${
+                viewMode === 'photo_plate' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Grounded Reference Plate
+            </button>
+            <button
+              type="button"
+              data-testid="image-view-mode-3d"
+              onClick={() => setViewMode('volumetric_3d')}
+              className={`px-2 py-0.5 rounded font-medium ${
+                viewMode === 'volumetric_3d' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              3D Volumetric Canvas
+            </button>
+          </div>
+          <span
+            data-testid="image-3d-alignment-badge"
+            className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+          >
+            True 3D Volumetric · Alignment:{' '}
+            {imageSpec.sceneElements.aether3DSpec?.universalAttributeAlignment
+              ?.alignmentCoveragePct ?? 100}
+            %
+          </span>
+        </div>
       </div>
 
       {/* Zero-Assumption Interactive Receipt Clarification Gate */}
@@ -985,13 +1058,81 @@ export const ImageCreateAndEditCard: React.FC<{
         </div>
       )}
 
-      <canvas
-        ref={canvasRef}
-        data-testid="image-studio-3d-canvas"
-        width={768}
-        height={432}
-        className="w-full rounded-lg border border-slate-800 bg-slate-950"
-      />
+      <div
+        className={`grid gap-3 ${
+          viewMode === 'hybrid' && activePhotoPlateUrl ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'
+        }`}
+      >
+        {viewMode !== 'photo_plate' && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span>3D VOLUMETRIC RAYMARCHED SCENE ({imageSpec.resolution})</span>
+              <span>Panini-Flux.1-Dev-12B DiT</span>
+            </div>
+            <canvas
+              ref={canvasRef}
+              data-testid="image-studio-3d-canvas"
+              width={768}
+              height={432}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950"
+            />
+          </div>
+        )}
+
+        {(viewMode === 'hybrid' || viewMode === 'photo_plate') && activePhotoPlateUrl && (
+          <div className="space-y-1" data-testid="image-studio-grounded-plate-container">
+            <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300">
+              <span>GOOGLE SEARCH / WIKIMEDIA GROUNDED REFERENCE PLATE</span>
+              <span>Verified Visual Reference</span>
+            </div>
+            <img
+              src={activePhotoPlateUrl}
+              alt={imageSpec.prompt}
+              data-testid="image-studio-grounded-plate-img"
+              className="w-full h-[240px] md:h-[260px] object-cover rounded-lg border border-emerald-500/30 bg-slate-950"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 1-Click Image Export & Edit History Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-300">
+          <span>Prompt: &ldquo;{imageSpec.prompt.slice(0, 48)}&rdquo;</span>
+          {imageSpec.editHistory && imageSpec.editHistory.length > 0 && (
+            <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              Edits Applied: {imageSpec.editHistory.length}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="download-generated-image-png-btn"
+            onClick={handleDownloadCanvasPng}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download 4K PNG (.png)
+          </button>
+          {activePhotoPlateUrl && (
+            <a
+              href={activePhotoPlateUrl}
+              download={`${(imageSpec.prompt || 'panini-reference-plate')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .slice(0, 36)}-plate.svg`}
+              target="_blank"
+              rel="noreferrer"
+              data-testid="download-generated-image-plate-btn"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 font-medium hover:bg-emerald-500/30"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open Reference Plate
+            </a>
+          )}
+        </div>
+      </div>
 
       {/* 6-DoF Relightable 3D Controls */}
       <div
@@ -1056,6 +1197,7 @@ export const ImageCreateAndEditCard: React.FC<{
       <div className="flex items-center gap-2">
         <input
           type="text"
+          data-testid="image-studio-edit-input"
           value={editInstruction}
           onChange={(e) => setEditInstruction(e.target.value)}
           placeholder="Describe 3D relighting or inpaint edit (e.g., golden hour rim light)..."
@@ -1063,6 +1205,7 @@ export const ImageCreateAndEditCard: React.FC<{
         />
         <button
           type="button"
+          data-testid="image-studio-apply-edit-btn"
           onClick={handleApplyEdit}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-200 border border-sky-500/40 text-xs font-medium hover:bg-sky-500/30"
         >

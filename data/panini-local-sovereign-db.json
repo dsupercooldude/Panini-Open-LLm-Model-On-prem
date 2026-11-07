@@ -1,8 +1,9 @@
 {
   "schemaVersion": "v6.1-GA (SVN-r411.0-GA)",
-  "persistedAtUtc": "2026-11-05T05:27:38.884Z",
+  "persistedAtUtc": "2026-11-07T14:28:25.408Z",
   "offlineFirstPrepackaged": true,
   "cloudHosted": false,
+  "activeReleaseVersion": "v6.4-GA",
   "settings": {
     "isOnlineLearning": true,
     "presetOfflineMode": false,
@@ -19,7 +20,10 @@
     "strictSourceVerification": false,
     "researchTimerSeconds": 150,
     "presetModelCacheDir": "/var/panini/models/gguf-v61-vault",
-    "updatedAtUtc": "2026-11-05 05:27:38 UTC"
+    "ttsVoiceId": "panini-voice-aria-en-us",
+    "ttsSpeechRate": 1,
+    "ttsAutoReadResponses": false,
+    "updatedAtUtc": "2026-11-07 14:25:07 UTC"
   },
   "rbacUsers": [
     {
@@ -55,7 +59,7 @@
       ],
       "prepackagedOfflineReady": true,
       "createdAtUtc": "2026-01-15 08:00:00 UTC",
-      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+      "lastLoginUtc": "2026-11-07 14:25:07 UTC"
     },
     {
       "id": "usr-local-02",
@@ -86,7 +90,7 @@
       ],
       "prepackagedOfflineReady": true,
       "createdAtUtc": "2026-02-01 09:30:00 UTC",
-      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+      "lastLoginUtc": "2026-11-07 14:25:07 UTC"
     },
     {
       "id": "usr-local-03",
@@ -115,7 +119,7 @@
       ],
       "prepackagedOfflineReady": true,
       "createdAtUtc": "2026-03-10 11:00:00 UTC",
-      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+      "lastLoginUtc": "2026-11-07 14:25:07 UTC"
     },
     {
       "id": "usr-local-04",
@@ -140,7 +144,7 @@
       ],
       "prepackagedOfflineReady": true,
       "createdAtUtc": "2026-04-20 14:00:00 UTC",
-      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+      "lastLoginUtc": "2026-11-07 14:25:07 UTC"
     },
     {
       "id": "usr-local-05",
@@ -171,8 +175,148 @@
       ],
       "prepackagedOfflineReady": true,
       "createdAtUtc": "2026-05-12 10:15:00 UTC",
-      "lastLoginUtc": "2026-11-05 05:27:38 UTC"
+      "lastLoginUtc": "2026-11-07 14:25:07 UTC"
     }
   ],
-  "knowledgeShards": {}
+  "knowledgeShards": {
+    "gurucul d3 sub graph cluster": {
+      "shardKey": "gurucul d3 sub graph cluster",
+      "queryKey": "gurucul d3 sub graph cluster",
+      "ggufShardFile": "panini-gurucul-d3-sub-91dbd265.gguf",
+      "binTensorFile": "panini-kv-gurucul-d3-sub-91dbd265.bin",
+      "query": "Gurucul D3 Sub-Graph Cluster",
+      "updatedAt": "2026-11-07T14:28:25.402Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "D3 Knowledge Graph Export (KG-D3-05402)",
+          "url": "https://docs.panini.local/d3-subgraph/gurucul",
+          "snippet": "[D3-SubGraph DOCUMENT_CHUNK] CHK-FILE-503: Enterprise_Cloud_Vendor_SLA_Matrix: [CSV / TSV Flatfile (.csv/.tsv) Extracted via Streaming Flatfile & JSON Schema Parser] Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted Document Content: Vendor,Platform Module,Guaranteed SLA,Cost [D3-SubGraph DOCUMENT_CHUNK] CHK-SHARD-505: Panini-400B-MoE-Flagship Self-Lear: [Knowledge Shard (1 Sources · 2 Verified Facts)] Auto-updated & self-tuned Panini-400B-MoE-Flagship (v6.4-autotuned-r2) via QLoRA-Differential-HotSwap across 1 .gguf shards (18 verified facts) & 8 D3 graph entities. Validation perplexity improved from 1.21 to 1.12 (Mat [D3-SubGraph DOCUMENT_CHUNK] CHK-RAG-502: Qdrant Enterprise Security & Compl: [Qdrant Vector Cluster Collection \"cybersecurity_siem_ueba_2026\" (https://qdrant-rag.internal.corp:6333)] Federated Qdrant hybrid vector+BM25 index containing 240,000 enterprise SIEM, UEBA, MITRE ATT&CK, and SOC playbook chunks. [D3-SubGraph DOCUMENT_CHUNK] CHK-WEB-501: Model Context Protocol (MCP) 2025-: [Crawled Web Extract (Multi-Section + Subpages) — https://modelcontextprotocol.io/specification/2025-06-18] Model Context Protocol (MCP) standardizes JSON-RPC 2.0 communication between AI hosts, clients, and tool/resource servers over stdio and Streamable HTTP/SSE. Supports bidirectional capability negotiation, scoped OAuth2 c [D3-SubGraph DOCUMENT_CHUNK] CHK-SP-101: Global Corporate Travel, Hospitali: [Section 2.1 — Regional Per-Diem Caps, VAT & Mandatory Sandboxed Expense Decks] All hospitality receipts exceeding 250 AED / $75 USD must undergo PaddleOCR-v3 line-item reconciliation and be packaged into a branded PPTX deck + %PDF-1.4 voucher inside a gVisor or Firecracker sandbox. [D3-SubGraph DOCUMENT_CHUNK] CHK-TV-102: Production AI Architecture, Hybrid: [Section 4.0 — Hybrid Search (BM25 + Vector), Reranker & Bounded Orchestrator] Pure vector search underperforms on exact SKU, receipt ID, and regulatory clauses. Production retrieval fuses lexical BM25 (0.45 weight) with 1024-dim vector cosine similarity (0.55 weight), followed by a bge-reranker-v2 [D3-SubGraph ENTITY] ENTERPRISE: Extracted Entity \"ENTERPRISE\" referenced in 2 chunk(s): Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted [D3-SubGraph ENTITY] CLOUD: Extracted Entity \"CLOUD\" referenced in 1 chunk(s): Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted",
+          "publicationOrSource": "Panini Local Knowledge Shard Vault",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-FILE-503: Enterprise_Cloud_Vendor_SLA_Matrix: [CSV / TSV Flatfile (.csv/.tsv) Extracted via Streaming Flatfile & JSON Schema Parser] Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted Document Content: Vendor,Platform Module,Guaranteed SLA,Cost",
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-SHARD-505: Panini-400B-MoE-Flagship Self-Lear: [Knowledge Shard (1 Sources · 2 Verified Facts)] Auto-updated & self-tuned Panini-400B-MoE-Flagship (v6.4-autotuned-r2) via QLoRA-Differential-HotSwap across 1 .gguf shards (18 verified facts) & 8 D3 graph entities. Validation perplexity improved from 1.21 to 1.12 (Mat",
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-RAG-502: Qdrant Enterprise Security & Compl: [Qdrant Vector Cluster Collection \"cybersecurity_siem_ueba_2026\" (https://qdrant-rag.internal.corp:6333)] Federated Qdrant hybrid vector+BM25 index containing 240,000 enterprise SIEM, UEBA, MITRE ATT&CK, and SOC playbook chunks.",
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-WEB-501: Model Context Protocol (MCP) 2025-: [Crawled Web Extract (Multi-Section + Subpages) — https://modelcontextprotocol.io/specification/2025-06-18] Model Context Protocol (MCP) standardizes JSON-RPC 2.0 communication between AI hosts, clients, and tool/resource servers over stdio and Streamable HTTP/SSE. Supports bidirectional capability negotiation, scoped OAuth2 c",
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-SP-101: Global Corporate Travel, Hospitali: [Section 2.1 — Regional Per-Diem Caps, VAT & Mandatory Sandboxed Expense Decks] All hospitality receipts exceeding 250 AED / $75 USD must undergo PaddleOCR-v3 line-item reconciliation and be packaged into a branded PPTX deck + %PDF-1.4 voucher inside a gVisor or Firecracker sandbox.",
+        "[D3-SubGraph DOCUMENT_CHUNK] CHK-TV-102: Production AI Architecture, Hybrid: [Section 4.0 — Hybrid Search (BM25 + Vector), Reranker & Bounded Orchestrator] Pure vector search underperforms on exact SKU, receipt ID, and regulatory clauses. Production retrieval fuses lexical BM25 (0.45 weight) with 1024-dim vector cosine similarity (0.55 weight), followed by a bge-reranker-v2",
+        "[D3-SubGraph ENTITY] ENTERPRISE: Extracted Entity \"ENTERPRISE\" referenced in 2 chunk(s): Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted",
+        "[D3-SubGraph ENTITY] CLOUD: Extracted Entity \"CLOUD\" referenced in 1 chunk(s): Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted"
+      ]
+    },
+    "panini 400b moe flagship self learning auto tune": {
+      "shardKey": "panini 400b moe flagship self learning auto tune",
+      "queryKey": "panini 400b moe flagship self learning auto tune",
+      "ggufShardFile": "panini-panini-400b-moe-0e52678e.gguf",
+      "binTensorFile": "panini-kv-panini-400b-moe-0e52678e.bin",
+      "query": "Panini-400B-MoE-Flagship Self-Learning Auto-Tune",
+      "updatedAt": "2026-11-07T14:28:24.911Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "AUTOTUNE-V64-02 (QLoRA-Differential-HotSwap)",
+          "url": "https://models.panini.local/autotune/AUTOTUNE-V64-02",
+          "snippet": "Auto-updated & self-tuned Panini-400B-MoE-Flagship (v6.4-autotuned-r2) via QLoRA-Differential-HotSwap across 1 .gguf shards (18 verified facts) & 8 D3 graph entities. Validation perplexity improved from 1.21 to 1.12 (Maturity: 99.6%).",
+          "publicationOrSource": "Panini Local Knowledge Shard Vault",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "Auto-updated & self-tuned Panini-400B-MoE-Flagship (v6.4-autotuned-r2) via QLoRA-Differential-HotSwap across 1 .gguf shards (18 verified facts) & 8 D3 graph entities.",
+        "Validation perplexity improved from 1.21 to 1.12 (Maturity: 99.6%)."
+      ]
+    },
+    "enterprise cloud vendor sla matrix 2026": {
+      "shardKey": "enterprise cloud vendor sla matrix 2026",
+      "queryKey": "enterprise cloud vendor sla matrix 2026",
+      "ggufShardFile": "panini-enterprise-cloud-vendor-fa414598.gguf",
+      "binTensorFile": "panini-kv-enterprise-cloud-vendor-fa414598.bin",
+      "query": "Enterprise Cloud Vendor SLA Matrix 2026",
+      "updatedAt": "2026-11-07T14:28:24.898Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv (CSV / TSV Flatfile (.csv/.tsv))",
+          "url": "file:///vault/documents/Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv",
+          "snippet": "Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes). Extracted Document Content: Vendor,Platform Module,Guaranteed SLA,Cost Reduction,Deployment Mode\nGurucul,REVEAL Next-Gen SIEM & UEBA,99.95%,40%-70% Log Cost Savings,Cloud SaaS / Hybrid / Air-Gap\nCrowdStrike,Falcon XDR & Charlotte AI,99.95%,65% Fast Committed to local Knowledge Shard and indexed into Hybrid RAG under PUBLIC ACL.",
+          "publicationOrSource": "Streaming Flatfile & JSON Schema Parser",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "Ingested CSV / TSV Flatfile (.csv/.tsv) file \"Enterprise_Cloud_Vendor_SLA_Matrix_2026.csv\" via Streaming Flatfile & JSON Schema Parser (48200 bytes).",
+        "Extracted Document Content: Vendor,Platform Module,Guaranteed SLA,Cost Reduction,Deployment Mode\nGurucul,REVEAL Next-Gen SIEM & UEBA,99.95%,40%-70% Log Cost Savings,Cloud SaaS / Hybrid / Air-Gap\nCrowdStrike,Falcon XDR & Charlotte AI,99.95%,65% Fast",
+        "Committed to local Knowledge Shard and indexed into Hybrid RAG under PUBLIC ACL."
+      ]
+    },
+    "qdrant enterprise security compliance cluster cybersecurity siem ueba 2026": {
+      "shardKey": "qdrant enterprise security compliance cluster cybersecurity siem ueba 2026",
+      "queryKey": "qdrant enterprise security compliance cluster cybersecurity siem ueba 2026",
+      "ggufShardFile": "panini-qdrant-enterprise-security-6443405f.gguf",
+      "binTensorFile": "panini-kv-qdrant-enterprise-security-6443405f.bin",
+      "query": "Qdrant Enterprise Security & Compliance Cluster cybersecurity_siem_ueba_2026",
+      "updatedAt": "2026-11-07T14:28:24.897Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "Qdrant Enterprise Security & Compliance Cluster (Qdrant Vector Cluster · cybersecurity_siem_ueba_2026)",
+          "url": "https://qdrant-rag.internal.corp:6333",
+          "snippet": "Federated Qdrant hybrid vector+BM25 index containing 240,000 enterprise SIEM, UEBA, MITRE ATT&CK, and SOC playbook chunks.",
+          "publicationOrSource": "Qdrant Vector Cluster",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "Federated Qdrant hybrid vector+BM25 index containing 240,000 enterprise SIEM, UEBA, MITRE ATT&CK, and SOC playbook chunks.",
+        "Vector + BM25 Hybrid Federation active on collection \"cybersecurity_siem_ueba_2026\" (https://qdrant-rag.internal.corp:6333)."
+      ]
+    },
+    "model context protocol mcp 2025 06 18 specification": {
+      "shardKey": "model context protocol mcp 2025 06 18 specification",
+      "queryKey": "model context protocol mcp 2025 06 18 specification",
+      "ggufShardFile": "panini-model-context-protocol-2d0caec0.gguf",
+      "binTensorFile": "panini-kv-model-context-protocol-2d0caec0.bin",
+      "query": "Model Context Protocol (MCP) 2025-06-18 Specification",
+      "updatedAt": "2026-11-07T14:28:24.896Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "Model Context Protocol (MCP) 2025-06-18 Specification — modelcontextprotocol.io (Multi-Section + Subpages)",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18",
+          "snippet": "Model Context Protocol (MCP) standardizes JSON-RPC 2.0 communication between AI hosts, clients, and tool/resource servers over stdio and Streamable HTTP/SSE. Supports bidirectional capability negotiation, scoped OAuth2 credentials, tool invocation (tools/list, tools/call), resource reading (resources/read), and multi-agent delegation.",
+          "publicationOrSource": "modelcontextprotocol.io",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "Model Context Protocol (MCP) standardizes JSON-RPC 2.0 communication between AI hosts, clients, and tool/resource servers over stdio and Streamable HTTP/SSE.",
+        "Supports bidirectional capability negotiation, scoped OAuth2 credentials, tool invocation (tools/list, tools/call), resource reading (resources/read), and multi-agent delegation."
+      ]
+    },
+    "panini 400b moe flagship gguf terminal update": {
+      "shardKey": "panini 400b moe flagship gguf terminal update",
+      "queryKey": "panini 400b moe flagship gguf terminal update",
+      "ggufShardFile": "panini-panini-400b-moe-d9512f53.gguf",
+      "binTensorFile": "panini-kv-panini-400b-moe-d9512f53.bin",
+      "query": "Panini-400B-MoE-Flagship GGUF Terminal Update",
+      "updatedAt": "2026-11-07T13:04:39.809Z",
+      "syncedFromOnline": true,
+      "cachedWikipediaSources": [
+        {
+          "title": "panini-400b-moe-flagship-v6.3-q5_k_m.gguf (CURL Fetch)",
+          "url": "https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf",
+          "snippet": "Panini-400B-MoE-Flagship v6.0.0-gguf-q5km calibrated with 1,482 GGUF v3 tensors, 4/16 active MoE experts, and 262,144-token Ring-Attention context window. GGUF v3 KV metadata embeds verified cybersecurity (Gurucul, CrowdStrike, Zscaler, Palo Alto Networks) and cloud data platform (Snowflake, Databricks) benchmark matrices.",
+          "publicationOrSource": "Panini Local Knowledge Shard Vault",
+          "year": 2026
+        }
+      ],
+      "cachedVerifiedFacts": [
+        "Panini-400B-MoE-Flagship v6.0.0-gguf-q5km calibrated with 1,482 GGUF v3 tensors, 4/16 active MoE experts, and 262,144-token Ring-Attention context window.",
+        "GGUF v3 KV metadata embeds verified cybersecurity (Gurucul, CrowdStrike, Zscaler, Palo Alto Networks) and cloud data platform (Snowflake, Databricks) benchmark matrices."
+      ]
+    }
+  }
 }

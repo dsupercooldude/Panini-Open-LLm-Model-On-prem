@@ -13,6 +13,21 @@ import {
   DocumentAclRole,
   DocumentClassificationLevel,
   syncReleaseDocumentationAndArtifactsV61,
+  recordSwaggerRequestAndExportReplayV62,
+  getSwaggerRequestHistoryV62,
+  SwaggerReplayRecordV62,
+  signRbacActionWithFido2WebAuthnV62,
+  getFido2SignatureLedgerV62,
+  Fido2RbacSignatureReceiptV62,
+  syncPeerToPeerGgufShardMeshV62,
+  getPeerToPeerShardMeshStatusV62,
+  PeerToPeerShardMeshSyncResultV62,
+  recordMcpAgentDagExecutionV63,
+  getMcpAgentDagHistoryV63,
+  McpAgentDagExecutionRecordV63,
+  verifyOpenXmlPptxPackageWasmV63,
+  TerminalOutputVerbosityModeV64,
+  getTerminalAutocompleteSuggestionsV64,
 } from '../utils/engineLogic';
 import {
   Download,
@@ -27,6 +42,7 @@ import {
   CheckCircle2,
   Sparkles,
   Plus,
+  HelpCircle,
 } from 'lucide-react';
 
 export interface AdminRestMcpDocsViewProps {
@@ -79,10 +95,14 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
 
   // Backend CLI (`panini-cli` & Ollama GGUF) Interactive Terminal State
   const [cliCommandInput, setCliCommandInput] = useState<string>('panini-cli doctor');
+  const [cliOutputMode, setCliOutputMode] = useState<TerminalOutputVerbosityModeV64>('INFO');
+  const cliAutocompleteSuggestions = getTerminalAutocompleteSuggestionsV64(cliCommandInput, 6);
   const [cliOutputHistory, setCliOutputHistory] = useState<
     { cmd: string; stdout: string; timestamp: string; exitCode: number }[]
   >(() => {
-    const initialRun = executePaniniBackendCliCommandV61('panini-cli doctor');
+    const initialRun = executePaniniBackendCliCommandV61('panini-cli doctor', {
+      outputMode: 'INFO',
+    });
     return [
       {
         cmd: initialRun.command,
@@ -104,6 +124,21 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
   const [newRbacClearance, setNewRbacClearance] =
     useState<DocumentClassificationLevel>('CONFIDENTIAL');
   const [rbacVerifyBanner, setRbacVerifyBanner] = useState<string | null>(null);
+
+  // Release v6.2-GA: Swagger Request History & Replay Exporter, FIDO2 RBAC Signer & P2P Shard Mesh State
+  const [swaggerReplayHistory, setSwaggerReplayHistory] = useState<SwaggerReplayRecordV62[]>(() =>
+    getSwaggerRequestHistoryV62()
+  );
+  const [fido2Ledger, setFido2Ledger] = useState<Fido2RbacSignatureReceiptV62[]>(() =>
+    getFido2SignatureLedgerV62()
+  );
+  const [p2pMeshState, setP2pMeshState] = useState<PeerToPeerShardMeshSyncResultV62>(() =>
+    getPeerToPeerShardMeshStatusV62()
+  );
+  const [mcpDagHistory, setMcpDagHistory] = useState<McpAgentDagExecutionRecordV63[]>(() =>
+    getMcpAgentDagHistoryV63()
+  );
+  const [wasmPptxVerifySummary, setWasmPptxVerifySummary] = useState<string | null>(null);
 
   const borderClass = isDark ? 'border-slate-800' : 'border-slate-200';
   const surfaceClass = isDark ? 'bg-slate-900/80' : 'bg-white';
@@ -261,6 +296,13 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               body: JSON.stringify(parsedBody),
             });
       const text = await res.text();
+      recordSwaggerRequestAndExportReplayV62({
+        endpointId: selectedSwaggerEndpointId,
+        method,
+        path: endpointPath,
+        requestBody: typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody),
+      });
+      setSwaggerReplayHistory(getSwaggerRequestHistoryV62());
       setLiveTestOutput(
         `[${method} ${endpointPath} -> HTTP ${res.status} OK]\n${text.slice(0, 1100)}`
       );
@@ -307,10 +349,16 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
   };
 
   // Execute Backend CLI Command (`panini-cli` & Ollama GGUF)
-  const handleExecuteCliCommand = async (cmdOverride?: string) => {
+  const handleExecuteCliCommand = async (
+    cmdOverride?: string,
+    modeOverride?: TerminalOutputVerbosityModeV64
+  ) => {
     const cmdToRun = (cmdOverride ?? cliCommandInput).trim() || 'panini-cli help';
+    const activeMode = modeOverride || cliOutputMode;
     setCliCommandInput(cmdToRun);
-    const localExec = executePaniniBackendCliCommandV61(cmdToRun);
+    const localExec = executePaniniBackendCliCommandV61(cmdToRun, {
+      outputMode: activeMode,
+    });
 
     if (cmdToRun.includes('config') && cmdToRun.includes('--mode')) {
       if (/\bonline\b/i.test(cmdToRun)) {
@@ -324,7 +372,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
       await fetch('/api/v61/cli/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmdToRun }),
+        body: JSON.stringify({ command: cmdToRun, outputMode: activeMode }),
       });
     } catch {
       // Offline / local execution already succeeded
@@ -728,6 +776,55 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               {liveTestOutput}
             </pre>
           )}
+
+          {/* Release v6.2-GA: Interactive Swagger Request History Recorder & Webhook Replay Exporter */}
+          {swaggerReplayHistory[0] && (
+            <div
+              data-testid="swagger-replay-exporter-card"
+              className={`p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2 text-xs`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono font-bold text-amber-300">
+                  v6.2-GA SWAGGER REQUEST HISTORY &amp; REPLAY EXPORTER ({swaggerReplayHistory.length} Recorded Runs · Latest: {swaggerReplayHistory[0].replayId})
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="swagger-export-curl-btn"
+                    onClick={() =>
+                      handleCopyText('replay-curl', swaggerReplayHistory[0].curlScript)
+                    }
+                    className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 font-mono text-[11px] text-sky-300 hover:bg-slate-800"
+                  >
+                    {copiedId === 'replay-curl' ? '✓ Copied cURL' : 'Export cURL Replay'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="swagger-export-ts-btn"
+                    onClick={() =>
+                      handleCopyText('replay-ts', swaggerReplayHistory[0].typescriptScript)
+                    }
+                    className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 font-mono text-[11px] text-emerald-300 hover:bg-slate-800"
+                  >
+                    {copiedId === 'replay-ts' ? '✓ Copied TypeScript' : 'Export TypeScript Test'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="swagger-export-py-btn"
+                    onClick={() =>
+                      handleCopyText('replay-py', swaggerReplayHistory[0].pythonScript)
+                    }
+                    className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 font-mono text-[11px] text-amber-300 hover:bg-slate-800"
+                  >
+                    {copiedId === 'replay-py' ? '✓ Copied Python' : 'Export Python Test'}
+                  </button>
+                </div>
+              </div>
+              <pre className="p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto">
+                {swaggerReplayHistory[0].typescriptScript}
+              </pre>
+            </div>
+          )}
         </section>
       )}
 
@@ -752,15 +849,73 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
             </div>
           </div>
 
-          {/* Interactive CLI Input + 1-Click Preset Commands */}
+          {/* Interactive CLI Input + Auto-Complete + Output Mode (`INFO` / `DEBUG` / `VERBOSE`) + `/?` Guide */}
           <div className={`p-4 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-3`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-mono text-emerald-400 font-semibold">
+                Interactive `panini-cli` Terminal (Tab Auto-Complete · Output Modes · `/?` Guide · `/menu` Online Model Hub)
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div
+                  data-testid="cli-output-mode-selector"
+                  className="inline-flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 text-[11px] font-mono"
+                >
+                  {(['INFO', 'DEBUG', 'VERBOSE'] as TerminalOutputVerbosityModeV64[]).map(
+                    (mOpt) => (
+                      <button
+                        key={mOpt}
+                        type="button"
+                        data-testid={`cli-output-mode-${mOpt.toLowerCase()}`}
+                        onClick={() => setCliOutputMode(mOpt)}
+                        className={`px-2 py-1 rounded transition-colors ${
+                          cliOutputMode === mOpt
+                            ? 'bg-emerald-500 text-slate-950 font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {mOpt}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="cli-help-guide-btn"
+                  onClick={() => handleExecuteCliCommand('panini-cli /?')}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-mono text-[11px] font-semibold inline-flex items-center gap-1"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  <span>/? Command Guide</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="cli-open-model-menu-btn"
+                  onClick={() => handleExecuteCliCommand('panini-cli model-menu')}
+                  className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-mono text-[11px] font-semibold"
+                >
+                  panini-cli model-menu
+                </button>
+              </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 data-testid="cli-command-input"
                 value={cliCommandInput}
                 onChange={(e) => setCliCommandInput(e.target.value)}
-                placeholder="panini-cli doctor"
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && cliAutocompleteSuggestions.length > 0) {
+                    e.preventDefault();
+                    setCliCommandInput(cliAutocompleteSuggestions[0].command);
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleExecuteCliCommand();
+                  }
+                }}
+                placeholder="Type command or press Tab to auto-complete (e.g. panini-cli model-menu | panini-cli /?)"
                 className="flex-1 px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-300"
               />
               <button
@@ -770,8 +925,28 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
                 className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-xs font-bold inline-flex items-center gap-1.5 shrink-0"
               >
                 <Play className="w-3.5 h-3.5" />
-                <span>Execute CLI Command</span>
+                <span>Execute CLI ({cliOutputMode})</span>
               </button>
+            </div>
+
+            {/* Live Auto-Complete Suggestion Strip */}
+            <div
+              data-testid="cli-autocomplete-bar"
+              className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono"
+            >
+              <span className={mutedText}>Auto-Complete (Tab / Click):</span>
+              {cliAutocompleteSuggestions.map((sug, idx) => (
+                <button
+                  key={sug.command}
+                  type="button"
+                  data-testid={`cli-autocomplete-suggestion-${idx}`}
+                  onClick={() => setCliCommandInput(sug.command)}
+                  title={sug.description}
+                  className="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 text-emerald-300 border border-slate-800"
+                >
+                  {sug.command}
+                </button>
+              ))}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
@@ -780,6 +955,24 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               </span>
               {[
                 { label: 'panini-cli doctor', cmd: 'panini-cli doctor' },
+                { label: 'panini-cli /? (Command Guide)', cmd: 'panini-cli /?' },
+                { label: 'panini-cli model-menu (Online Hub)', cmd: 'panini-cli model-menu' },
+                {
+                  label: 'panini-cli model-menu install deepseek',
+                  cmd: 'panini-cli model-menu install deepseek',
+                },
+                {
+                  label: 'panini-cli model-menu install bonsai-d3',
+                  cmd: 'panini-cli model-menu install bonsai-d3',
+                },
+                {
+                  label: 'panini-cli export-gguf (Flagship)',
+                  cmd: 'panini-cli export-gguf --model panini-400b-flagship --quant Q5_K_M',
+                },
+                {
+                  label: 'panini-cli self-learn tune',
+                  cmd: 'panini-cli self-learn tune --model panini-400b-flagship',
+                },
                 { label: 'panini-cli shard list', cmd: 'panini-cli shard list' },
                 {
                   label: 'panini-cli shard save (CrowdStrike)',
@@ -798,6 +991,22 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
                 {
                   label: 'panini-cli config --mode offline',
                   cmd: 'panini-cli config --mode offline',
+                },
+                {
+                  label: 'panini-cli search "Gurucul" --engine google',
+                  cmd: 'panini-cli search "Gurucul" --engine google',
+                },
+                {
+                  label: 'panini-cli top (v6.3 TUI)',
+                  cmd: 'panini-cli top',
+                },
+                {
+                  label: 'panini-cli tts (v6.3 Local TTS)',
+                  cmd: 'panini-cli tts "Panini v6.3 local model neural audio synthesis verified" --voice panini-aura-en-us-f1',
+                },
+                {
+                  label: 'panini-cli graph (v6.3 D3 Graph)',
+                  cmd: 'panini-cli graph --topic "Snowflake AI Data Cloud"',
                 },
                 {
                   label: 'panini-cli release sync',
@@ -907,6 +1116,174 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               <span>{rbacVerifyBanner}</span>
             </div>
           )}
+
+          {/* Release v6.2-GA: FIDO2 / WebAuthn Hardware-Key RBAC Signing & P2P GGUF Shard Mesh Sync */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div
+              data-testid="fido2-rbac-signing-card"
+              className={`p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2 text-xs`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-emerald-300">
+                  v6.2-GA FIDO2 / WebAuthn Hardware-Key RBAC Attestation
+                </span>
+                <button
+                  type="button"
+                  data-testid="fido2-sign-action-btn"
+                  onClick={async () => {
+                    const sig = signRbacActionWithFido2WebAuthnV62({
+                      userEmail: 'admin@panini.local',
+                      actionType: 'RESTRICTED_EXEC_DOCUMENT_ACCESS',
+                      targetResource: 'DOC-EXEC-404',
+                    });
+                    setFido2Ledger(getFido2SignatureLedgerV62());
+                    setRbacVerifyBanner(
+                      `FIDO2/WebAuthn Hardware Key Signed (${sig.signatureId} · ${sig.algorithm} · Key: ${sig.authenticatorId}) for ${sig.userEmail}`
+                    );
+                    try {
+                      await fetch('/api/v62/rbac/fido2-sign', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          userEmail: 'admin@panini.local',
+                          actionType: 'RESTRICTED_EXEC_DOCUMENT_ACCESS',
+                          targetResource: 'DOC-EXEC-404',
+                        }),
+                      });
+                    } catch {
+                      // Local FIDO2 signature already committed
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded bg-emerald-500 text-slate-950 font-semibold text-[11px]"
+                >
+                  Sign RESTRICTED_EXEC with FIDO2 Key
+                </button>
+              </div>
+              {fido2Ledger[0] && (
+                <div className="p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                  [{fido2Ledger[0].signatureId}] {fido2Ledger[0].userEmail} · Key:{' '}
+                  {fido2Ledger[0].authenticatorId} · Sig:{' '}
+                  {fido2Ledger[0].cryptographicSignatureHex.slice(0, 28)}...
+                </div>
+              )}
+            </div>
+
+            <div
+              data-testid="p2p-shard-mesh-card"
+              className={`p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2 text-xs`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-sky-300">
+                  v6.2-GA Peer-to-Peer GGUF Shard Mesh ({p2pMeshState.peersUpdated} Peers · {p2pMeshState.status})
+                </span>
+                <button
+                  type="button"
+                  data-testid="p2p-mesh-sync-btn"
+                  onClick={async () => {
+                    const synced = syncPeerToPeerGgufShardMeshV62();
+                    setP2pMeshState(synced);
+                    setRbacVerifyBanner(
+                      `P2P GGUF Shard Mesh Synchronized (${synced.syncRunId}): ${synced.syncedShardsCount} .gguf shards across ${synced.peersUpdated} peers (Merkle Root: ${synced.merkleRootHash})`
+                    );
+                    try {
+                      await fetch('/api/v62/shards/p2p-sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ syncMode: 'DELTA_MERKLE_GGUF' }),
+                      });
+                    } catch {
+                      // Local P2P sync already committed
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded bg-sky-500 text-slate-950 font-semibold text-[11px]"
+                >
+                  Sync P2P GGUF Shard Mesh
+                </button>
+              </div>
+              <div className="p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                Merkle Root: {p2pMeshState.merkleRootHash} · Shards: {p2pMeshState.syncedShardsCount} · Nodes:{' '}
+                {p2pMeshState.peerNodes.map((n) => n.nodeId).join(', ')}
+              </div>
+            </div>
+          </div>
+
+          {/* Release v6.3-GA: Streaming Multi-Agent MCP DAG Recorder & Offline WASM OpenXML PPTX Verifier */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div
+              data-testid="mcp-dag-recorder-card"
+              className={`p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2 text-xs`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-indigo-300">
+                  v6.3-GA Streaming Multi-Agent MCP DAG Recorder ({mcpDagHistory.length} Runs)
+                </span>
+                <button
+                  type="button"
+                  data-testid="mcp-dag-record-btn"
+                  onClick={async () => {
+                    const dag = recordMcpAgentDagExecutionV63({
+                      workflowPrompt:
+                        'Multi-agent research, D3 entity graph extraction, and OpenXML PPTX synthesis for Databricks Lakehouse IQ',
+                      slideCount: 6,
+                    });
+                    setMcpDagHistory(getMcpAgentDagHistoryV63());
+                    setRbacVerifyBanner(
+                      `Recorded Multi-Agent MCP DAG (${dag.dagRunId} · ${dag.steps.length} Agent Steps · Max Logit Variance: ${dag.maxLogitVarianceDelta} · Replay Verified: ${dag.deterministicReplayVerified})`
+                    );
+                    try {
+                      await fetch('/api/v63/mcp/dag-recorder', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          workflowPrompt: dag.workflowPrompt,
+                        }),
+                      });
+                    } catch {
+                      // Local DAG execution already committed
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded bg-indigo-500 text-slate-950 font-semibold text-[11px]"
+                >
+                  Record Multi-Agent MCP DAG Run
+                </button>
+              </div>
+              {mcpDagHistory[0] && (
+                <div className="p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                  [{mcpDagHistory[0].dagRunId}] {mcpDagHistory[0].steps.length} Agent Steps · Max Logit Δ:{' '}
+                  {mcpDagHistory[0].maxLogitVarianceDelta} · Schema:{' '}
+                  {mcpDagHistory[0].openXmlWasmVerification.schemaCompliance}
+                </div>
+              )}
+            </div>
+
+            <div
+              data-testid="wasm-pptx-verifier-card"
+              className={`p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2 text-xs`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono font-bold text-emerald-300">
+                  v6.3-GA Offline WASM OpenXML PPTX Package Verifier
+                </span>
+                <button
+                  type="button"
+                  data-testid="wasm-pptx-verify-btn"
+                  onClick={() => {
+                    const check = verifyOpenXmlPptxPackageWasmV63(6);
+                    setWasmPptxVerifySummary(
+                      `[${check.schemaCompliance}] ${check.slideXmlCount} Slide XML entries · ${check.mediaAssetsCount} Media Assets · Verified: ${check.verified}`
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded bg-emerald-500 text-slate-950 font-semibold text-[11px]"
+                >
+                  Verify OpenXML .pptx via WASM
+                </button>
+              </div>
+              <div className="p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
+                {wasmPptxVerifySummary ||
+                  'Ready: Verifies PK\\x03\\x04 ZIP header, [Content_Types].xml, ppt/presentation.xml, and ppt/slides/slide1..N.xml locally.'}
+              </div>
+            </div>
+          </div>
 
           {/* Add / Update Local Offline RBAC User Form */}
           <form

@@ -20,6 +20,20 @@ import {
   PREBUILT_GGUF_MODEL_PACKAGES_V60,
   parseGgufFileAndBuildModelUpdateV60,
   GgufModelUpdateDescriptorV60,
+  HOSTED_ONLINE_GGUF_CATALOG_V63,
+  HostedOnlineGgufPackageV63,
+  executeGgufModelTerminalCommandV63,
+  GgufTerminalExecutionResultV63,
+  TerminalOutputVerbosityModeV64,
+  exportPaniniModelGgufAndInstallBundleV64,
+  ExportedModelGgufAndInstallBundleV64,
+  ONLINE_EXTERNAL_MODEL_CATALOG_V64,
+  OnlineExternalModelCatalogEntryV64,
+  installOnlineCatalogModelV64,
+  getTerminalAutocompleteSuggestionsV64,
+  runAutonomousModelSelfLearningAndTuningV64,
+  getModelSelfLearningStateV64,
+  AutonomousModelSelfLearningResultV64,
 } from '../utils/engineLogic';
 import { savePaniniKnowledgeShard } from '../utils/multimodalSuite';
 import {
@@ -38,6 +52,12 @@ import {
   ShieldCheck,
   Filter,
   GitCommit,
+  Terminal,
+  Play,
+  Globe,
+  Download,
+  HelpCircle,
+  Cpu,
 } from 'lucide-react';
 
 export type RegistrySubTab = 'models' | 'use_cases' | 'monitoring' | 'versions';
@@ -221,6 +241,296 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
   );
   const [ggufUpdateBanner, setGgufUpdateBanner] = useState<string | null>(null);
 
+  // Release v6.3-GA & v6.4-GA: Interactive GGUF Fetch & Auto-Update Terminal State
+  const [ggufTerminalCommand, setGgufTerminalCommand] = useState<string>(
+    HOSTED_ONLINE_GGUF_CATALOG_V63[0].sampleCurlCommand
+  );
+  const [ggufTerminalOutputMode, setGgufTerminalOutputMode] =
+    useState<TerminalOutputVerbosityModeV64>('INFO');
+  const [showOnlineModelMenu, setShowOnlineModelMenu] = useState<boolean>(true);
+  const [ggufTerminalLogs, setGgufTerminalLogs] = useState<GgufTerminalExecutionResultV63[]>(() => [
+    executeGgufModelTerminalCommandV63({
+      command: 'ollama pull panini-400b-moe-flagship-v6.3-q5_k_m.gguf',
+      targetModelId: 'panini-400b-flagship',
+      outputMode: 'INFO',
+    }),
+  ]);
+
+  // Release v6.4-GA: Downloadable GGUF Binary, Ollama Modelfile & Installer Bundle Exporter State
+  const [lastExportedBundle, setLastExportedBundle] =
+    useState<ExportedModelGgufAndInstallBundleV64 | null>(null);
+
+  // Release v6.4-GA: Autonomous Self-Learning Model Auto-Update & QLoRA Tuner State
+  const [selfLearningState, setSelfLearningState] = useState(() => getModelSelfLearningStateV64());
+  const [selectedSelfLearningStrategy, setSelectedSelfLearningStrategy] = useState<
+    AutonomousModelSelfLearningResultV64['tuningStrategy']
+  >('QLoRA-Differential-HotSwap');
+
+  const terminalAutocompleteSuggestions = getTerminalAutocompleteSuggestionsV64(
+    ggufTerminalCommand,
+    6
+  );
+
+  const handleDownloadModelGgufOrInstaller = (
+    model: StoredModel,
+    format: 'gguf' | 'modelfile' | 'installer_sh' | 'installer_ps1'
+  ) => {
+    const activeVer =
+      model.versions.find((v) => v.versionId === model.currentVersionId) || model.versions[0];
+    const bundle = exportPaniniModelGgufAndInstallBundleV64({
+      modelId: model.id,
+      modelName: model.name,
+      quantType: activeVer.quantType,
+      contextLength: activeVer.contextLength,
+      activeLayers: activeVer.activeLayers,
+      totalLayers: activeVer.totalLayers,
+      loraRank: activeVer.loraRank,
+      systemDirective: activeVer.systemDirective,
+    });
+    setLastExportedBundle(bundle);
+
+    const a = document.createElement('a');
+    if (format === 'gguf') {
+      a.href = bundle.ggufDataUrl;
+      a.download = bundle.ggufFileName;
+    } else if (format === 'modelfile') {
+      a.href = bundle.modelfileDataUrl;
+      a.download = bundle.modelfileFileName;
+    } else if (format === 'installer_sh') {
+      a.href = bundle.shellInstallerDataUrl;
+      a.download = bundle.shellInstallerFileName;
+    } else {
+      a.href = bundle.powershellInstallerDataUrl;
+      a.download = bundle.powershellInstallerFileName;
+    }
+    a.click();
+
+    setGgufUpdateBanner(
+      `Exported ${model.name} (${activeVer.quantType}) as ${a.download} — Ready for import into Ollama (${bundle.importCommands.ollamaCreateCmd}), LM Studio, or llama.cpp.`
+    );
+  };
+
+  const handleInstallOnlineCatalogModel = (entry: OnlineExternalModelCatalogEntryV64) => {
+    const installRes = installOnlineCatalogModelV64({
+      modelKeyOrFamily: entry.id,
+      targetPaniniModelId: ggufTargetModelId,
+      outputMode: ggufTerminalOutputMode,
+    });
+    const newVer = installRes.installedModel.versions[0];
+    onCloneModel(ggufTargetModelId, installRes.installedModel.name, {
+      versionTag: newVer.versionTag,
+      author: currentUserName,
+      quantType: newVer.quantType,
+      activeLayers: newVer.activeLayers,
+      totalLayers: newVer.totalLayers,
+      moeActiveExperts: newVer.moeActiveExperts,
+      moeTotalExperts: newVer.moeTotalExperts,
+      contextLength: newVer.contextLength,
+      systemDirective: newVer.systemDirective,
+      loraRank: newVer.loraRank,
+      notes: newVer.notes,
+    });
+    setGgufTerminalCommand(entry.installCommand);
+    const terminalEntry: GgufTerminalExecutionResultV63 = {
+      executionId: installRes.installationId,
+      command: entry.installCommand,
+      detectedTool: 'ollama',
+      fetchedUrlOrModel: entry.downloadUrl,
+      parsedGgufUpdate: installRes.parsedGgufUpdate,
+      persistedShardFile: installRes.persistedShardFile,
+      outputMode: ggufTerminalOutputMode,
+      isMenuOpened: true,
+      installedExternalModel: installRes.installedModel,
+      terminalStdout: installRes.terminalStdout,
+      executedAtUtc: installRes.installedAtUtc,
+    };
+    setGgufTerminalLogs((prev) => [terminalEntry, ...prev.slice(0, 7)]);
+    setGgufUpdateBanner(
+      `Auto-installed online model "${entry.displayName}" (${entry.family} · ${entry.quantType} · ${(entry.contextLength / 1024).toFixed(0)}K ctx) into Model Registry and synced shard ${installRes.persistedShardFile}.`
+    );
+  };
+
+  const handleRunSelfLearningAutoTune = async () => {
+    const targetModel =
+      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
+    const tuned = runAutonomousModelSelfLearningAndTuningV64({
+      targetModelId: targetModel.id,
+      targetModelName: targetModel.name,
+      tuningStrategy: selectedSelfLearningStrategy,
+      enableAutoContinuousLearning: selfLearningState.autoUpdateAndSelfLearningEnabled,
+    });
+    setSelfLearningState(getModelSelfLearningStateV64());
+
+    const baseVer =
+      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
+      targetModel.versions[0];
+
+    onCommitModelVersion(targetModel.id, {
+      versionTag: tuned.newVersionTag,
+      author: `${currentUserName} (Self-Learning Auto-Tuner)`,
+      quantType: baseVer.quantType,
+      activeLayers: Math.min(tuned.tunedHyperparameters.activeLayers, baseVer.totalLayers),
+      totalLayers: baseVer.totalLayers,
+      moeActiveExperts: baseVer.moeActiveExperts,
+      moeTotalExperts: baseVer.moeTotalExperts,
+      contextLength: baseVer.contextLength,
+      systemDirective: `${baseVer.systemDirective} | [${tuned.tuningRunId}: ${tuned.tuningStrategy} · Rank=${tuned.tunedHyperparameters.loraRank} · Temp=${tuned.tunedHyperparameters.temperature}]`,
+      loraRank: tuned.tunedHyperparameters.loraRank,
+      notes: tuned.differentialGgufPatchSummary,
+    });
+
+    setGgufUpdateBanner(
+      `${tuned.differentialGgufPatchSummary} Perplexity improved ${tuned.validationPerplexityBefore} → ${tuned.validationPerplexityAfter} (Maturity: ${tuned.maturityScoreAfter}%).`
+    );
+
+    try {
+      await fetch('/api/v64/models/self-learn-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetModelId: targetModel.id,
+          targetModelName: targetModel.name,
+          tuningStrategy: selectedSelfLearningStrategy,
+          enableAutoContinuousLearning: selfLearningState.autoUpdateAndSelfLearningEnabled,
+        }),
+      });
+    } catch {
+      // Offline local self-learning auto-tune already committed
+    }
+  };
+
+  const handleToggleAutoContinuousLearning = () => {
+    const nextEnabled = !selfLearningState.autoUpdateAndSelfLearningEnabled;
+    runAutonomousModelSelfLearningAndTuningV64({
+      targetModelId: ggufTargetModelId,
+      tuningStrategy: selectedSelfLearningStrategy,
+      enableAutoContinuousLearning: nextEnabled,
+    });
+    setSelfLearningState(getModelSelfLearningStateV64());
+  };
+
+  const applyParsedGgufToRegistry = (
+    parsed: GgufModelUpdateDescriptorV60,
+    sourceLabel = 'GGUF v3 Calibration Registry'
+  ) => {
+    setParsedGgufDescriptor(parsed);
+    setGgufCustomFileName(parsed.ggufFileName);
+
+    const targetModel =
+      models.find(
+        (m) =>
+          m.id === parsed.targetModelId ||
+          m.id === ggufTargetModelId ||
+          m.name.toLowerCase() === parsed.targetModelName.toLowerCase()
+      ) ||
+      inspectedModel ||
+      models[0];
+    const baseVer =
+      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
+      targetModel.versions[0];
+
+    onCommitModelVersion(targetModel.id, {
+      versionTag: parsed.versionTag,
+      author: currentUserName,
+      quantType: parsed.quantType,
+      activeLayers: Math.min(parsed.activeLayers, baseVer.totalLayers),
+      totalLayers: baseVer.totalLayers,
+      moeActiveExperts: Math.min(parsed.moeActiveExperts, baseVer.moeTotalExperts),
+      moeTotalExperts: baseVer.moeTotalExperts,
+      contextLength: parsed.contextLength,
+      systemDirective: parsed.systemDirective,
+      loraRank: parsed.loraRank,
+      notes: parsed.commitNotes,
+    });
+
+    const shard = savePaniniKnowledgeShard(`${targetModel.name} (${parsed.versionTag})`, {
+      syncedFromOnline: true,
+      cachedWikipediaSources: [
+        {
+          title: `GGUF v3 Model Update: ${parsed.ggufFileName}`,
+          snippet: `${parsed.commitNotes} | Facts: ${parsed.embeddedKnowledgeFacts.join(' ; ')}`,
+          url: `https://localhost:3000/models/gguf/${encodeURIComponent(parsed.ggufFileName)}`,
+          publicationOrSource: sourceLabel,
+          year: 2026,
+        },
+      ],
+    });
+
+    setGgufTargetModelId(targetModel.id);
+    setInspectedModelId(targetModel.id);
+    setGgufUpdateBanner(
+      `Updated ${targetModel.name} to ${parsed.versionTag} (${parsed.quantType} · ${parsed.tensorCount} tensors · ${parsed.contextLength.toLocaleString()} ctx) from ${parsed.ggufFileName} and synced shard ${shard.ggufShardFile}.`
+    );
+  };
+
+  const handleRunGgufTerminalCommand = async (
+    overrideCmd?: string,
+    overrideModelId?: string,
+    overrideMode?: TerminalOutputVerbosityModeV64
+  ) => {
+    const cmdToRun = (overrideCmd ?? ggufTerminalCommand).trim();
+    if (!cmdToRun) return;
+    if (overrideCmd) {
+      setGgufTerminalCommand(overrideCmd);
+    }
+    const modeToUse = overrideMode || ggufTerminalOutputMode;
+    const targetId = overrideModelId || ggufTargetModelId;
+    const localExec = executeGgufModelTerminalCommandV63({
+      command: cmdToRun,
+      targetModelId: targetId,
+      outputMode: modeToUse,
+      customFacts: ggufCustomCalibrationFact.trim()
+        ? [ggufCustomCalibrationFact.trim()]
+        : undefined,
+    });
+    setGgufTerminalLogs((prev) => [localExec, ...prev.slice(0, 7)]);
+    if (localExec.isMenuOpened) {
+      setShowOnlineModelMenu(true);
+    }
+    if (localExec.installedExternalModel) {
+      const extVer = localExec.installedExternalModel.versions[0];
+      onCloneModel(targetId, localExec.installedExternalModel.name, {
+        versionTag: extVer.versionTag,
+        author: currentUserName,
+        quantType: extVer.quantType,
+        activeLayers: extVer.activeLayers,
+        totalLayers: extVer.totalLayers,
+        moeActiveExperts: extVer.moeActiveExperts,
+        moeTotalExperts: extVer.moeTotalExperts,
+        contextLength: extVer.contextLength,
+        systemDirective: extVer.systemDirective,
+        loraRank: extVer.loraRank,
+        notes: extVer.notes,
+      });
+    }
+    if (!localExec.isHelpGuide && !localExec.isMenuOpened) {
+      applyParsedGgufToRegistry(
+        localExec.parsedGgufUpdate,
+        `GGUF Terminal (${localExec.detectedTool.toUpperCase()} · ${localExec.outputMode || modeToUse})`
+      );
+    }
+
+    try {
+      const res = await fetch('/api/v63/gguf/terminal-exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: cmdToRun,
+          targetModelId: targetId,
+          outputMode: modeToUse,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.execution) {
+          setGgufTerminalLogs((prev) => [data.execution, ...prev.slice(1, 8)]);
+        }
+      }
+    } catch {
+      // Offline local terminal execution already committed the GGUF update
+    }
+  };
+
   const handleSelectGgufPreset = (pkg: GgufModelUpdateDescriptorV60) => {
     setSelectedGgufPackageId(pkg.packageId);
     setGgufCustomFileName(pkg.ggufFileName);
@@ -270,48 +580,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
         ? [ggufCustomCalibrationFact.trim()]
         : undefined,
     });
-    setParsedGgufDescriptor(parsed);
-
-    const targetModel =
-      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
-    const baseVer =
-      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
-      targetModel.versions[0];
-
-    onCommitModelVersion(targetModel.id, {
-      versionTag: parsed.versionTag,
-      author: currentUserName,
-      quantType: parsed.quantType,
-      activeLayers: Math.min(parsed.activeLayers, baseVer.totalLayers),
-      totalLayers: baseVer.totalLayers,
-      moeActiveExperts: Math.min(parsed.moeActiveExperts, baseVer.moeTotalExperts),
-      moeTotalExperts: baseVer.moeTotalExperts,
-      contextLength: parsed.contextLength,
-      systemDirective: parsed.systemDirective,
-      loraRank: parsed.loraRank,
-      notes: parsed.commitNotes,
-    });
-
-    const shard = savePaniniKnowledgeShard(
-      `${targetModel.name} (${parsed.versionTag})`,
-      {
-        syncedFromOnline: false,
-        cachedWikipediaSources: [
-          {
-            title: `GGUF v3 Model Update: ${parsed.ggufFileName}`,
-            snippet: `${parsed.commitNotes} | Facts: ${parsed.embeddedKnowledgeFacts.join(' ; ')}`,
-            url: `https://localhost:3000/models/gguf/${encodeURIComponent(parsed.ggufFileName)}`,
-            publicationOrSource: 'GGUF v3 Calibration Registry',
-            year: 2026,
-          },
-        ],
-      }
-    );
-
-    setInspectedModelId(targetModel.id);
-    setGgufUpdateBanner(
-      `Updated ${targetModel.name} to ${parsed.versionTag} (${parsed.quantType} · ${parsed.tensorCount} tensors · ${parsed.contextLength.toLocaleString()} ctx) from ${parsed.ggufFileName} and synced shard ${shard.ggufShardFile}.`
-    );
+    applyParsedGgufToRegistry(parsed, 'GGUF v3 Calibration Registry');
   };
 
   const canEditOrClone = evaluateRbacPermission(currentUserRole, 'clone_and_edit_model');
@@ -676,7 +945,20 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                       className={`px-3 py-1.5 text-xs font-medium rounded-lg border ${borderClass} ${headingText} hover:border-sky-500/60 disabled:opacity-40 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0`}
                     >
                       <Copy className="w-3 h-3" />
-                      <span>Clone & Edit</span>
+                      <span>Clone &amp; Edit</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid={`card-export-gguf-btn-${model.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadModelGgufOrInstaller(model, 'gguf');
+                      }}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Export .GGUF</span>
                     </button>
                   </div>
                 </div>
@@ -684,7 +966,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
             })}
           </div>
 
-          {/* RELEASE v6.0-GA: GGUF (GPT-Generated Unified Format) PANINI MODEL UPDATER */}
+          {/* RELEASE v6.0-GA to v6.4-GA: GGUF UPDATER, EXPORTER, ONLINE MODEL HUB MENU & SELF-LEARNING AUTO-TUNER */}
           <div
             data-testid="gguf-model-updater-panel"
             className={`p-5 rounded-xl border ${borderClass} ${surfaceClass} space-y-4`}
@@ -692,26 +974,86 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
                 <div className={`text-xs font-mono ${mutedText}`}>
-                  GGUF v3 Binary & KV Tensor Format (Magic 0x47475546) · Panini Model Registry Updater
+                  GGUF v3 Binary &amp; KV Tensor Format (Magic 0x47475546) · Panini Model Registry Updater &amp; Portable Exporter (v6.4-GA)
                 </div>
                 <h3 className={`text-base font-semibold flex items-center gap-2 mt-0.5 ${headingText}`}>
                   <Database className="w-4 h-4 text-sky-400" />
-                  <span>Update Panini Models via GGUF (GPT-Generated Unified Format)</span>
+                  <span>Update, Export &amp; Self-Tune Panini Models via GGUF (GPT-Generated Unified Format)</span>
                 </h3>
                 <p className={`text-xs ${mutedText}`}>
-                  Select a GGUF v3 update package or upload a custom .gguf file to parse tensor count, quantization, active layers, context window, and KV calibration data and apply it directly to the target Panini model.
+                  Apply GGUF v3 updates, download portable `.gguf` binaries / Ollama Modelfiles / installer scripts for external LLMs, install online models (`DeepSeek`, `Llama`, `GLM`, `MiMo`, `Kimi`, `Bonsai D3`), or run Autonomous Self-Learning QLoRA tuning.
                 </p>
               </div>
-              <button
-                type="button"
-                data-testid="apply-gguf-model-update-btn"
-                onClick={handleApplyGgufUpdateToPaniniModel}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 inline-flex items-center gap-2 transition shrink-0 shadow-sm"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Apply GGUF Update to Panini Model</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  data-testid="export-model-gguf-btn"
+                  onClick={() => {
+                    const targetModel =
+                      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
+                    handleDownloadModelGgufOrInstaller(targetModel, 'gguf');
+                  }}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 inline-flex items-center gap-1.5 transition shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download .GGUF Binary</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="export-model-modelfile-btn"
+                  onClick={() => {
+                    const targetModel =
+                      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
+                    handleDownloadModelGgufOrInstaller(targetModel, 'modelfile');
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-mono font-semibold border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 inline-flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Ollama Modelfile</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="export-model-installer-btn"
+                  onClick={() => {
+                    const targetModel =
+                      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
+                    handleDownloadModelGgufOrInstaller(targetModel, 'installer_sh');
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-mono font-semibold border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 inline-flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Installer (.sh/.ps1)</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="apply-gguf-model-update-btn"
+                  onClick={handleApplyGgufUpdateToPaniniModel}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 inline-flex items-center gap-2 transition shadow-sm"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Apply GGUF Update</span>
+                </button>
+              </div>
             </div>
+
+            {lastExportedBundle && (
+              <div
+                data-testid="exported-gguf-bundle-status"
+                className="p-3 rounded-lg border border-sky-500/40 bg-sky-950/20 text-xs font-mono space-y-1"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sky-300 font-semibold">
+                  <span>
+                    Exported Portable Model Package: {lastExportedBundle.ggufFileName} (SHA-256: {lastExportedBundle.sha256Checksum.slice(0, 16)}... · Magic 0x47475546)
+                  </span>
+                  <span className="text-emerald-300">
+                    Compatible: {lastExportedBundle.compatibleRuntimes.join(' · ')}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Import into Ollama: <code className="text-emerald-300">{lastExportedBundle.importCommands.ollamaCreateCmd}</code> · Run: <code className="text-sky-300">{lastExportedBundle.importCommands.ollamaRunCmd}</code>
+                </div>
+              </div>
+            )}
 
             {ggufUpdateBanner && (
               <div
@@ -860,6 +1202,397 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                   {parsedGgufDescriptor.contextLength.toLocaleString()} Tokens)
                 </span>
               </div>
+            </div>
+
+            {/* RELEASE v6.3-GA & v6.4-GA: INTERACTIVE GGUF TERMINAL WITH AUTOCOMPLETE, INFO/DEBUG/VERBOSE MODES, `/?` GUIDE & ONLINE MODEL MENU */}
+            <div
+              data-testid="gguf-interactive-terminal-panel"
+              className="rounded-xl border border-emerald-500/40 bg-slate-950 p-4 space-y-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-emerald-400" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white font-mono">
+                      GGUF Fetch, Auto-Complete &amp; Online Model Hub Terminal (`ollama`, `curl`, `irm`, `wget`, `/?` Guide &amp; `/menu` · v6.4-GA)
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Supports Tab auto-complete, Output Modes (`INFO`, `DEBUG`, `VERBOSE`), `/?` Command Guides, and `/menu` (`panini-cli model-menu`) to select &amp; auto-install `DeepSeek`, `Llama`, `GLM`, `MiMo`, `Kimi`, `Bonsai D3`, and `Qwen`.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Output Mode Selector (`INFO` | `DEBUG` | `VERBOSE`) + `/?` Guide + `/menu` Toggle */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <div
+                    data-testid="gguf-terminal-mode-selector"
+                    className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono"
+                  >
+                    {(['INFO', 'DEBUG', 'VERBOSE'] as TerminalOutputVerbosityModeV64[]).map(
+                      (modeOpt) => (
+                        <button
+                          key={modeOpt}
+                          type="button"
+                          data-testid={`gguf-terminal-mode-${modeOpt.toLowerCase()}`}
+                          onClick={() => setGgufTerminalOutputMode(modeOpt)}
+                          className={`px-2 py-1 rounded transition-colors ${
+                            ggufTerminalOutputMode === modeOpt
+                              ? 'bg-emerald-500 text-slate-950 font-bold'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {modeOpt}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="gguf-terminal-help-guide-btn"
+                    onClick={() => handleRunGgufTerminalCommand('/?')}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-mono text-[11px] font-semibold inline-flex items-center gap-1"
+                  >
+                    <HelpCircle className="w-3 h-3" />
+                    <span>/? Command Guide</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="open-online-model-menu-btn"
+                    onClick={() => {
+                      setShowOnlineModelMenu((v) => !v);
+                      handleRunGgufTerminalCommand('panini-cli model-menu');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-mono text-[11px] font-semibold inline-flex items-center gap-1"
+                  >
+                    <Globe className="w-3 h-3" />
+                    <span>/menu · Online Model Menu</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Command Input + Tab Auto-Complete + Run Button */}
+              <div className="space-y-1.5">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 font-mono text-xs text-emerald-300">
+                    <span className="text-slate-500 select-none">$</span>
+                    <input
+                      type="text"
+                      data-testid="gguf-terminal-command-input"
+                      value={ggufTerminalCommand}
+                      onChange={(e) => setGgufTerminalCommand(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Tab' && terminalAutocompleteSuggestions.length > 0) {
+                          e.preventDefault();
+                          setGgufTerminalCommand(terminalAutocompleteSuggestions[0].command);
+                        } else if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleRunGgufTerminalCommand();
+                        }
+                      }}
+                      placeholder="Type command or press Tab to auto-complete (try: /? | /menu | panini-cli model-menu install deepseek)"
+                      className="w-full bg-transparent text-emerald-300 focus:outline-none font-mono text-xs"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="gguf-terminal-run-btn"
+                    onClick={() => handleRunGgufTerminalCommand()}
+                    className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs inline-flex items-center gap-1.5 shrink-0"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Run ({ggufTerminalOutputMode})</span>
+                  </button>
+                </div>
+
+                {/* Live Auto-Complete Suggestion Strip */}
+                <div
+                  data-testid="gguf-terminal-autocomplete-bar"
+                  className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono"
+                >
+                  <span className="text-slate-400">Auto-Complete (Tab / Click):</span>
+                  {terminalAutocompleteSuggestions.map((sug, idx) => (
+                    <button
+                      key={sug.command}
+                      type="button"
+                      data-testid={`gguf-autocomplete-suggestion-${idx}`}
+                      onClick={() => setGgufTerminalCommand(sug.command)}
+                      title={sug.description}
+                      className="px-2 py-0.5 rounded bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-slate-800 transition-colors"
+                    >
+                      {sug.command}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Tool Presets: ollama, curl, irm, wget, /?, /menu */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                <span className="text-slate-400 mr-1">Quick CLI Presets:</span>
+                {[
+                  {
+                    label: 'ollama pull (Flagship Q5_K_M)',
+                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[0].sampleOllamaCommand,
+                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[0].targetModelId,
+                  },
+                  {
+                    label: 'curl -L (Coder Q8_0)',
+                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[1].sampleCurlCommand,
+                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[1].targetModelId,
+                  },
+                  {
+                    label: 'irm PowerShell (Vision Q4_K_M)',
+                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[2].sampleIrmCommand,
+                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[2].targetModelId,
+                  },
+                  {
+                    label: 'wget (Edge SecOps IQ3_XXS)',
+                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[3].sampleWgetCommand,
+                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[3].targetModelId,
+                  },
+                  {
+                    label: 'panini-cli model-menu install deepseek',
+                    cmd: 'panini-cli model-menu install deepseek',
+                    modelId: 'panini-400b-flagship',
+                  },
+                  {
+                    label: 'panini-cli model-menu install bonsai-d3',
+                    cmd: 'panini-cli model-menu install bonsai-d3',
+                    modelId: 'panini-coder-polyglot',
+                  },
+                ].map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    data-testid={`gguf-terminal-preset-${idx}`}
+                    onClick={() => handleRunGgufTerminalCommand(preset.cmd, preset.modelId)}
+                    className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-300 border border-slate-800 transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* RELEASE v6.4-GA: ONLINE FRONTIER MODEL HUB MENU (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen) */}
+              {showOnlineModelMenu && (
+                <div
+                  data-testid="gguf-online-model-menu-panel"
+                  className="p-3.5 rounded-xl bg-slate-900/95 border border-sky-500/40 space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-mono font-bold text-sky-300">
+                      ONLINE FRONTIER MODEL HUB MENU (`panini-cli model-menu` · `/menu`) — Select to Auto-Install `.gguf` Model
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      DeepSeek · Llama · GLM · MiMo · Kimi · Bonsai D3 · Qwen
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {ONLINE_EXTERNAL_MODEL_CATALOG_V64.map((entry) => {
+                      const familySlug = entry.family.toLowerCase().replace(/\s+/g, '-');
+                      return (
+                        <div
+                          key={entry.id}
+                          data-testid={`online-model-menu-card-${familySlug}`}
+                          className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2 text-xs"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-1 font-mono text-[11px]">
+                              <span className="text-amber-300 font-bold">{entry.family}</span>
+                              <span className="text-sky-400">
+                                {entry.quantType} · {entry.sizeGb} GB
+                              </span>
+                            </div>
+                            <div className="font-semibold text-white text-xs">
+                              {entry.displayName}
+                            </div>
+                            <div className="text-[10px] font-mono text-emerald-400 truncate">
+                              $ {entry.installCommand}
+                            </div>
+                            <div className="text-[10px] text-slate-400 line-clamp-2">
+                              {entry.specialization}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`install-external-model-btn-${familySlug}`}
+                            onClick={() => handleInstallOnlineCatalogModel(entry)}
+                            className="w-full py-1.5 px-2.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-mono text-[11px] font-semibold transition-colors"
+                          >
+                            Auto-Install {entry.family} Model →
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Online Hosted GGUF Catalog with 1-Click Terminal Fetch & Auto-Apply */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
+                  <span className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Online Hosted `.gguf` Model Repository (1-Click Terminal Fetch &amp; Auto-Apply):</span>
+                  </span>
+                  <span className="text-slate-500">https://models.panini.local/gguf/*</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                  {HOSTED_ONLINE_GGUF_CATALOG_V63.map((hosted: HostedOnlineGgufPackageV63) => (
+                    <div
+                      key={hosted.id}
+                      data-testid={`hosted-online-gguf-card-${hosted.id}`}
+                      className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex flex-col justify-between gap-2 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-mono text-[11px] text-emerald-400 font-semibold truncate">
+                          {hosted.fileName}
+                        </div>
+                        <div className="text-[11px] text-white font-semibold">
+                          {hosted.targetModelName} · {hosted.quantType} ({hosted.sizeGb} GB)
+                        </div>
+                        <div className="text-[10px] text-slate-400 line-clamp-2">
+                          {hosted.releaseNotes}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`fetch-online-gguf-btn-${hosted.id}`}
+                        onClick={() =>
+                          handleRunGgufTerminalCommand(
+                            hosted.sampleCurlCommand,
+                            hosted.targetModelId
+                          )
+                        }
+                        className="w-full py-1.5 px-2 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-mono text-[11px] font-semibold transition-colors"
+                      >
+                        Fetch Online &amp; Auto-Apply →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Live Terminal Output Stream */}
+              <div
+                data-testid="gguf-terminal-stdout"
+                className="p-3 rounded-lg bg-black/90 border border-slate-800 font-mono text-[11px] text-emerald-300 max-h-56 overflow-y-auto whitespace-pre-wrap leading-relaxed"
+              >
+                {ggufTerminalLogs[0]?.terminalStdout}
+              </div>
+            </div>
+
+            {/* RELEASE v6.4-GA: AUTONOMOUS SELF-LEARNING MODEL AUTO-UPDATE & HYPERPARAMETER TUNING ENGINE */}
+            <div
+              data-testid="model-auto-update-self-learning-panel"
+              className={`p-4 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-3`}
+            >
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-amber-400" />
+                    <h4 className={`text-sm font-semibold ${headingText}`}>
+                      Autonomous Model Auto-Update &amp; Self-Learning Hyperparameter Tuner (v6.4-GA)
+                    </h4>
+                  </div>
+                  <p className={`text-xs ${mutedText} mt-0.5`}>
+                    Continuously harvests verified local `.gguf` Knowledge Shards and D3 Knowledge Graph entity relationships to auto-tune LoRA Rank, Alpha, Temperature, Top-P, and differential GGUF tensors without model downtime.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <select
+                    aria-label="Self-Learning Tuning Strategy"
+                    data-testid="self-learning-strategy-select"
+                    value={selectedSelfLearningStrategy}
+                    onChange={(e) =>
+                      setSelectedSelfLearningStrategy(
+                        e.target.value as AutonomousModelSelfLearningResultV64['tuningStrategy']
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-lg border ${borderClass} bg-slate-950 text-xs font-mono text-sky-300`}
+                  >
+                    <option value="QLoRA-Differential-HotSwap">QLoRA-Differential-HotSwap</option>
+                    <option value="DoRA-Knowledge-Distillation">DoRA-Knowledge-Distillation</option>
+                    <option value="RLHF-Shard-Alignment">RLHF-Shard-Alignment</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    data-testid="toggle-auto-self-learning-btn"
+                    onClick={handleToggleAutoContinuousLearning}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-colors ${
+                      selfLearningState.autoUpdateAndSelfLearningEnabled
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    Continuous Self-Learning:{' '}
+                    {selfLearningState.autoUpdateAndSelfLearningEnabled ? 'ENABLED' : 'PAUSED'}
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="trigger-self-learning-tune-btn"
+                    onClick={handleRunSelfLearningAutoTune}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 inline-flex items-center gap-1.5 transition"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Auto-Update &amp; Self-Learn Tune Model Now</span>
+                  </button>
+                </div>
+              </div>
+
+              {selfLearningState.lastTuningResult && (
+                <div
+                  data-testid="self-learning-last-run-card"
+                  className="grid grid-cols-1 md:grid-cols-4 gap-2.5 text-xs font-mono"
+                >
+                  <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                    <div className="text-slate-400 text-[10px]">Last Auto-Tune Run</div>
+                    <div className="text-emerald-400 font-semibold">
+                      {selfLearningState.lastTuningResult.tuningRunId} ·{' '}
+                      {selfLearningState.lastTuningResult.newVersionTag}
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate">
+                      {selfLearningState.lastTuningResult.targetModelName}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                    <div className="text-slate-400 text-[10px]">Self-Learned Corpus</div>
+                    <div className="text-sky-300 font-semibold">
+                      {selfLearningState.lastTuningResult.harvestedShardsCount} Shards ·{' '}
+                      {selfLearningState.lastTuningResult.harvestedFactsCount} Facts
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      {selfLearningState.lastTuningResult.d3GraphEntitiesUsed} D3 Graph Entities
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                    <div className="text-slate-400 text-[10px]">Tuned Hyperparameters</div>
+                    <div className="text-amber-300 font-semibold">
+                      LoRA Rank={selfLearningState.lastTuningResult.tunedHyperparameters.loraRank}{' '}
+                      (α={selfLearningState.lastTuningResult.tunedHyperparameters.loraAlpha})
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Temp={selfLearningState.lastTuningResult.tunedHyperparameters.temperature} ·
+                      Top-P={selfLearningState.lastTuningResult.tunedHyperparameters.topP}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-950/90 border border-slate-800">
+                    <div className="text-slate-400 text-[10px]">Perplexity &amp; Maturity Gain</div>
+                    <div className="text-emerald-300 font-semibold">
+                      PPL {selfLearningState.lastTuningResult.validationPerplexityBefore} →{' '}
+                      {selfLearningState.lastTuningResult.validationPerplexityAfter}
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Maturity: {selfLearningState.lastTuningResult.maturityScoreBefore}% →{' '}
+                      {selfLearningState.lastTuningResult.maturityScoreAfter}%
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

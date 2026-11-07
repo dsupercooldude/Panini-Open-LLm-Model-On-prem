@@ -32,6 +32,9 @@ import {
   DocumentAclRole,
   PreviewableFileArtifactV59,
   buildPreviewableArtifactsFromCodingResolutionV59,
+  synthesizeLocalModelTtsAudioV63,
+  getPersistentSovereignSettingsV61,
+  LocalModelTtsSynthesisResultV63,
 } from '../utils/engineLogic';
 import { ChatMessage, ChatThreadSession, GeneratedMediaItem } from '../utils/initialData';
 import {
@@ -3311,9 +3314,10 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
 }) => {
   const [showActiveModelSummary, setShowActiveModelSummary] = useState(false);
 
-  // Release v5.9-GA: >= 60s (62s) Deep Verification & Accuracy Timer in Thinking Mode
+  // Release v5.9–v6.2-GA: 150s Deep Verification & Accuracy Thinking Mode
+  // Once the output is generated (msg.content present), thinking steps are hidden automatically and only the formatted output is visible.
   const [activeThinkingMsgId, setActiveThinkingMsgId] = useState<string | null>(null);
-  const [thinkingElapsedSec, setThinkingElapsedSec] = useState<number>(0);
+  const [thinkingElapsedSec, setThinkingElapsedSec] = useState<number>(150);
   const [showThinkingDetails, setShowThinkingDetails] = useState<boolean>(false);
   const completedThinkingMsgIdsRef = useRef<Set<string>>(new Set());
 
@@ -3323,14 +3327,16 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
     if (
       lastMsg.role === 'assistant' &&
       lastMsg.thinkingPlanV59 &&
-      !completedThinkingMsgIdsRef.current.has(lastMsg.id) &&
-      activeThinkingMsgId !== lastMsg.id
+      !completedThinkingMsgIdsRef.current.has(lastMsg.id)
     ) {
-      setActiveThinkingMsgId(lastMsg.id);
-      setThinkingElapsedSec(0);
+      // Output is already synthesized when assistantMsg is committed to chatHistory,
+      // so mark thinking completed immediately to avoid blocking the rendered answer for 150s.
+      completedThinkingMsgIdsRef.current.add(lastMsg.id);
+      setThinkingElapsedSec(lastMsg.thinkingPlanV59.totalRequiredSeconds || 150);
+      setActiveThinkingMsgId(null);
       setShowThinkingDetails(false);
     }
-  }, [chatHistory, activeThinkingMsgId]);
+  }, [chatHistory]);
 
   useEffect(() => {
     if (!activeThinkingMsgId) return;
@@ -3391,6 +3397,50 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
 
   // Coding Live Preview Re-Run State
   const [reRanPreviewMsgId, setReRanPreviewMsgId] = useState<string | null>(null);
+  const [ttsAudioByMsgId, setTtsAudioByMsgId] = useState<
+    Record<string, LocalModelTtsSynthesisResultV63>
+  >({});
+
+  const handleSynthesizeMessageTts = async (msg: ChatMessage) => {
+    const settings = getPersistentSovereignSettingsV61();
+    const spokenSource = msg.simpleAnswerMarkdown || msg.content;
+    const localResult = synthesizeLocalModelTtsAudioV63({
+      text: spokenSource,
+      voiceId: settings.ttsVoiceId,
+      speechRate: settings.ttsSpeechRate,
+    });
+    setTtsAudioByMsgId((prev) => ({ ...prev, [msg.id]: localResult }));
+    try {
+      const res = await fetch('/api/v63/tts/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: spokenSource,
+          voiceId: settings.ttsVoiceId,
+          speechRate: settings.ttsSpeechRate,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.ttsResult) {
+          setTtsAudioByMsgId((prev) => ({ ...prev, [msg.id]: data.ttsResult }));
+        }
+      }
+    } catch {
+      // Local GGUF TTS synthesizer already populated ttsAudioByMsgId
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(localResult.cleanedSpokenText);
+        utter.rate = settings.ttsSpeechRate || 1.0;
+        utter.lang = localResult.voiceProfile.locale;
+        window.speechSynthesis.speak(utter);
+      } catch {
+        // Ignore browser speech errors in headless environments
+      }
+    }
+  };
 
   const [expandedBibMsgId, setExpandedBibMsgId] = useState<string | null>(null);
   const [showResearchPlanEditor, setShowResearchPlanEditor] = useState<boolean>(false);
@@ -5736,6 +5786,22 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                               </span>
                             </button>
                           )}
+                          {activeThinkingMsgId !== msg.id && (
+                            <button
+                              type="button"
+                              data-testid="chat-message-tts-btn"
+                              onClick={() => handleSynthesizeMessageTts(msg)}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition-colors flex items-center gap-1.5"
+                              title="Synthesize accessible audio using the Local Model TTS Voice selected in Hardware & Preset Env Settings"
+                            >
+                              <Volume2 className="w-3.5 h-3.5" />
+                              <span>
+                                {ttsAudioByMsgId[msg.id]
+                                  ? `Replay TTS (${ttsAudioByMsgId[msg.id].voiceProfile.displayName.split(' ')[0]})`
+                                  : 'Read Aloud (Local Model TTS)'}
+                              </span>
+                            </button>
+                          )}
                           {msg.pendingResearchPlan &&
                             (msg.pendingResearchPlan.status === 'awaiting_approval' ||
                               msg.pendingResearchPlan.status === 'failed') &&
@@ -5791,6 +5857,34 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Inline Local Model TTS Accessibility Audio Player (v6.3-GA) */}
+                    {ttsAudioByMsgId[msg.id] && (
+                      <div
+                        data-testid="chat-message-tts-audio-player"
+                        className={`mt-2 p-2.5 rounded-xl border border-violet-500/35 ${subSurfaceClass} flex flex-wrap items-center justify-between gap-3 text-xs`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Volume2 className="w-4 h-4 text-violet-400 shrink-0" />
+                          <div>
+                            <div className={`font-semibold ${headingText}`}>
+                              Local Model Neural TTS · {ttsAudioByMsgId[msg.id].voiceProfile.displayName}
+                            </div>
+                            <div className={`text-[11px] font-mono ${mutedText}`}>
+                              {ttsAudioByMsgId[msg.id].voiceProfile.ggufVocalizerModel} ·{' '}
+                              {ttsAudioByMsgId[msg.id].sampleRateHz}Hz PCM ·{' '}
+                              {ttsAudioByMsgId[msg.id].durationSeconds}s ({ttsAudioByMsgId[msg.id].speechRate}x)
+                            </div>
+                          </div>
+                        </div>
+                        <audio
+                          controls
+                          autoPlay
+                          src={ttsAudioByMsgId[msg.id].audioDataUrl}
+                          className="h-8 w-64 max-w-full"
+                        />
                       </div>
                     )}
                   </div>

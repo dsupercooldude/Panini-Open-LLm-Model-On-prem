@@ -677,12 +677,83 @@ export function getPaniniKnowledgeShard(query: string): PaniniOfflineKnowledgeSh
   const fromMem = inMemoryPaniniShardMap.get(shardKey);
   if (fromMem) return fromMem;
 
+  const stopWords = new Set([
+    'create',
+    'generate',
+    'image',
+    'video',
+    'music',
+    'photo',
+    'render',
+    'scene',
+    'with',
+    'about',
+    'from',
+    'that',
+    'this',
+    'what',
+    'where',
+    'when',
+    'which',
+    'explain',
+    'tell',
+    'make',
+    'show',
+    'company',
+    'history',
+    'product',
+    'portfolio',
+    'features',
+    'data',
+    'cloud',
+    'security',
+    'platform',
+    'system',
+    'systems',
+    'architecture',
+    'zero',
+    'trust',
+    'enterprise',
+    'autonomous',
+    'sovereign',
+    'center',
+    'guide',
+    'report',
+    'overview',
+    'pptx',
+    'slide',
+    'slides',
+    'deck',
+    'presentation',
+    'founders',
+    'founding',
+    'model',
+    'models',
+    'network',
+    'server',
+    'table',
+    'tables',
+  ]);
+
+  const queryTokens = shardKey
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4 && !stopWords.has(w));
+
   // Substring / entity match across all saved shards (longest matching shardKey wins)
   let bestMatch: PaniniOfflineKnowledgeShard | undefined;
   let bestMatchLen = 0;
   for (const [k, shard] of inMemoryPaniniShardMap.entries()) {
-    if (!k || k.length < 3) continue;
-    if (shardKey.includes(k) || k.includes(shardKey)) {
+    if (!k || k.length < 4) continue;
+    const shardTokens = k
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4 && !stopWords.has(w));
+    const isDirectSubstring = shardKey.includes(k) || k.includes(shardKey);
+    const primaryShardEntity = shardTokens[0];
+    const hasEntityTokenOverlap =
+      Boolean(primaryShardEntity) &&
+      primaryShardEntity.length >= 5 &&
+      queryTokens.includes(primaryShardEntity);
+    if (isDirectSubstring || (hasEntityTokenOverlap && shardTokens.length <= 3)) {
       if (k.length > bestMatchLen) {
         bestMatch = shard;
         bestMatchLen = k.length;

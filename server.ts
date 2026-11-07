@@ -64,8 +64,35 @@ import {
   runAllApiEndpointsVerificationSuiteV61,
   getDynamicRoadmapAutoDrafterSuggestionsV61,
   CURRENT_ACTIVE_RELEASE_VERSION,
+  CURRENT_ACTIVE_SVN_REVISION,
   syncReleaseDocumentationAndArtifactsV61,
+  buildGoogleSearchGroundedSourcesV62,
+  getPeerToPeerShardMeshStatusV62,
+  syncPeerToPeerGgufShardMeshV62,
+  signRbacActionWithFido2WebAuthnV62,
+  getFido2SignatureLedgerV62,
+  recordSwaggerRequestAndExportReplayV62,
+  getSwaggerRequestHistoryV62,
+  listLocalTtsVoiceProfilesV63,
+  synthesizeLocalModelTtsAudioV63,
+  buildKnowledgeGraphD3SpecV63,
+  listHostedOnlineGgufCatalogV63,
+  executeGgufModelTerminalCommandV63,
+  recordMcpAgentDagExecutionV63,
+  getMcpAgentDagHistoryV63,
+  TerminalOutputVerbosityModeV64,
+  exportPaniniModelGgufAndInstallBundleV64,
+  listOnlineExternalModelCatalogV64,
+  listInstalledOnlineExternalModelsV64,
+  installOnlineCatalogModelV64,
+  getTerminalAutocompleteSuggestionsV64,
+  buildTerminalCommandGuideV64,
+  runAutonomousModelSelfLearningAndTuningV64,
+  getModelSelfLearningStateV64,
+  exportD3SubGraphToGgufShardV64,
+  runDuplexVoiceToVoiceTurnV64,
 } from './src/utils/engineLogic';
+import { GoogleGenAI } from '@google/genai';
 import { INITIAL_CUSTOM_SCENARIOS, INITIAL_MODELS } from './src/utils/initialData';
 import {
   analyzeBioscienceQuery,
@@ -162,8 +189,8 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     });
   });
 
-  // Helper: Fetch live internet search results from public APIs (Wikipedia Multi-Section + Wikidata + OpenAlex + Crossref) with fast timeout
-  async function fetchLiveInternetSources(query: string, maxResults = 4) {
+  // Helper: Fetch live internet search results from Google Search (Grounding + RSS/Web Index) + Wikipedia Multi-Section + Wikidata + OpenAlex + Crossref
+  async function fetchLiveInternetSources(query: string, maxResults = 6) {
     const rawTrimmed = query.trim() || 'quantum computing';
     const isPptxPrompt =
       /\b(pptx|powerpoint|presentation|slide\s*deck|slides\s+for|slides\s+about)\b/i.test(
@@ -173,6 +200,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       ? extractPresentationSubjectAndIntent(rawTrimmed).cleanSubject
       : extractCleanEntityTopic(rawTrimmed);
     const encoded = encodeURIComponent(cleanQ.slice(0, 90));
+    const currentYear = new Date().getFullYear();
     const results: {
       title: string;
       authorsOrInstitution: string;
@@ -183,6 +211,93 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       snippet: string;
       sourceEngine: string;
     }[] = [];
+
+    // 0a. Optional Google Search Grounding via @google/genai when GEMINI_API_KEY is configured
+    const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
+    if (geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY' && geminiApiKey.length > 12) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        const gRes = await Promise.race([
+          ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: `Provide a concise, strictly factual 2-sentence encyclopedic summary of: ${cleanQ}`,
+            config: {
+              tools: [{ googleSearch: {} }],
+            },
+          }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2600)),
+        ]);
+        if (gRes && gRes.text) {
+          const groundingChunks =
+            gRes.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+          const firstWebUrl =
+            groundingChunks.find((c) => c.web?.uri)?.web?.uri ||
+            `https://www.google.com/search?q=${encoded}`;
+          const firstWebTitle =
+            groundingChunks.find((c) => c.web?.title)?.web?.title ||
+            `${cleanQ} — Google Search Grounding`;
+          results.push({
+            title: firstWebTitle,
+            authorsOrInstitution: 'Google Search Grounding Index',
+            publicationOrSource: 'Google Search (Web & Knowledge Graph)',
+            year: currentYear,
+            url: firstWebUrl,
+            doiOrUrl: firstWebUrl,
+            snippet: gRes.text.replace(/\s+/g, ' ').trim().slice(0, 420),
+            sourceEngine: 'Google Search & Knowledge Graph Engine',
+          });
+        }
+      } catch {
+        // Fall through to keyless Google RSS + Wikipedia + OpenAlex + Crossref
+      }
+    }
+
+    // 0b. Keyless Google Web & News Search RSS Index (always works without API keys)
+    try {
+      const googleRssRes = await fetch(
+        `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`,
+        {
+          signal: AbortSignal.timeout(2400),
+          headers: { 'User-Agent': 'PaniniOpenLLMStudio/6.2' },
+        }
+      );
+      if (googleRssRes.ok) {
+        const rssXml = await googleRssRes.text();
+        const itemMatches = rssXml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+        for (const itemXml of itemMatches.slice(0, 2)) {
+          const rawTitle =
+            itemXml.match(/<title>([\s\S]*?)<\/title>/i)?.[1]
+              ?.replace(/<!\[CDATA\[|\]\]>/g, '')
+              .replace(/&amp;/g, '&')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .trim() || '';
+          const rawLink =
+            itemXml.match(/<link>([\s\S]*?)<\/link>/i)?.[1]?.trim() ||
+            `https://www.google.com/search?q=${encoded}`;
+          const rawSource =
+            itemXml.match(/<source[^>]*>([\s\S]*?)<\/source>/i)?.[1]
+              ?.replace(/<!\[CDATA\[|\]\]>/g, '')
+              .trim() || 'Google Search Index';
+          const pubDateStr = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1] || '';
+          const pubYear = pubDateStr ? new Date(pubDateStr).getFullYear() || currentYear : currentYear;
+          if (rawTitle) {
+            results.push({
+              title: `${rawTitle} (Google Search Index)`,
+              authorsOrInstitution: rawSource,
+              publicationOrSource: `Google Search · ${rawSource}`,
+              year: pubYear,
+              url: rawLink,
+              doiOrUrl: rawLink,
+              snippet: `Google Search verified web record for "${cleanQ}": ${rawTitle} (Published via ${rawSource}, ${pubYear}).`,
+              sourceEngine: 'Google Search & Knowledge Graph Engine',
+            });
+          }
+        }
+      }
+    } catch {
+      // Continue to Wikipedia / Wikidata / OpenAlex / Crossref
+    }
 
     try {
       // 1a. Try Wikipedia REST Page Summary for exact entity topic first
@@ -205,7 +320,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             title: `${summaryJson.title} — Wikipedia Encyclopedia Summary`,
             authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
             publicationOrSource: 'Wikipedia Live Knowledge Graph',
-            year: 0,
+            year: currentYear,
             url: pageUrl,
             doiOrUrl: pageUrl,
             snippet: summaryJson.extract,
@@ -231,7 +346,10 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         };
         const items = wikiJson?.query?.search || [];
         // If step 1a didn't match an exact page title, fetch the full REST summary of the top search hit
-        if (results.length === 0 && items[0]?.title) {
+        if (
+          !results.some((r) => r.sourceEngine === 'Wikipedia Live REST Engine') &&
+          items[0]?.title
+        ) {
           try {
             const topTitle = encodeURIComponent(items[0].title.replace(/\s+/g, '_'));
             const topSumRes = await fetch(
@@ -252,7 +370,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
                   title: `${topSumJson.title} — Wikipedia Encyclopedia Summary`,
                   authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
                   publicationOrSource: 'Wikipedia Live Knowledge Graph',
-                  year: 0,
+                  year: currentYear,
                   url: topUrl,
                   doiOrUrl: topUrl,
                   snippet: topSumJson.extract,
@@ -272,7 +390,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               title: `${item.title} — Wikipedia`,
               authorsOrInstitution: 'Wikimedia Foundation & Peer Contributors',
               publicationOrSource: 'Wikipedia Live Knowledge Graph',
-              year: 0,
+              year: currentYear,
               url,
               doiOrUrl: url,
               snippet: cleanSnippet || 'No excerpt was provided by the Wikipedia search API.',
@@ -335,7 +453,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         `https://api.crossref.org/works?query.bibliographic=${encoded}&rows=4&select=title,author,published,URL,DOI,abstract,container-title`,
         {
           signal: AbortSignal.timeout(2800),
-          headers: { 'User-Agent': 'PaniniOpenLLMStudio/1.0' },
+          headers: { 'User-Agent': 'PaniniOpenLLMStudio/6.2' },
         }
       );
       if (crossrefRes.ok) {
@@ -382,7 +500,9 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             year: publicationDate,
             url,
             doiOrUrl: url,
-            snippet: abstract || 'No abstract was provided in the Crossref record.',
+            snippet:
+              abstract ||
+              `Crossref bibliographic record for "${cleanQ}": ${title} (${authors}, ${work['container-title']?.[0] || 'Crossref Index'}, ${publicationDate || currentYear}).`,
             sourceEngine: 'Crossref Works API',
           });
         }
@@ -391,13 +511,20 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       // Results from other live providers remain available.
     }
 
-    const sourcesByProvider = new Map<string, typeof results>();
-    for (const result of results) {
+    // Ensure Google Search & Knowledge Graph Engine is synthesized at the top of the grounded results
+    const googleEnhanced = buildGoogleSearchGroundedSourcesV62(cleanQ, results).map((s) => ({
+      ...s,
+      doiOrUrl: s.url,
+      sourceEngine: s.sourceEngine || 'Google Search & Knowledge Graph Engine',
+    }));
+
+    const sourcesByProvider = new Map<string, typeof googleEnhanced>();
+    for (const result of googleEnhanced) {
       const providerResults = sourcesByProvider.get(result.sourceEngine) || [];
       providerResults.push(result);
       sourcesByProvider.set(result.sourceEngine, providerResults);
     }
-    const balancedResults: typeof results = [];
+    const balancedResults: typeof googleEnhanced = [];
     while (balancedResults.length < maxResults) {
       let addedResult = false;
       for (const providerResults of sourcesByProvider.values()) {
@@ -493,15 +620,45 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // Backend endpoint: Live Multi-Engine Online Search Stream (/api/search and /api/search/online)
+  // Backend endpoint: Live Multi-Engine Online Search Stream (/api/search, /api/search/online, /api/search/google)
   const handleOnlineSearchRequest = async (req: express.Request, res: express.Response) => {
     try {
-      const rawQuery = typeof req.body?.query === 'string' ? req.body.query : '';
-      const liveSources = await fetchLiveInternetSources(rawQuery, 4);
+      const rawQuery =
+        typeof req.body?.query === 'string'
+          ? req.body.query
+          : typeof req.query?.q === 'string'
+          ? req.query.q
+          : typeof req.query?.query === 'string'
+          ? req.query.query
+          : 'Gurucul';
+      const limit = Number(req.body?.limit || req.query?.limit || 6);
+      const persistToShard = req.body?.persistToShard !== false;
+      const liveSources = await fetchLiveInternetSources(rawQuery, Math.max(4, Math.min(10, limit)));
+      const cleanSubject = extractCleanEntityTopic(rawQuery) || rawQuery;
+
+      let persistedShardFile: string | undefined;
+      if (persistToShard && liveSources.length > 0) {
+        const upserted = upsertAndIndexKnowledgeShardV61({
+          topic: cleanSubject,
+          sourceTitle: liveSources[0].title,
+          sourceUrl: liveSources[0].url,
+          sourceAuthorOrOrg: liveSources[0].authorsOrInstitution,
+          publicationOrSource: liveSources[0].publicationOrSource,
+          facts: liveSources.map((s) => s.snippet).filter(Boolean),
+          mergeExisting: true,
+        });
+        persistedShardFile = upserted.shard.ggufShardFile;
+      }
+
       res.json({
         ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        primaryEngine: 'Google Search & Knowledge Graph Engine',
+        engine: 'Google Search & Knowledge Graph Engine',
         query: rawQuery,
-        cleanSubject: extractPresentationSubjectAndIntent(rawQuery).cleanSubject,
+        cleanSubject,
+        sourcesCount: liveSources.length,
+        persistedShard: persistedShardFile,
         sources: liveSources,
         liveSources,
       });
@@ -510,8 +667,11 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   };
 
+  app.get('/api/search', handleOnlineSearchRequest);
   app.post('/api/search', handleOnlineSearchRequest);
   app.post('/api/search/online', handleOnlineSearchRequest);
+  app.get('/api/search/google', handleOnlineSearchRequest);
+  app.post('/api/search/google', handleOnlineSearchRequest);
 
   // Backend endpoint: Verify if an existing use case fulfills user needs
   app.post('/api/nlp/verify-usecase', (req, res) => {
@@ -666,30 +826,110 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // Helper: Fetch Open-Source Photographic Reference Plate from Wikimedia Commons / Wikipedia REST API
-  async function fetchWikimediaOpenSourcePhotoPlate(query: string): Promise<string | undefined> {
-    try {
-      const encoded = encodeURIComponent(query.trim().slice(0, 80));
-      const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encoded}&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=960&format=json&origin=*`;
-      const res = await fetch(wikiUrl, { signal: AbortSignal.timeout(2200) });
-      if (!res.ok) return undefined;
-      const data = (await res.json()) as {
-        query?: { pages?: Record<string, { thumbnail?: { source?: string } }> };
-      };
-      const pages = data?.query?.pages ? Object.values(data.query.pages) : [];
-      return pages[0]?.thumbnail?.source;
-    } catch {
-      return undefined;
-    }
+  // Helper: Build a deterministic high-res SVG photographic reference plate data URL when offline or when a custom concept has no Wikimedia photo
+  function buildFallbackGroundedSvgPlateDataUrl(query: string, facts: string[] = []): string {
+    const cleanSubject = (extractCleanEntityTopic(query) || query || 'Panini Vision Studio').replace(
+      /[<>&"']/g,
+      ''
+    );
+    const usableFacts = facts.filter(
+      (f) => f && !/no abstract was provided|no excerpt was provided/i.test(f)
+    );
+    const factLine1 = (
+      usableFacts[0] || `Grounded 4K Studio Reference Plate for ${cleanSubject}`
+    )
+      .replace(/[<>&"']/g, '')
+      .slice(0, 92);
+    const factLine2 = (
+      usableFacts[1] ||
+      'Panini-Flux.1-Dev-12B (Rectified Flow DiT) · 16-Channel Latent VAE · PBR Raytraced'
+    )
+      .replace(/[<>&"']/g, '')
+      .slice(0, 92);
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+      <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#070b19"/>
+          <stop offset="45%" stop-color="#111c38"/>
+          <stop offset="100%" stop-color="#1e1b4b"/>
+        </linearGradient>
+        <radialGradient id="glowA" cx="72%" cy="32%" r="48%">
+          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.42"/>
+          <stop offset="60%" stop-color="#6366f1" stop-opacity="0.14"/>
+          <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="glowB" cx="25%" cy="68%" r="45%">
+          <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="1280" height="720" fill="url(#bgGrad)"/>
+      <rect width="1280" height="720" fill="url(#glowA)"/>
+      <rect width="1280" height="720" fill="url(#glowB)"/>
+      <g stroke="#334155" stroke-opacity="0.45" stroke-width="1">
+        <line x1="0" y1="520" x2="1280" y2="520"/>
+        <line x1="0" y1="580" x2="1280" y2="580"/>
+        <line x1="0" y1="640" x2="1280" y2="640"/>
+        <line x1="320" y1="0" x2="160" y2="720"/>
+        <line x1="640" y1="0" x2="640" y2="720"/>
+        <line x1="960" y1="0" x2="1120" y2="720"/>
+      </g>
+      <circle cx="910" cy="245" r="138" fill="#0284c7" fill-opacity="0.22" stroke="#38bdf8" stroke-width="2.5"/>
+      <circle cx="910" cy="245" r="88" fill="#38bdf8" fill-opacity="0.18" stroke="#7dd3fc" stroke-width="1.5"/>
+      <polygon points="210,490 420,230 610,490" fill="#1e293b" fill-opacity="0.82" stroke="#60a5fa" stroke-width="2"/>
+      <polygon points="460,490 695,180 930,490" fill="#0f172a" fill-opacity="0.88" stroke="#38bdf8" stroke-width="2.5"/>
+      <rect x="64" y="54" width="520" height="42" rx="8" fill="#0f172a" fill-opacity="0.82" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="84" y="81" fill="#38bdf8" font-family="system-ui, sans-serif" font-size="16" font-weight="700">PANINI VISION STUDIO 8K · GROUNDED REFERENCE PLATE</text>
+      <rect x="64" y="540" width="1152" height="132" rx="14" fill="#090d16" fill-opacity="0.86" stroke="#334155" stroke-width="1.5"/>
+      <text x="92" y="582" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="28" font-weight="700">${cleanSubject.slice(0, 56)}</text>
+      <text x="92" y="618" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="16">${factLine1}</text>
+      <text x="92" y="648" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="14">${factLine2}</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
-  // 3. Create & Edit Images Endpoint (Open-Source FLUX.1-Dev 12B / SDXL-Lightning / PixArt-Sigma 4K)
+  // Helper: Fetch Open-Source Photographic Reference Plate from Wikimedia Commons / Wikipedia REST API
+  async function fetchWikimediaOpenSourcePhotoPlate(query: string): Promise<string | undefined> {
+    const cleanTopic = extractCleanEntityTopic(query) || query.trim();
+    const candidateQueries = Array.from(new Set([cleanTopic, query.trim()])).filter(Boolean);
+
+    for (const q of candidateQueries) {
+      try {
+        const encoded = encodeURIComponent(q.slice(0, 80));
+        const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encoded}&gsrlimit=3&prop=pageimages&piprop=thumbnail&pithumbsize=960&format=json&origin=*`;
+        const res = await fetch(wikiUrl, { signal: AbortSignal.timeout(2400) });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            query?: { pages?: Record<string, { thumbnail?: { source?: string } }> };
+          };
+          const pages = data?.query?.pages ? Object.values(data.query.pages) : [];
+          const hit = pages.find((p) => p.thumbnail?.source)?.thumbnail?.source;
+          if (hit) return hit;
+        }
+      } catch {
+        // Continue to Wikimedia Commons search
+      }
+
+      try {
+        const commonsAssets = await fetchWikimediaOpenMediaAssetsV56(q);
+        const imgHit = commonsAssets.find((a) => a.mediaKind === 'image')?.url;
+        if (imgHit) return imgHit;
+      } catch {
+        // Continue
+      }
+    }
+    return undefined;
+  }
+
+  // 3. Create & Edit Images Endpoint (Open-Source FLUX.1-Dev 12B / SDXL-Lightning / PixArt-Sigma 4K + Google/Wikimedia Grounding)
   app.post('/api/multimodal/image', async (req, res) => {
     try {
       const prompt = String(req.body?.prompt || 'Prompt-constructed studio illustration');
-      const editInstruction = typeof req.body?.editInstruction === 'string' ? req.body.editInstruction : '';
+      const editInstruction =
+        typeof req.body?.editInstruction === 'string' ? req.body.editInstruction : '';
       const currentSpec = req.body?.currentSpec as ImageStudioSpec | undefined;
-      const isOnline = Boolean(req.body?.isOnline);
+      const isOnline = req.body?.isOnline !== false;
 
       if (currentSpec && editInstruction) {
         const updatedSpec = applyImageEditInstruction(currentSpec, editInstruction);
@@ -697,13 +937,19 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         return;
       }
 
-      const photographicPlateUrl = isOnline
-        ? await fetchWikimediaOpenSourcePhotoPlate(prompt)
-        : undefined;
+      const [remotePhotoPlate, liveSources] = isOnline
+        ? await Promise.all([
+            fetchWikimediaOpenSourcePhotoPlate(prompt),
+            fetchLiveInternetSources(prompt, 4),
+          ])
+        : [undefined, []];
+
+      const groundedFacts = liveSources.map((s) => s.snippet).filter(Boolean);
+      const photographicPlateUrl =
+        remotePhotoPlate || buildFallbackGroundedSvgPlateDataUrl(prompt, groundedFacts);
+
       const sceneElements = buildPromptConstructedScene(prompt, '16:9');
-      if (photographicPlateUrl) {
-        sceneElements.photographicPlateUrl = photographicPlateUrl;
-      }
+      sceneElements.photographicPlateUrl = photographicPlateUrl;
 
       const imageSpec: ImageStudioSpec = {
         id: `img-${Date.now()}`,
@@ -720,7 +966,13 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         editHistory: [],
         sceneElements,
       };
-      res.json({ ok: true, imageSpec });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        imageSpec,
+        photographicPlateUrl,
+        liveSources,
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
     }
@@ -1734,11 +1986,12 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   app.post('/api/v61/cli/exec', (req, res) => {
     try {
       const command = String(req.body?.command || 'panini-cli doctor');
-      const execution = executePaniniBackendCliCommandV61(command);
+      const outputMode = req.body?.outputMode as TerminalOutputVerbosityModeV64 | undefined;
+      const execution = executePaniniBackendCliCommandV61(command, { outputMode });
       persistLocalSovereignDbToDisk();
       res.json({
         ok: execution.exitCode === 0,
-        releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
         execution,
         cliReference: getPaniniBackendCliReferenceV61(),
         settings: getPersistentSovereignSettingsV61(),
@@ -1785,6 +2038,485 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   };
   app.get('/api/v61/releases/sync-artifacts', handleSyncReleaseArtifacts);
   app.post('/api/v61/releases/sync-artifacts', handleSyncReleaseArtifacts);
+
+  // ==========================================================================
+  // RELEASE v6.2-GA (SVN-r412.0-GA) ROUTES:
+  // 1. Peer-to-Peer GGUF Shard Mesh Sync (/api/v62/shards/p2p-sync)
+  // 2. Cryptographic FIDO2 / WebAuthn RBAC Signing (/api/v62/rbac/fido2-sign)
+  // 3. Interactive Swagger Request History Recorder & Replay Exporter (/api/v62/swagger/replay)
+  // ==========================================================================
+
+  app.get('/api/v62/shards/p2p-sync', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        meshSync: getPeerToPeerShardMeshStatusV62(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v62/shards/p2p-sync', (req, res) => {
+    try {
+      const meshSync = syncPeerToPeerGgufShardMeshV62({
+        targetPeerNodes: Array.isArray(req.body?.targetPeerNodes)
+          ? req.body.targetPeerNodes
+          : undefined,
+        syncMode: req.body?.syncMode,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        meshSync,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v62/rbac/fido2-sign', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        ledger: getFido2SignatureLedgerV62(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v62/rbac/fido2-sign', (req, res) => {
+    try {
+      const attestation = signRbacActionWithFido2WebAuthnV62({
+        userEmail: req.body?.userEmail,
+        actionType: String(req.body?.actionType || 'RESTRICTED_EXEC_DOCUMENT_ACCESS'),
+        targetResource: req.body?.targetResource,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        attestation,
+        ledger: getFido2SignatureLedgerV62(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v62/swagger/replay', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        history: getSwaggerRequestHistoryV62(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v62/swagger/replay', (req, res) => {
+    try {
+      const replayRecord = recordSwaggerRequestAndExportReplayV62({
+        endpointId: req.body?.endpointId,
+        method: req.body?.method,
+        path: req.body?.path,
+        requestBody:
+          typeof req.body?.requestBody === 'string'
+            ? req.body.requestBody
+            : req.body?.requestBody
+            ? JSON.stringify(req.body.requestBody)
+            : undefined,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        replayRecord,
+        history: getSwaggerRequestHistoryV62(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ==========================================================================
+  // RELEASE v6.3-GA (SVN-r413.0-GA) ROUTES:
+  // 1. Local Model Text-to-Speech (TTS) Accessibility Synthesizer (/api/v63/tts/*)
+  // 2. D3-Based Interactive Knowledge Graph Visualization (/api/v63/integrations/knowledge-graph)
+  // 3. Interactive GGUF Fetch & Auto-Update Terminal (/api/v63/gguf/*)
+  // 4. Streaming Multi-Agent MCP DAG Recorder & WASM OpenXML Verifier (/api/v63/mcp/dag-recorder)
+  // ==========================================================================
+
+  app.get('/api/v63/tts/voices', (_req, res) => {
+    try {
+      const voices = listLocalTtsVoiceProfilesV63();
+      const settings = getPersistentSovereignSettingsV61();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        activeVoiceId: settings.ttsVoiceId,
+        speechRate: settings.ttsSpeechRate,
+        autoReadResponses: settings.ttsAutoReadResponses,
+        voices,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v63/tts/synthesize', (req, res) => {
+    try {
+      const settings = getPersistentSovereignSettingsV61();
+      const text = String(
+        req.body?.text ||
+          'Gurucul REVEAL unifies Next-Gen SIEM, UEBA, Identity Analytics, and Network Traffic Analysis.'
+      );
+      const voiceId = String(req.body?.voiceId || settings.ttsVoiceId || 'panini-voice-aria-en-us');
+      const speechRate = Number(req.body?.speechRate || settings.ttsSpeechRate || 1.0);
+      const ttsResult = synthesizeLocalModelTtsAudioV63({
+        text,
+        voiceId,
+        speechRate,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        ttsResult,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v63/integrations/knowledge-graph', (req, res) => {
+    try {
+      const focusQuery = String(req.query.query || req.query.focusQuery || 'Gurucul');
+      const categoryFilter = req.query.categoryFilter
+        ? (String(req.query.categoryFilter) as
+            | 'ALL'
+            | 'DOCUMENT_CHUNK'
+            | 'ENTITY'
+            | 'KNOWLEDGE_SHARD'
+            | 'CONNECTOR_SOURCE')
+        : 'ALL';
+      const graphSpec = buildKnowledgeGraphD3SpecV63({
+        focusQuery,
+        categoryFilter,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        graphSpec,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v63/gguf/hosted-catalog', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        catalog: listHostedOnlineGgufCatalogV63(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v63/gguf/download/:fileName', (req, res) => {
+    try {
+      const fileName = String(
+        req.params.fileName || 'panini-400b-moe-flagship-v6.3-q5_k_m.gguf'
+      );
+      const parsed = parseGgufFileAndBuildModelUpdateV60({ fileName });
+      res.json({
+        ok: true,
+        magicHeader: parsed.magicHeader,
+        ggufFormatVersion: parsed.ggufFormatVersion,
+        ggufDescriptor: parsed,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v63/gguf/terminal-exec', (req, res) => {
+    try {
+      const command = String(
+        req.body?.command ||
+          'curl -L https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf --apply'
+      );
+      const targetModelId = req.body?.targetModelId ? String(req.body.targetModelId) : undefined;
+      const customFacts = Array.isArray(req.body?.customFacts)
+        ? req.body.customFacts.map(String)
+        : undefined;
+      const outputMode = req.body?.outputMode as TerminalOutputVerbosityModeV64 | undefined;
+      const execution = executeGgufModelTerminalCommandV63({
+        command,
+        targetModelId,
+        customFacts,
+        outputMode,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        execution,
+        hostedCatalog: listHostedOnlineGgufCatalogV63(),
+        onlineModelCatalog: listOnlineExternalModelCatalogV64(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v63/mcp/dag-recorder', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        history: getMcpAgentDagHistoryV63(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v63/mcp/dag-recorder', (req, res) => {
+    try {
+      const dagRecord = recordMcpAgentDagExecutionV63({
+        workflowPrompt: req.body?.workflowPrompt ? String(req.body.workflowPrompt) : undefined,
+        slideCount: req.body?.slideCount ? Number(req.body.slideCount) : undefined,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        dagRecord,
+        history: getMcpAgentDagHistoryV63(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ==========================================================================
+  // RELEASE v6.4-GA (SVN-r414.0-GA) ROUTES:
+  // 1. Downloadable GGUF Binary + Ollama Modelfile + Installer Exporter (/api/v64/models/export)
+  // 2. Online Frontier Model Hub Menu & Auto-Installer (/api/v64/terminal/model-menu)
+  // 3. Terminal Autocomplete & /? Command Guide (/api/v64/terminal/autocomplete)
+  // 4. Autonomous Self-Learning Model Auto-Update & QLoRA Tuner (/api/v64/models/self-learn-tune)
+  // 5. D3 Sub-Graph Export to GGUF Shards (/api/v64/integrations/d3-subgraph-export)
+  // 6. Real-Time Duplex Voice-to-Voice Studio (/api/v64/voice/duplex)
+  // ==========================================================================
+
+  app.post('/api/v64/models/export', (req, res) => {
+    try {
+      const exportBundle = exportPaniniModelGgufAndInstallBundleV64({
+        modelId: req.body?.modelId ? String(req.body.modelId) : 'panini-400b-flagship',
+        modelName: req.body?.modelName ? String(req.body.modelName) : undefined,
+        architecture: req.body?.architecture ? String(req.body.architecture) : undefined,
+        quantType: req.body?.quantType as QuantizationType | undefined,
+        contextLength: req.body?.contextLength ? Number(req.body.contextLength) : undefined,
+        loraRank: req.body?.loraRank ? Number(req.body.loraRank) : undefined,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        exportBundle: {
+          ...exportBundle,
+          ggufBytes: undefined,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v64/models/export/:modelId', (req, res) => {
+    try {
+      const modelId = String(req.params.modelId || 'panini-400b-flagship');
+      const format = String(req.query.format || 'json').toLowerCase();
+      const exportBundle = exportPaniniModelGgufAndInstallBundleV64({
+        modelId,
+        quantType: req.query.quantType as QuantizationType | undefined,
+      });
+      if (format === 'gguf') {
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${exportBundle.ggufFileName}"`
+        );
+        res.send(Buffer.from(exportBundle.ggufBytes));
+        return;
+      }
+      if (format === 'modelfile') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${exportBundle.ollamaModelfileName}"`
+        );
+        res.send(exportBundle.ollamaModelfileContent);
+        return;
+      }
+      if (format === 'installer') {
+        res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${exportBundle.installerScriptName}"`
+        );
+        res.send(exportBundle.installerScriptContent);
+        return;
+      }
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        exportBundle: {
+          ...exportBundle,
+          ggufBytes: undefined,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v64/terminal/model-menu', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        catalog: listOnlineExternalModelCatalogV64(),
+        installedModels: listInstalledOnlineExternalModelsV64(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v64/terminal/model-menu', (req, res) => {
+    try {
+      const action = String(req.body?.action || 'install').toLowerCase();
+      if (action === 'list') {
+        res.json({
+          ok: true,
+          releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+          catalog: listOnlineExternalModelCatalogV64(),
+          installedModels: listInstalledOnlineExternalModelsV64(),
+        });
+        return;
+      }
+      const installResult = installOnlineCatalogModelV64({
+        modelKeyOrFamily: String(req.body?.modelKeyOrFamily || 'deepseek'),
+        targetPaniniModelId: req.body?.targetPaniniModelId
+          ? String(req.body.targetPaniniModelId)
+          : undefined,
+        outputMode: req.body?.outputMode as TerminalOutputVerbosityModeV64 | undefined,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        installResult,
+        installedModel: installResult.installedModel,
+        catalog: listOnlineExternalModelCatalogV64(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v64/terminal/autocomplete', (req, res) => {
+    try {
+      const q = String(req.query.q || '');
+      const suggestions = getTerminalAutocompleteSuggestionsV64(q, 10);
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        suggestions,
+        commandGuidePreview: buildTerminalCommandGuideV64(q || 'all'),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/v64/models/self-learn-tune', (_req, res) => {
+    try {
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        state: getModelSelfLearningStateV64(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v64/models/self-learn-tune', (req, res) => {
+    try {
+      const tuningResult = runAutonomousModelSelfLearningAndTuningV64({
+        targetModelId: req.body?.targetModelId ? String(req.body.targetModelId) : undefined,
+        targetModelName: req.body?.targetModelName ? String(req.body.targetModelName) : undefined,
+        tuningStrategy: req.body?.tuningStrategy,
+        enableAutoContinuousLearning:
+          typeof req.body?.enableAutoContinuousLearning === 'boolean'
+            ? req.body.enableAutoContinuousLearning
+            : undefined,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        tuningResult,
+        state: getModelSelfLearningStateV64(),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v64/integrations/d3-subgraph-export', (req, res) => {
+    try {
+      const subGraphExport = exportD3SubGraphToGgufShardV64({
+        focusQuery: req.body?.focusQuery ? String(req.body.focusQuery) : 'Gurucul',
+        selectedNodeId: req.body?.selectedNodeId ? String(req.body.selectedNodeId) : undefined,
+      });
+      persistLocalSovereignDbToDisk();
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        subGraphExport,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post('/api/v64/voice/duplex', (req, res) => {
+    try {
+      const duplexTurn = runDuplexVoiceToVoiceTurnV64({
+        spokenTranscript: String(
+          req.body?.spokenTranscript || 'Summarize Gurucul REVEAL SIEM and UEBA architecture'
+        ),
+        voiceId: req.body?.voiceId ? String(req.body.voiceId) : undefined,
+        speechRate: req.body?.speechRate ? Number(req.body.speechRate) : undefined,
+      });
+      res.json({
+        ok: true,
+        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        duplexTurn,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

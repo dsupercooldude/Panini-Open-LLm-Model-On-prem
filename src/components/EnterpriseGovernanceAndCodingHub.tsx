@@ -979,13 +979,50 @@ export const EnterpriseGovernanceModal: React.FC<{
     {
       version: 'v6.1-GA' as const,
       svn: 'SVN-r411.0-GA',
-      badge: 'CURRENT ACTIVE RELEASE · SHARD MERGE UPDATER + PANINI-CLI + LOCAL OFFLINE RBAC DB + SWAGGER 100% SUITE',
+      badge: 'SHARD MERGE UPDATER + PANINI-CLI + LOCAL OFFLINE RBAC DB + SWAGGER 100% SUITE',
       title:
         'Release v6.1-GA (SVN-r411.0-GA): Live Knowledge Shard Source Merger & Chat/PPTX Grounding, Backend CLI (`panini-cli` & Ollama GGUF), Prepackaged Local Offline RBAC User DB, Persistent Online-by-Default Settings, Interactive Swagger UI (100% Endpoint Coverage), & Dynamic Roadmap Auto-Drafter Sync',
       summary:
-        'Fixes Knowledge Shard source saving/merging and direct Chat/PPTX grounding (`upsertAndIndexKnowledgeShardV61`); adds the `panini-cli` backend troubleshooting, shard, RBAC, and Ollama-style GGUF CLI; packages a 100% local offline RBAC user database (`/data/panini-local-sovereign-db.json`); persists Online-by-default settings across sessions & server restarts; upgrades REST/MCP docs with What/When/How/Use Cases, interactive Swagger UI, and 100% API endpoint verification; and auto-selects the latest release (`v6.1-GA`) in the Release Version Selector.',
+        'Fixes Knowledge Shard source saving/merging and direct Chat/PPTX grounding (`upsertAndIndexKnowledgeShardV61`); adds the `panini-cli` backend troubleshooting, shard, RBAC, and Ollama-style GGUF CLI; packages a 100% local offline RBAC user database (`/data/panini-local-sovereign-db.json`); persists Online-by-default settings across sessions & server restarts; upgrades REST/MCP docs with What/When/How/Use Cases, interactive Swagger UI, and 100% API endpoint verification; and auto-selects the latest release in the Release Version Selector.',
       bugsFixed: [
-        'BUG-516 Fixed (Release v6.1-GA): Resolved all 6 reported issues — (1) Knowledge Shards now save/merge new sources & facts and immediately ground Chat, Hybrid RAG & PPTX; (2) Added `panini-cli` backend CLI for network doctor, shards, RBAC & Ollama GGUF models; (3) Added prepackaged local offline RBAC user database; (4) Persisted settings across sessions/restarts with Online mode (`isOnlineLearning: true`) enabled by default; (5) Added interactive Swagger UI, Use Cases & 100% API endpoint test coverage; (6) Fixed Release Version Selector to auto-select `v6.1-GA` and synced Dynamic Roadmap Auto-Drafter (`v6.2-GA`, `v6.3-GA`, `v7.0 LTS`) to documentation & artifacts.',
+        'BUG-516 Fixed (Release v6.1-GA): Resolved all 6 reported issues — (1) Knowledge Shards now save/merge new sources & facts and immediately ground Chat, Hybrid RAG & PPTX; (2) Added `panini-cli` backend CLI for network doctor, shards, RBAC & Ollama GGUF models; (3) Added prepackaged local offline RBAC user database; (4) Persisted settings across sessions/restarts with Online mode (`isOnlineLearning: true`) enabled by default; (5) Added interactive Swagger UI, Use Cases & 100% API endpoint test coverage; (6) Fixed Release Version Selector and synced Dynamic Roadmap Auto-Drafter to documentation & artifacts.',
+      ],
+    },
+    {
+      version: 'v6.2-GA' as const,
+      svn: 'SVN-r412.0-GA',
+      badge: 'GOOGLE SEARCH GROUNDING + PHOTO/3D IMAGE STUDIO + P2P SHARD MESH + FIDO2 RBAC + SWAGGER REPLAY',
+      title:
+        'Release v6.2-GA (SVN-r412.0-GA): Google Search & Knowledge Graph Engine Grounding, Grounded Photographic + 3D Image Studio, Peer-to-Peer GGUF Shard Mesh, FIDO2/WebAuthn Cryptographic RBAC Signing, Swagger Replay Exporter, & Dedicated REST/CLI/MCP Artifact',
+      summary:
+        'Adds Google Search & Knowledge Graph as the #1 primary online search engine alongside Wikipedia, Wikidata, OpenAlex, and Crossref; upgrades Image Generation with grounded photographic reference plates, Hybrid 3D + Plate view modes, 4K PNG/SVG export, and zero false "Data Not Available" bleed; makes Thinking Mode non-blocking once backend synthesis finishes; implements Distributed Peer-to-Peer GGUF Shard Mesh sync, FIDO2/WebAuthn hardware-key RBAC signing, and Interactive Swagger Replay export; and publishes the dedicated REST/CLI/MCP Usage artifact.',
+      bugsFixed: [
+        'BUG-517 Fixed (Release v6.2-GA): Added Google Search Engine (`POST /api/search/google` + `buildGoogleSearchGroundedSourcesV62`), fixed compound entity extraction (`extractCleanEntityTopic`), removed 150s post-synthesis UI lock, wired `handleGenerateMediaInChat` to `/api/multimodal/image` + `liveOnlineSources` + Preview Tab, implemented `v6.2-GA` P2P Shard Mesh / FIDO2 RBAC / Swagger Replay features, and created `rest_api_cli_and_mcp_usage_guide.md`.',
+      ],
+    },
+    {
+      version: 'v6.3-GA' as const,
+      svn: 'SVN-r413.0-GA',
+      badge: 'LOCAL MODEL TTS + D3 KNOWLEDGE GRAPH + GGUF TERMINAL + MCP DAG RECORDER',
+      title:
+        'Release v6.3-GA (SVN-r413.0-GA): Local Model Text-to-Speech (TTS) Accessibility & Voice Selector, D3 Interactive Knowledge Graph Visualization, Interactive GGUF Fetch & Auto-Apply Terminal (ollama/curl/irm/wget), Streaming Multi-Agent MCP DAG Recorder, & Offline WASM OpenXML PPTX Verifier',
+      summary:
+        'Deploys Release v6.3-GA (SVN-r413.0-GA) from the Dynamic Roadmap Auto-Drafter and adds: (1) Local Model Text-to-Speech (TTS) audio synthesis (`synthesizeLocalModelTtsAudioV63`) for accessibility with 6 selectable neural GGUF voices in Hardware & Preset Env Settings and a Read Aloud player on every assistant response; (2) D3-based interactive Knowledge Graph visualization (`buildKnowledgeGraphD3SpecV63`) in Admin Integrations displaying retrieved document chunks, entities, and knowledge shards; (3) Interactive GGUF Model Terminal (`executeGgufModelTerminalCommandV63`) in Admin Model Registry supporting `ollama`, `curl`, `irm`, `wget`, and 1-click online hosted `.gguf` fetching & automatic model parsing/updating; and (4) Streaming Multi-Agent MCP DAG Recorder & WASM OpenXML PPTX Verifier (`BUG-518` fixed).',
+      bugsFixed: [
+        'BUG-518 Fixed (Release v6.3-GA): Fixed creative 4K Image Studio prompt routing in Chat so visual/architectural prompts never trigger false "Data Not Available" abstention (`getPaniniKnowledgeShard` non-stopword keyword guard + Section 3D in `generateCodingSolution`), filtered Crossref missing-abstract placeholder text from SVG visual plates, and deployed Local Model TTS, D3 Knowledge Graph, Interactive GGUF Terminal, and Multi-Agent MCP DAG Recorder.',
+      ],
+    },
+    {
+      version: 'v6.4-GA' as const,
+      svn: 'SVN-r414.0-GA',
+      badge:
+        'CURRENT ACTIVE RELEASE · GGUF & MODELFILE EXPORTER + TERMINAL AUTOCOMPLETE & /? GUIDE + ONLINE MODEL MENU + SELF-LEARNING AUTO-TUNER',
+      title:
+        'Release v6.4-GA (SVN-r414.0-GA): Portable GGUF / Ollama Modelfile / Installer Exporter, Terminal Auto-Complete & Multi-Mode Output (INFO/DEBUG/VERBOSE) with /? Command Guides, Online Frontier Model Hub Menu (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen), Autonomous Self-Learning Model Auto-Updater, & D3 Sub-Graph Shard Exporter',
+      summary:
+        'Deploys Release v6.4-GA (SVN-r414.0-GA) from the Dynamic Roadmap Auto-Drafter and adds: (1) Downloadable `.gguf` v3 binary, Ollama `Modelfile`, and cross-platform installer scripts (`.sh`/`.ps1`) so any Panini model can be exported and imported into Ollama, LM Studio, or llama.cpp; (2) Terminal Tab Auto-Complete (`getTerminalAutocompleteSuggestionsV64`), multi-mode output (`INFO`, `DEBUG`, `VERBOSE`), and `/?` interactive Command Guides across both the Admin GGUF Terminal and `panini-cli`; (3) Online Frontier Model Hub Menu (`panini-cli model-menu` / `/menu`) for 1-click automatic installation of `DeepSeek`, `Llama`, `GLM`, `MiMo`, `Kimi`, `Bonsai D3`, and `Qwen` models; (4) Autonomous Self-Learning Model Auto-Updater (`runAutonomousModelSelfLearningAndTuningV64`); and (5) D3 Sub-Graph to `.gguf` Shard Export & Duplex Voice-to-Voice (`BUG-519` fixed).',
+      bugsFixed: [
+        'BUG-519 Fixed (Release v6.4-GA): Added browser-safe GGUF v3 binary/Modelfile/installer export (eliminating Node Buffer browser ReferenceErrors), added Terminal Tab Auto-Complete + INFO/DEBUG/VERBOSE output modes + /? Command Guides + Online Frontier Model Hub Menu (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen), implemented Autonomous Self-Learning QLoRA Model Auto-Tuning, and promoted active release to v6.4-GA (SVN-r414.0-GA).',
       ],
     },
   ];

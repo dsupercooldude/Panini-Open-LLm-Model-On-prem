@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   HARDWARE_PROFILES,
   HardwareProfile,
@@ -12,8 +12,13 @@ import {
   ContentSafetyMode,
   calculateQuantizedFootprint,
   computeThermalAndPowerMetrics,
+  LOCAL_TTS_VOICE_PROFILES_V63,
+  synthesizeLocalModelTtsAudioV63,
+  getPersistentSovereignSettingsV61,
+  updatePersistentSovereignSettingsV61,
+  LocalModelTtsSynthesisResultV63,
 } from '../utils/engineLogic';
-import { Smartphone, Laptop, Server, Cloud, ShieldCheck, Baby, Flame } from 'lucide-react';
+import { Smartphone, Laptop, Server, Cloud, ShieldCheck, Baby, Flame, Volume2, Play } from 'lucide-react';
 
 interface HardwareThermalViewProps {
   activeHardware: HardwareProfile;
@@ -38,6 +43,12 @@ interface HardwareThermalViewProps {
   activeModel: StoredModel;
   telemetry: ThermalPowerTelemetry;
   isDark: boolean;
+  selectedTtsVoiceId?: string;
+  onChangeTtsVoiceId?: (voiceId: string) => void;
+  ttsSpeechRate?: number;
+  onChangeTtsSpeechRate?: (rate: number) => void;
+  ttsAutoReadResponses?: boolean;
+  onChangeTtsAutoReadResponses?: (autoRead: boolean) => void;
 }
 
 const DEPLOYMENT_ENVS: {
@@ -85,7 +96,124 @@ export const HardwareThermalView: React.FC<HardwareThermalViewProps> = ({
   activeModel,
   telemetry,
   isDark,
+  selectedTtsVoiceId,
+  onChangeTtsVoiceId,
+  ttsSpeechRate,
+  onChangeTtsSpeechRate,
+  ttsAutoReadResponses,
+  onChangeTtsAutoReadResponses,
 }) => {
+  const initialPersistent = getPersistentSovereignSettingsV61();
+  const [localVoiceId, setLocalVoiceId] = useState<string>(
+    selectedTtsVoiceId || initialPersistent.ttsVoiceId || 'panini-voice-aria-en-us'
+  );
+  const [localSpeechRate, setLocalSpeechRate] = useState<number>(
+    typeof ttsSpeechRate === 'number' ? ttsSpeechRate : initialPersistent.ttsSpeechRate || 1.0
+  );
+  const [localAutoRead, setLocalAutoRead] = useState<boolean>(
+    typeof ttsAutoReadResponses === 'boolean'
+      ? ttsAutoReadResponses
+      : Boolean(initialPersistent.ttsAutoReadResponses)
+  );
+  const [ttsSampleText, setTtsSampleText] = useState<string>(
+    'Gurucul REVEAL unifies Next-Gen SIEM, UEBA, Identity Analytics, and Network Traffic Analysis for zero-trust security.'
+  );
+  const [ttsPreviewResult, setTtsPreviewResult] = useState<LocalModelTtsSynthesisResultV63>(() =>
+    synthesizeLocalModelTtsAudioV63({
+      text: 'Gurucul REVEAL unifies Next-Gen SIEM, UEBA, Identity Analytics, and Network Traffic Analysis.',
+      voiceId: selectedTtsVoiceId || initialPersistent.ttsVoiceId || 'panini-voice-aria-en-us',
+      speechRate:
+        typeof ttsSpeechRate === 'number' ? ttsSpeechRate : initialPersistent.ttsSpeechRate || 1.0,
+    })
+  );
+
+  const effectiveVoiceId = selectedTtsVoiceId || localVoiceId;
+  const effectiveSpeechRate = typeof ttsSpeechRate === 'number' ? ttsSpeechRate : localSpeechRate;
+  const effectiveAutoRead =
+    typeof ttsAutoReadResponses === 'boolean' ? ttsAutoReadResponses : localAutoRead;
+
+  const activeVoiceProfile =
+    LOCAL_TTS_VOICE_PROFILES_V63.find((v) => v.voiceId === effectiveVoiceId) ||
+    LOCAL_TTS_VOICE_PROFILES_V63[0];
+
+  const handleSelectVoice = (voiceId: string) => {
+    setLocalVoiceId(voiceId);
+    onChangeTtsVoiceId?.(voiceId);
+    updatePersistentSovereignSettingsV61({ ttsVoiceId: voiceId }, 'USER_UI_TOGGLE');
+    fetch('/api/v61/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttsVoiceId: voiceId }),
+    }).catch(() => {});
+    const synthesized = synthesizeLocalModelTtsAudioV63({
+      text: ttsSampleText,
+      voiceId,
+      speechRate: effectiveSpeechRate,
+    });
+    setTtsPreviewResult(synthesized);
+  };
+
+  const handleChangeSpeechRate = (rate: number) => {
+    setLocalSpeechRate(rate);
+    onChangeTtsSpeechRate?.(rate);
+    updatePersistentSovereignSettingsV61({ ttsSpeechRate: rate }, 'USER_UI_TOGGLE');
+    fetch('/api/v61/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttsSpeechRate: rate }),
+    }).catch(() => {});
+  };
+
+  const handleToggleAutoRead = (nextVal: boolean) => {
+    setLocalAutoRead(nextVal);
+    onChangeTtsAutoReadResponses?.(nextVal);
+    updatePersistentSovereignSettingsV61({ ttsAutoReadResponses: nextVal }, 'USER_UI_TOGGLE');
+    fetch('/api/v61/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttsAutoReadResponses: nextVal }),
+    }).catch(() => {});
+  };
+
+  const handleSynthesizePreview = async () => {
+    const localSynth = synthesizeLocalModelTtsAudioV63({
+      text: ttsSampleText,
+      voiceId: effectiveVoiceId,
+      speechRate: effectiveSpeechRate,
+    });
+    setTtsPreviewResult(localSynth);
+    try {
+      const res = await fetch('/api/v63/tts/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: ttsSampleText,
+          voiceId: effectiveVoiceId,
+          speechRate: effectiveSpeechRate,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.ttsResult) {
+          setTtsPreviewResult(data.ttsResult);
+        }
+      }
+    } catch {
+      // Offline local synthesizer already populated ttsPreviewResult
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(localSynth.cleanedSpokenText);
+        utter.rate = effectiveSpeechRate;
+        utter.lang = activeVoiceProfile.locale;
+        window.speechSynthesis.speak(utter);
+      } catch {
+        // Ignore browser speech errors in headless environments
+      }
+    }
+  };
+
   const currentVersion =
     activeModel.versions.find((v) => v.versionId === activeModel.currentVersionId) ||
     activeModel.versions[0];
@@ -314,6 +442,177 @@ export const HardwareThermalView: React.FC<HardwareThermalViewProps> = ({
               onChange={(e) => onChangePresetBackupCron(e.target.value)}
               className={`w-full px-3 py-1.5 text-xs font-mono rounded-lg border ${borderClass} ${surfaceClass} ${headingText}`}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Local Model Text-to-Speech (TTS) Accessibility & Voice Selection (v6.3-GA) */}
+      <div
+        data-testid="hardware-env-tts-voice-settings-panel"
+        className={`border border-sky-500/35 ${surfaceClass} rounded-xl p-5 space-y-4`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Volume2 className="w-4 h-4 text-sky-400" />
+            <div>
+              <h3 className={`text-sm font-semibold ${headingText}`}>
+                Local Model Text-to-Speech (TTS) Accessibility &amp; Voice Selection (v6.3-GA · KISS)
+              </h3>
+              <p className={`text-xs ${mutedText}`}>
+                Synthesizes accessible 16-bit PCM WAV audio responses using local Panini Neural Prosody GGUF vocalizers ({activeVoiceProfile.ggufVocalizerModel}) with zero external cloud dependency.
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono px-2.5 py-1 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+            Active Voice: {activeVoiceProfile.displayName} · {effectiveSpeechRate.toFixed(1)}x
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Left: Voice Selector Grid */}
+          <div className="lg:col-span-7 space-y-2.5">
+            <label
+              htmlFor="tts-voice-selector-dropdown"
+              className={`block text-xs font-semibold ${headingText}`}
+            >
+              Select Local Model Neural TTS Voice Profile
+            </label>
+            <select
+              id="tts-voice-selector-dropdown"
+              data-testid="hardware-tts-voice-select"
+              value={effectiveVoiceId}
+              onChange={(e) => handleSelectVoice(e.target.value)}
+              className={`w-full px-3 py-2 text-xs font-mono rounded-lg border ${borderClass} ${subSurfaceClass} ${headingText}`}
+            >
+              {LOCAL_TTS_VOICE_PROFILES_V63.map((voice) => (
+                <option key={voice.voiceId} value={voice.voiceId}>
+                  {voice.displayName} — [{voice.locale} · {voice.timbre} · {voice.pitchHz}Hz]
+                </option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              {LOCAL_TTS_VOICE_PROFILES_V63.map((voice) => {
+                const isSelected = voice.voiceId === effectiveVoiceId;
+                return (
+                  <button
+                    key={voice.voiceId}
+                    type="button"
+                    data-testid={`tts-voice-card-${voice.voiceId}`}
+                    onClick={() => handleSelectVoice(voice.voiceId)}
+                    className={`p-2.5 rounded-lg border text-left transition-colors ${
+                      isSelected
+                        ? 'border-sky-500 bg-sky-500/10'
+                        : `${borderClass} ${subSurfaceClass} hover:border-slate-700`
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={`text-xs font-semibold ${headingText}`}>
+                        {voice.displayName}
+                      </span>
+                      <span className="text-[10px] font-mono text-sky-400">{voice.locale}</span>
+                    </div>
+                    <div className={`text-[11px] ${mutedText} mt-0.5 line-clamp-1`}>
+                      {voice.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Cadence, Auto-Read Accessibility Toggle & Live WAV Preview */}
+          <div
+            className={`lg:col-span-5 p-3.5 rounded-xl border ${borderClass} ${subSurfaceClass} flex flex-col justify-between gap-3`}
+          >
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <label htmlFor="tts-speech-rate-slider" className={`font-medium ${headingText}`}>
+                    Speech Cadence &amp; Prosody Rate
+                  </label>
+                  <span className="font-mono text-sky-400">{effectiveSpeechRate.toFixed(1)}x</span>
+                </div>
+                <input
+                  id="tts-speech-rate-slider"
+                  data-testid="hardware-tts-rate-slider"
+                  type="range"
+                  min={0.7}
+                  max={1.6}
+                  step={0.1}
+                  value={effectiveSpeechRate}
+                  onChange={(e) => handleChangeSpeechRate(Number(e.target.value))}
+                  className="w-full accent-sky-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div>
+                  <div className={`text-xs font-semibold ${headingText}`}>
+                    Auto-Synthesize Workspace Responses
+                  </div>
+                  <div className={`text-[11px] ${mutedText}`}>
+                    Automatically attach playable local TTS audio to new assistant responses.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="hardware-tts-autoread-toggle"
+                  onClick={() => handleToggleAutoRead(!effectiveAutoRead)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-colors ${
+                    effectiveAutoRead
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-500'
+                      : `${borderClass} ${headingText}`
+                  }`}
+                >
+                  {effectiveAutoRead ? 'AUTO-READ: ON' : 'AUTO-READ: OFF'}
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="tts-preview-sample-input"
+                  className={`block text-[11px] font-mono ${mutedText}`}
+                >
+                  Accessibility Audio Test Phrase:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="tts-preview-sample-input"
+                    data-testid="hardware-tts-sample-input"
+                    type="text"
+                    value={ttsSampleText}
+                    onChange={(e) => setTtsSampleText(e.target.value)}
+                    className={`flex-1 px-2.5 py-1.5 text-xs rounded-lg border ${borderClass} ${surfaceClass} ${headingText}`}
+                  />
+                  <button
+                    type="button"
+                    data-testid="hardware-tts-synthesize-preview-btn"
+                    onClick={handleSynthesizePreview}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-500 text-slate-950 hover:bg-sky-400 flex items-center gap-1.5 shrink-0"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    Synthesize Audio
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className={`pt-2.5 border-t ${borderClass} space-y-1.5`}>
+              <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400">
+                <span>
+                  {ttsPreviewResult.wavHeaderMagic} · {ttsPreviewResult.sampleRateHz}Hz PCM ·{' '}
+                  {ttsPreviewResult.durationSeconds}s ({ttsPreviewResult.wavByteLength.toLocaleString()} B)
+                </span>
+                <span>{ttsPreviewResult.voiceProfile.ggufVocalizerModel}</span>
+              </div>
+              <audio
+                data-testid="hardware-tts-preview-audio"
+                controls
+                src={ttsPreviewResult.audioDataUrl}
+                className="w-full h-8"
+              />
+            </div>
           </div>
         </div>
       </div>
