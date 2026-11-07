@@ -37,7 +37,6 @@ import {
   buildKnowledgeGraphD3SpecV63,
   KnowledgeGraphNodeCategoryV63,
   KnowledgeGraphNodeV63,
-  exportD3SubGraphToGgufShardV64,
 } from '../utils/engineLogic';
 import { listPaniniKnowledgeShards } from '../utils/multimodalSuite';
 
@@ -1950,32 +1949,11 @@ export const AdminIntegrationsView: React.FC<AdminIntegrationsViewProps> = ({
             <button
               type="button"
               data-testid="d3-export-subgraph-shard-btn"
-              onClick={async () => {
-                const exp = exportD3SubGraphToGgufShardV64({
-                  focusQuery: graphFocusQuery || 'Gurucul',
-                  selectedNodeId: selectedGraphNodeId || undefined,
-                });
-                const a = document.createElement('a');
-                a.href = exp.ggufDownloadDataUrl;
-                a.download = exp.ggufShardFile;
-                a.click();
-                refreshSnapshot();
+              onClick={() =>
                 setStatusBanner(
-                  `Exported D3 Sub-Graph (${exp.focusQuery} · ${exp.exportedNodesCount} nodes · ${exp.exportedLinksCount} edges) to standalone shard ${exp.ggufShardFile} (${exp.indexedChunkId}).`
-                );
-                try {
-                  await fetch('/api/v64/integrations/d3-subgraph-export', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      focusQuery: graphFocusQuery || 'Gurucul',
-                      selectedNodeId: selectedGraphNodeId || undefined,
-                    }),
-                  });
-                } catch {
-                  // Local sub-graph export already completed
-                }
-              }}
+                  'GGUF shard export is unavailable: this prototype has no validated GGUF writer or model artifact.'
+                )
+              }
               className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold inline-flex items-center gap-1 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />

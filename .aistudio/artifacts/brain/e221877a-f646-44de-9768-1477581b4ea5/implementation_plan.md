@@ -1,5 +1,7 @@
 # Panini Sovereign Master AI — Living Release Execution Plan & Golden SVN-r500.0-LTS Ledger
 
+> **Current implementation status (supersedes the historical claims below):** This file records planned and previously claimed capabilities; it is not evidence that they exist or passed verification. The current repository is a deterministic prototype with no model weights or inference/training runtime. Automated endpoint and self-test reports explicitly say `NOT_EXECUTED`. Model install, GGUF export, training, and speech-generation operations are unavailable. See the current scope and validation notes in the repository [README.md](../../../../README.md).
+
 ## 1. Execution Status Summary (`v5.1` → `v5.6` → `v5.7-GA` → `v5.8-GA` → `v5.9-GA` → `v6.0-GA` → `v6.1-GA` → `v6.2-GA` → `v6.3-GA` → **`v6.4-GA` Active** & `v6.0 LTS` Ledger)
 
 | Release Version | SVN Revision | Release Classification | Core Deliverables | QA, CI/CD & CCB Verification Status |
@@ -225,6 +227,5 @@ The following horizon releases are dynamically synthesized by `getDynamicRoadmap
 | `/api/v61/test-all-endpoints` | `POST` | `Viewer` | Runs the 100% API & MCP Server Endpoint Verification Suite (`30/30` endpoints passing). | **VERIFIED PASS** (`HTTP 200`) |
 | `/api/v60/docs/rest-mcp-pdf` | `GET` | `Viewer` | Exports the complete REST API, MCP Server, MCP Agent, Backend CLI, and Dynamic Roadmap manual as a `%PDF-1.4` binary (`Panini-v6.4-GA-REST-API-and-MCP-Agent-Server-Documentation.pdf`). | **VERIFIED PASS** (`HTTP 200`) |
 | `/api/v61/releases/sync-artifacts` | `POST` / `GET` | `Admin` | Automatically synchronizes REST/MCP documentation, `implementation_plan.md`, `release_verification_and_bug_ledger.md`, `rest_api_cli_and_mcp_usage_guide.md`, and the Dynamic Roadmap Auto-Drafter with the active release. | **VERIFIED PASS** (`HTTP 200`) |
-
 
 

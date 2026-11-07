@@ -1,5 +1,7 @@
 # Panini Sovereign Master AI — Cumulative Release Verification, Feature Inventory & Bug Regression Ledger
 
+> **Historical record, not a current release sign-off.** The PASS/VERIFIED entries below are legacy assertions and have not been independently revalidated against live integrations. This repository's current self-test and API endpoint summaries report `NOT_EXECUTED`; no real model weights or inference/training runtimes are configured. Do not treat this ledger as production certification. See the repository [README.md](../../../../README.md) for current scope and verified commands.
+
 ## 1. Purpose & CI/CD Governance Mandate
 
 This living artifact serves as the **Single Source of Truth for Dev, Tester, Auditor, Lead, and CI/CD Manager** verification across all releases (`v5.1` &rarr; `v5.4` &rarr; `Hotfix v5.5` &rarr; `v5.6` &rarr; `v5.7-GA` &rarr; `v5.8-GA` &rarr; `v5.9-GA` &rarr; `v6.0-GA` &rarr; `v6.1-GA` &rarr; `v6.2-GA` &rarr; `v6.3-GA` &rarr; **`v6.4-GA (SVN-r414.0-GA)`** &rarr; `v7.0 LTS`). Every cumulative feature and every historical bug fix recorded in this ledger **must be verified before and after any new release promotion** so zero regressions or breakdowns ever recur.
@@ -178,5 +180,4 @@ All REST API, MCP Server JSON-RPC 2.0 (`2025-06-18`), Multi-Agent Delegation, an
 | 28 | `POST /api/jobs/submit` | Admin & Observability | Returns `JOB-900XX` with `vLLM`/`SGLang` & `k8s-gpu-h100-pool` telemetry | **200 PASS** |
 | 29 | `POST /api/v58/integrations/ingest-file` | Knowledge Shards | Extracts `.pdf`/`.pptx`/`.xlsx`/`.csv` tables & indexes into `.gguf` shard | **200 PASS** |
 | 30 | `POST /api/multimodal/image` | Multimodal 4K Studio (`v6.2-GA`..`v6.4-GA`) | Returns 3D volumetric scene + `photographicPlateUrl` reference plate | **200 PASS** |
-
 

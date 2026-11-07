@@ -81,7 +81,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
   const [liveTestOutput, setLiveTestOutput] = useState<string | null>(null);
   const [isTestingEndpoint, setIsTestingEndpoint] = useState<boolean>(false);
 
-  // Swagger UI & 100% All-Endpoints Test Suite State
+  // Endpoint inventory report; this status object does not execute HTTP requests.
   const [allEndpointsReport, setAllEndpointsReport] =
     useState<AllEndpointsTestSuiteReportV61>(() =>
       runAllApiEndpointsVerificationSuiteV61()
@@ -279,11 +279,12 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
           };
 
       let parsedBody: unknown = defaultPayload;
-      if (bodyOverride && bodyOverride.trim().startsWith('{')) {
+      if (bodyOverride?.trim()) {
         try {
           parsedBody = JSON.parse(bodyOverride);
-        } catch {
-          parsedBody = defaultPayload;
+        } catch (error) {
+          setLiveTestOutput(`Invalid request JSON: ${String(error)}`);
+          return;
         }
       }
 
@@ -291,7 +292,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
         method === 'GET'
           ? await fetch(endpointPath)
           : await fetch(endpointPath, {
-              method: 'POST',
+              method,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(parsedBody),
             });
@@ -304,7 +305,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
       });
       setSwaggerReplayHistory(getSwaggerRequestHistoryV62());
       setLiveTestOutput(
-        `[${method} ${endpointPath} -> HTTP ${res.status} OK]\n${text.slice(0, 1100)}`
+        `[${method} ${endpointPath} -> HTTP ${res.status} ${res.ok ? 'OK' : 'ERROR'}]\n${text.slice(0, 1100)}`
       );
     } catch (err) {
       setLiveTestOutput(`[${method} ${endpointPath} Error]: ${String(err)}`);
@@ -313,33 +314,18 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
     }
   };
 
-  // Run 100% API Endpoint Verification Suite (All Endpoints Tested)
+  // Report that the full integration suite has not been executed.
   const handleRunAllEndpointsSuite = async () => {
     setIsTestingEndpoint(true);
     try {
       const localSuite = runAllApiEndpointsVerificationSuiteV61();
       setAllEndpointsReport(localSuite);
-      try {
-        const res = await fetch('/api/v61/test-all-endpoints', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.report) {
-            setAllEndpointsReport(json.report);
-          }
-        }
-      } catch {
-        // Local verification report is already populated
-      }
       setLiveTestOutput(
-        `[100% API Endpoint Verification Suite — ${localSuite.passedEndpoints}/${localSuite.totalEndpoints} PASSED (${localSuite.coveragePercentage}% Coverage)]\n` +
+        `[Endpoint verification status: ${localSuite.verificationMode} — ${localSuite.executedEndpoints}/${localSuite.totalEndpoints} HTTP requests executed]\n${localSuite.verificationNote}\n` +
           localSuite.results
             .map(
               (r) =>
-                `✓ [${r.method}] ${r.path} -> HTTP ${r.httpStatus} (${r.latencyMs}ms) · ${r.assertionSummary}`
+                `[${r.method}] ${r.path} · ${r.status}: ${r.assertionSummary}`
             )
             .join('\n')
       );
@@ -458,7 +444,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
             >
               <ShieldCheck className="w-4 h-4" />
               <span>
-                Test All {allEndpointsReport.totalEndpoints} API Endpoints (100% Coverage)
+                Show Full-Suite Verification Status
               </span>
             </button>
             {onOpenFileInPreviewTab && (
@@ -526,7 +512,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               { id: 'all', label: 'All Sections' },
               {
                 id: 'swagger_ui',
-                label: `Swagger UI & 100% Test Suite (${allEndpointsReport.passedEndpoints}/${allEndpointsReport.totalEndpoints} PASS)`,
+                label: `Endpoint Checks (${allEndpointsReport.executedEndpoints}/${allEndpointsReport.totalEndpoints} executed)`,
               },
               {
                 id: 'cli_terminal',
@@ -571,7 +557,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
         </div>
       </div>
 
-      {/* SECTION A: INTERACTIVE SWAGGER UI EXPLORER & 100% ENDPOINT COVERAGE SUITE */}
+      {/* SECTION A: API ROUTE CATALOG & INDIVIDUAL TRY-OUT */}
       {(activeTab === 'all' || activeTab === 'swagger_ui') && (
         <section
           data-testid="docs-section-swagger-ui"
@@ -587,16 +573,15 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
                   data-testid="swagger-coverage-badge"
                   className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40"
                 >
-                  Verified Coverage: {allEndpointsReport.passedEndpoints}/
-                  {allEndpointsReport.totalEndpoints} Endpoints (
-                  {allEndpointsReport.coveragePercentage}%)
+                  HTTP Requests Executed: {allEndpointsReport.executedEndpoints}/
+                  {allEndpointsReport.totalEndpoints}
                 </span>
               </div>
               <h3 className={`text-base font-semibold mt-1 ${headingText}`}>
-                Interactive Swagger UI &amp; Complete API Endpoint Test Suite
+                API Route Catalogue &amp; Individual Try-Out
               </h3>
               <p className={`text-xs ${mutedText}`}>
-                Inspect What Every REST API &amp; MCP Server Does, When &amp; How to Use It, Concrete Use Cases, and execute live requests or run the 100% endpoint verification suite.
+                Inspect the documented routes and issue individual live requests. The full integration suite has not been executed.
               </p>
             </div>
             <button
@@ -606,7 +591,7 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 inline-flex items-center gap-1.5 transition"
             >
               <Play className="w-3.5 h-3.5" />
-              <span>Run All {allEndpointsReport.totalEndpoints} Endpoint Checks Now</span>
+              <span>Show {allEndpointsReport.totalEndpoints} Endpoint Check Statuses</span>
             </button>
           </div>
 
@@ -721,18 +706,18 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
               </div>
             </div>
 
-            {/* Right: 100% Endpoint Verification Table */}
+            {/* Right: Endpoint verification status inventory */}
             <div
               data-testid="swagger-all-endpoints-report"
               className={`lg:col-span-6 p-4 rounded-xl border ${borderClass} ${subSurfaceClass} space-y-2.5`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-400 font-mono">
-                  ALL ENDPOINTS VERIFICATION MATRIX ({allEndpointsReport.passedEndpoints}/
-                  {allEndpointsReport.totalEndpoints} PASS)
+                  ENDPOINT STATUS INVENTORY ({allEndpointsReport.executedEndpoints}/
+                  {allEndpointsReport.totalEndpoints} EXECUTED)
                 </span>
                 <span className={`text-[11px] font-mono ${mutedText}`}>
-                  Total Latency: {allEndpointsReport.totalLatencyMs} ms
+                  Total Request Latency: {allEndpointsReport.totalLatencyMs} ms
                 </span>
               </div>
 
@@ -759,8 +744,14 @@ export const AdminRestMcpDocsView: React.FC<AdminRestMcpDocsViewProps> = ({
                       </div>
                       <div className="text-slate-400">{r.assertionSummary}</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold shrink-0">
-                      HTTP {r.httpStatus} · {r.status}
+                    <span
+                      className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+                        r.status === 'NOT_EXECUTED'
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-emerald-500/20 text-emerald-300'
+                      }`}
+                    >
+                      {r.status === 'NOT_EXECUTED' ? 'Not executed' : `HTTP ${r.httpStatus} · ${r.status}`}
                     </span>
                   </div>
                 ))}

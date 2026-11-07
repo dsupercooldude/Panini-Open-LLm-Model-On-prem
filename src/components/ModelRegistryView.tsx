@@ -36,6 +36,7 @@ import {
   AutonomousModelSelfLearningResultV64,
 } from '../utils/engineLogic';
 import { savePaniniKnowledgeShard } from '../utils/multimodalSuite';
+import ModelRuntimePanel from './ModelRuntimePanel';
 import {
   Copy,
   RotateCcw,
@@ -272,141 +273,30 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
   );
 
   const handleDownloadModelGgufOrInstaller = (
-    model: StoredModel,
-    format: 'gguf' | 'modelfile' | 'installer_sh' | 'installer_ps1'
+    _model: StoredModel,
+    _format: 'gguf' | 'modelfile' | 'installer_sh' | 'installer_ps1'
   ) => {
-    const activeVer =
-      model.versions.find((v) => v.versionId === model.currentVersionId) || model.versions[0];
-    const bundle = exportPaniniModelGgufAndInstallBundleV64({
-      modelId: model.id,
-      modelName: model.name,
-      quantType: activeVer.quantType,
-      contextLength: activeVer.contextLength,
-      activeLayers: activeVer.activeLayers,
-      totalLayers: activeVer.totalLayers,
-      loraRank: activeVer.loraRank,
-      systemDirective: activeVer.systemDirective,
-    });
-    setLastExportedBundle(bundle);
-
-    const a = document.createElement('a');
-    if (format === 'gguf') {
-      a.href = bundle.ggufDataUrl;
-      a.download = bundle.ggufFileName;
-    } else if (format === 'modelfile') {
-      a.href = bundle.modelfileDataUrl;
-      a.download = bundle.modelfileFileName;
-    } else if (format === 'installer_sh') {
-      a.href = bundle.shellInstallerDataUrl;
-      a.download = bundle.shellInstallerFileName;
-    } else {
-      a.href = bundle.powershellInstallerDataUrl;
-      a.download = bundle.powershellInstallerFileName;
-    }
-    a.click();
-
     setGgufUpdateBanner(
-      `Exported ${model.name} (${activeVer.quantType}) as ${a.download} — Ready for import into Ollama (${bundle.importCommands.ollamaCreateCmd}), LM Studio, or llama.cpp.`
+      'Model export is unavailable: this app has no model weights, so it cannot produce a runnable GGUF artifact.'
     );
   };
 
   const handleInstallOnlineCatalogModel = (entry: OnlineExternalModelCatalogEntryV64) => {
-    const installRes = installOnlineCatalogModelV64({
-      modelKeyOrFamily: entry.id,
-      targetPaniniModelId: ggufTargetModelId,
-      outputMode: ggufTerminalOutputMode,
-    });
-    const newVer = installRes.installedModel.versions[0];
-    onCloneModel(ggufTargetModelId, installRes.installedModel.name, {
-      versionTag: newVer.versionTag,
-      author: currentUserName,
-      quantType: newVer.quantType,
-      activeLayers: newVer.activeLayers,
-      totalLayers: newVer.totalLayers,
-      moeActiveExperts: newVer.moeActiveExperts,
-      moeTotalExperts: newVer.moeTotalExperts,
-      contextLength: newVer.contextLength,
-      systemDirective: newVer.systemDirective,
-      loraRank: newVer.loraRank,
-      notes: newVer.notes,
-    });
-    setGgufTerminalCommand(entry.installCommand);
-    const terminalEntry: GgufTerminalExecutionResultV63 = {
-      executionId: installRes.installationId,
-      command: entry.installCommand,
-      detectedTool: 'ollama',
-      fetchedUrlOrModel: entry.downloadUrl,
-      parsedGgufUpdate: installRes.parsedGgufUpdate,
-      persistedShardFile: installRes.persistedShardFile,
-      outputMode: ggufTerminalOutputMode,
-      isMenuOpened: true,
-      installedExternalModel: installRes.installedModel,
-      terminalStdout: installRes.terminalStdout,
-      executedAtUtc: installRes.installedAtUtc,
-    };
-    setGgufTerminalLogs((prev) => [terminalEntry, ...prev.slice(0, 7)]);
     setGgufUpdateBanner(
-      `Auto-installed online model "${entry.displayName}" (${entry.family} · ${entry.quantType} · ${(entry.contextLength / 1024).toFixed(0)}K ctx) into Model Registry and synced shard ${installRes.persistedShardFile}.`
+      `${entry.displayName} is catalog metadata only; model downloads and installation are not configured.`
     );
   };
 
-  const handleRunSelfLearningAutoTune = async () => {
-    const targetModel =
-      models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
-    const tuned = runAutonomousModelSelfLearningAndTuningV64({
-      targetModelId: targetModel.id,
-      targetModelName: targetModel.name,
-      tuningStrategy: selectedSelfLearningStrategy,
-      enableAutoContinuousLearning: selfLearningState.autoUpdateAndSelfLearningEnabled,
-    });
-    setSelfLearningState(getModelSelfLearningStateV64());
-
-    const baseVer =
-      targetModel.versions.find((v) => v.versionId === targetModel.currentVersionId) ||
-      targetModel.versions[0];
-
-    onCommitModelVersion(targetModel.id, {
-      versionTag: tuned.newVersionTag,
-      author: `${currentUserName} (Self-Learning Auto-Tuner)`,
-      quantType: baseVer.quantType,
-      activeLayers: Math.min(tuned.tunedHyperparameters.activeLayers, baseVer.totalLayers),
-      totalLayers: baseVer.totalLayers,
-      moeActiveExperts: baseVer.moeActiveExperts,
-      moeTotalExperts: baseVer.moeTotalExperts,
-      contextLength: baseVer.contextLength,
-      systemDirective: `${baseVer.systemDirective} | [${tuned.tuningRunId}: ${tuned.tuningStrategy} · Rank=${tuned.tunedHyperparameters.loraRank} · Temp=${tuned.tunedHyperparameters.temperature}]`,
-      loraRank: tuned.tunedHyperparameters.loraRank,
-      notes: tuned.differentialGgufPatchSummary,
-    });
-
+  const handleRunSelfLearningAutoTune = () => {
     setGgufUpdateBanner(
-      `${tuned.differentialGgufPatchSummary} Perplexity improved ${tuned.validationPerplexityBefore} → ${tuned.validationPerplexityAfter} (Maturity: ${tuned.maturityScoreAfter}%).`
+      'Model training is unavailable: no model weights, training runtime, or validation corpus are configured.'
     );
-
-    try {
-      await fetch('/api/v64/models/self-learn-tune', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetModelId: targetModel.id,
-          targetModelName: targetModel.name,
-          tuningStrategy: selectedSelfLearningStrategy,
-          enableAutoContinuousLearning: selfLearningState.autoUpdateAndSelfLearningEnabled,
-        }),
-      });
-    } catch {
-      // Offline local self-learning auto-tune already committed
-    }
   };
 
   const handleToggleAutoContinuousLearning = () => {
-    const nextEnabled = !selfLearningState.autoUpdateAndSelfLearningEnabled;
-    runAutonomousModelSelfLearningAndTuningV64({
-      targetModelId: ggufTargetModelId,
-      tuningStrategy: selectedSelfLearningStrategy,
-      enableAutoContinuousLearning: nextEnabled,
-    });
-    setSelfLearningState(getModelSelfLearningStateV64());
+    setGgufUpdateBanner(
+      'Continuous model learning is unavailable: no training runtime is configured.'
+    );
   };
 
   const applyParsedGgufToRegistry = (
@@ -473,6 +363,17 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
     if (overrideCmd) {
       setGgufTerminalCommand(overrideCmd);
     }
+    const normalizedCommand = cmdToRun.toLowerCase().trim();
+    const isGuideCommand = normalizedCommand === '/?' || normalizedCommand.endsWith(' /?');
+    const isCatalogCommand = /^(\/menu|menu|model-menu|ollama menu|panini-cli model-menu(?: list)?)$/.test(
+      normalizedCommand
+    );
+    if (!isGuideCommand && !isCatalogCommand) {
+      setGgufUpdateBanner(
+        'Model download, update, and install commands are unavailable because no model runtime or weight source is configured.'
+      );
+      return;
+    }
     const modeToUse = overrideMode || ggufTerminalOutputMode;
     const targetId = overrideModelId || ggufTargetModelId;
     const localExec = executeGgufModelTerminalCommandV63({
@@ -503,7 +404,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
         notes: extVer.notes,
       });
     }
-    if (!localExec.isHelpGuide && !localExec.isMenuOpened) {
+    if (!localExec.isHelpGuide && !localExec.isMenuOpened && localExec.parsedGgufUpdate) {
       applyParsedGgufToRegistry(
         localExec.parsedGgufUpdate,
         `GGUF Terminal (${localExec.detectedTool.toUpperCase()} · ${localExec.outputMode || modeToUse})`
@@ -568,19 +469,9 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
   };
 
   const handleApplyGgufUpdateToPaniniModel = () => {
-    const parsed = parseGgufFileAndBuildModelUpdateV60({
-      fileName: ggufCustomFileName || parsedGgufDescriptor.ggufFileName,
-      targetModelId: ggufTargetModelId,
-      customQuantType: parsedGgufDescriptor.quantType,
-      customContextLength: parsedGgufDescriptor.contextLength,
-      customActiveLayers: parsedGgufDescriptor.activeLayers,
-      customLoraRank: parsedGgufDescriptor.loraRank,
-      customSystemDirective: parsedGgufDescriptor.systemDirective,
-      customKnowledgeFacts: ggufCustomCalibrationFact.trim()
-        ? [ggufCustomCalibrationFact.trim()]
-        : undefined,
-    });
-    applyParsedGgufToRegistry(parsed, 'GGUF v3 Calibration Registry');
+    setGgufUpdateBanner(
+      'GGUF metadata preview is available, but applying a model update requires real model weights and an inference runtime.'
+    );
   };
 
   const canEditOrClone = evaluateRbacPermission(currentUserRole, 'clone_and_edit_model');
@@ -752,12 +643,13 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
 
   return (
     <div className="space-y-5">
+      <ModelRuntimePanel />
       <div
         data-testid="model-runtime-disclosure"
         className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-3 py-2 text-xs text-amber-100"
       >
-        No model weights or LLM inference runtime are installed. Registry values are demo profile
-        metadata and resource estimates, not runtime measurements.
+        The demo registry below contains illustrative profiles; only models shown in the connected
+        Ollama runtime have downloaded weights and can perform inference.
       </div>
       {/* ADMIN SUB-TABS UNDERNEATH FOR ORGANIZED REPRESENTATION */}
       <div
@@ -988,6 +880,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 <button
                   type="button"
                   data-testid="export-model-gguf-btn"
+                  disabled
+                  title="Unavailable: this app contains no model weights."
                   onClick={() => {
                     const targetModel =
                       models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
@@ -1001,6 +895,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 <button
                   type="button"
                   data-testid="export-model-modelfile-btn"
+                  disabled
+                  title="Unavailable: this app contains no runnable model artifact."
                   onClick={() => {
                     const targetModel =
                       models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
@@ -1014,6 +910,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 <button
                   type="button"
                   data-testid="export-model-installer-btn"
+                  disabled
+                  title="Unavailable: this app contains no runnable model artifact."
                   onClick={() => {
                     const targetModel =
                       models.find((m) => m.id === ggufTargetModelId) || inspectedModel || models[0];
@@ -1027,6 +925,8 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 <button
                   type="button"
                   data-testid="apply-gguf-model-update-btn"
+                  disabled
+                  title="Unavailable: this app contains no model weights."
                   onClick={handleApplyGgufUpdateToPaniniModel}
                   className="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 inline-flex items-center gap-2 transition shadow-sm"
                 >
@@ -1058,7 +958,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
             {ggufUpdateBanner && (
               <div
                 data-testid="gguf-model-update-success-banner"
-                className="px-3.5 py-2.5 rounded-lg border border-emerald-500/40 bg-emerald-950/30 text-emerald-200 text-xs font-mono flex items-center justify-between gap-2"
+                className="px-3.5 py-2.5 rounded-lg border border-amber-500/40 bg-amber-950/30 text-amber-200 text-xs font-mono flex items-center justify-between gap-2"
               >
                 <span>{ggufUpdateBanner}</span>
                 <button
@@ -1214,10 +1114,10 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                   <Terminal className="w-4 h-4 text-emerald-400" />
                   <div>
                     <h4 className="text-xs font-bold text-white font-mono">
-                      GGUF Fetch, Auto-Complete &amp; Online Model Hub Terminal (`ollama`, `curl`, `irm`, `wget`, `/?` Guide &amp; `/menu` · v6.4-GA)
+                      Model Catalog &amp; Command Help (downloads unavailable)
                     </h4>
                     <p className="text-[11px] text-slate-400">
-                      Supports Tab auto-complete, Output Modes (`INFO`, `DEBUG`, `VERBOSE`), `/?` Command Guides, and `/menu` (`panini-cli model-menu`) to select &amp; auto-install `DeepSeek`, `Llama`, `GLM`, `MiMo`, `Kimi`, `Bonsai D3`, and `Qwen`.
+                      Catalog entries are unverified metadata only. Help and browsing work; model downloads, installs, and updates are not configured.
                     </p>
                   </div>
                 </div>
@@ -1291,7 +1191,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                           handleRunGgufTerminalCommand();
                         }
                       }}
-                      placeholder="Type command or press Tab to auto-complete (try: /? | /menu | panini-cli model-menu install deepseek)"
+                      placeholder="Type /? for help or /menu to browse unverified catalog metadata"
                       className="w-full bg-transparent text-emerald-300 focus:outline-none font-mono text-xs"
                     />
                   </div>
@@ -1327,46 +1227,24 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 </div>
               </div>
 
-              {/* Quick Tool Presets: ollama, curl, irm, wget, /?, /menu */}
+              {/* Only non-mutating help and metadata browsing are available here. */}
               <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
                 <span className="text-slate-400 mr-1">Quick CLI Presets:</span>
                 {[
                   {
-                    label: 'ollama pull (Flagship Q5_K_M)',
-                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[0].sampleOllamaCommand,
-                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[0].targetModelId,
+                    label: 'Command help (/? )',
+                    cmd: '/?',
                   },
                   {
-                    label: 'curl -L (Coder Q8_0)',
-                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[1].sampleCurlCommand,
-                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[1].targetModelId,
-                  },
-                  {
-                    label: 'irm PowerShell (Vision Q4_K_M)',
-                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[2].sampleIrmCommand,
-                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[2].targetModelId,
-                  },
-                  {
-                    label: 'wget (Edge SecOps IQ3_XXS)',
-                    cmd: HOSTED_ONLINE_GGUF_CATALOG_V63[3].sampleWgetCommand,
-                    modelId: HOSTED_ONLINE_GGUF_CATALOG_V63[3].targetModelId,
-                  },
-                  {
-                    label: 'panini-cli model-menu install deepseek',
-                    cmd: 'panini-cli model-menu install deepseek',
-                    modelId: 'panini-400b-flagship',
-                  },
-                  {
-                    label: 'panini-cli model-menu install bonsai-d3',
-                    cmd: 'panini-cli model-menu install bonsai-d3',
-                    modelId: 'panini-coder-polyglot',
+                    label: 'Browse unverified model metadata (/menu)',
+                    cmd: '/menu',
                   },
                 ].map((preset, idx) => (
                   <button
                     key={idx}
                     type="button"
                     data-testid={`gguf-terminal-preset-${idx}`}
-                    onClick={() => handleRunGgufTerminalCommand(preset.cmd, preset.modelId)}
+                    onClick={() => handleRunGgufTerminalCommand(preset.cmd)}
                     className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-sky-300 border border-slate-800 transition-colors"
                   >
                     {preset.label}
@@ -1382,7 +1260,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-xs font-mono font-bold text-sky-300">
-                      ONLINE FRONTIER MODEL HUB MENU (`panini-cli model-menu` · `/menu`) — Select to Auto-Install `.gguf` Model
+                      Model catalog metadata only — no downloads or installs are available
                     </div>
                     <span className="text-[11px] font-mono text-slate-400">
                       DeepSeek · Llama · GLM · MiMo · Kimi · Bonsai D3 · Qwen
@@ -1467,7 +1345,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                         }
                         className="w-full py-1.5 px-2 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-mono text-[11px] font-semibold transition-colors"
                       >
-                        Fetch Online &amp; Auto-Apply →
+                        View catalog entry
                       </button>
                     </div>
                   ))}
@@ -1497,7 +1375,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                     </h4>
                   </div>
                   <p className={`text-xs ${mutedText} mt-0.5`}>
-                    Continuously harvests verified local `.gguf` Knowledge Shards and D3 Knowledge Graph entity relationships to auto-tune LoRA Rank, Alpha, Temperature, Top-P, and differential GGUF tensors without model downtime.
+                    Not available: this app has no model weights, training runtime, or validation corpus. No model tuning has been performed.
                   </p>
                 </div>
 
@@ -1506,6 +1384,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                     aria-label="Self-Learning Tuning Strategy"
                     data-testid="self-learning-strategy-select"
                     value={selectedSelfLearningStrategy}
+                    disabled
                     onChange={(e) =>
                       setSelectedSelfLearningStrategy(
                         e.target.value as AutonomousModelSelfLearningResultV64['tuningStrategy']
@@ -1521,6 +1400,7 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                   <button
                     type="button"
                     data-testid="toggle-auto-self-learning-btn"
+                    disabled
                     onClick={handleToggleAutoContinuousLearning}
                     className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-colors ${
                       selfLearningState.autoUpdateAndSelfLearningEnabled
@@ -1528,18 +1408,18 @@ export const ModelRegistryView: React.FC<ModelRegistryViewProps> = ({
                         : 'bg-slate-900 border-slate-700 text-slate-400'
                     }`}
                   >
-                    Continuous Self-Learning:{' '}
-                    {selfLearningState.autoUpdateAndSelfLearningEnabled ? 'ENABLED' : 'PAUSED'}
+                    Continuous Self-Learning: UNAVAILABLE
                   </button>
 
                   <button
                     type="button"
                     data-testid="trigger-self-learning-tune-btn"
+                    disabled
                     onClick={handleRunSelfLearningAutoTune}
                     className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 inline-flex items-center gap-1.5 transition"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Auto-Update &amp; Self-Learn Tune Model Now</span>
+                    <span>Training runtime unavailable</span>
                   </button>
                 </div>
               </div>

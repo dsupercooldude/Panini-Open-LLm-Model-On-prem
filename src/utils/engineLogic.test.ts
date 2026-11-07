@@ -1607,9 +1607,10 @@ test('Release v5.4 (SVN-r404.0): Panini-Aether-3D 6-DoF Relightable 3D Scene + U
   // 5. Continuous Self-Test & Bug-Aware Roadmap Evolution Audit
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
   assert.ok(audit.totalSelfTests >= 12);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.passedSelfTests, 0);
+  assert.equal(audit.executedSelfTests, 0);
   assert.ok(audit.resolvedBugLedger.length >= 6);
-  assert.ok(audit.resolvedBugLedger.every((b) => b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'));
+  assert.ok(audit.resolvedBugLedger.every((b) => b.verificationStatus === 'NOT_REVALIDATED'));
 });
 
 test('Hotfix v5.5 (SVN-r405.0-HF): Panini-Veo-Omni-v5.5-HF Online & Offline Cinema Video (.MP4) and Panini-LyraVox-v5.5-HF Studio Vocal & Instrumental Music (.MP3/.WAV) Parity', () => {
@@ -1891,16 +1892,16 @@ test('Release v5.7-alpha (SVN-r407.0-alpha) & BUG-507: Grounded Encyclopedic Que
 
   // 5. Autonomous CI/CD Self-Test Audit includes v5.7-alpha & BUG-507 with 100% health
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(
     audit.resolvedBugLedger.some(
-      (b) => b.bugId === 'BUG-507' && b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'
+      (b) => b.bugId === 'BUG-507' && b.verificationStatus === 'NOT_REVALIDATED'
     )
   );
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v57-phase1-guardrails-orchestrator-expensedeck' && s.status === 'PASSED'
+      (s) => s.id === 'st-v57-phase1-guardrails-orchestrator-expensedeck' && s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2029,15 +2030,15 @@ test('Release v5.7-beta (SVN-r407.2-beta) Phase 2 Production Architecture: BUG-5
 
   // 4. Autonomous CI/CD Self-Test Audit includes v5.7-beta & BUG-508
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
+  assert.equal(audit.overallHealthPct, 0);
   assert.ok(
     audit.resolvedBugLedger.some(
-      (b) => b.bugId === 'BUG-508' && b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'
+      (b) => b.bugId === 'BUG-508' && b.verificationStatus === 'NOT_REVALIDATED'
     )
   );
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v57-phase2-hybrid-rag-acl-mcp' && s.status === 'PASSED'
+      (s) => s.id === 'st-v57-phase2-hybrid-rag-acl-mcp' && s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2165,21 +2166,21 @@ test('Release v5.7-GA (SVN-r407.3-GA) Phase 3 Production Architecture & BUG-509:
 
   // 6. Autonomous CI/CD Self-Test Audit includes v5.7-GA & BUG-509 with 18/18 passing gates
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(
     audit.resolvedBugLedger.some(
-      (b) => b.bugId === 'BUG-509' && b.verificationStatus === 'VERIFIED_ZERO_REGRESSION'
+      (b) => b.bugId === 'BUG-509' && b.verificationStatus === 'NOT_REVALIDATED'
     )
   );
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v57-ga-pptx-binary-and-researched-accuracy' && s.status === 'PASSED'
+      (s) => s.id === 'st-v57-ga-pptx-binary-and-researched-accuracy' && s.status === 'NOT_EXECUTED'
     )
   );
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v57-ga-async-queue-otel-evals-sdk' && s.status === 'PASSED'
+      (s) =>       s.id === 'st-v57-ga-async-queue-otel-evals-sdk' && s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2262,7 +2263,7 @@ test('Release v5.7.1-HF (SVN-r407.4-HF) & BUG-510 / BUG-511: Gurucul Company His
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-511'));
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v571-hf-gurucul-pptx-ecma376-and-images' && s.status === 'PASSED'
+      (s) => s.id === 'st-v571-hf-gurucul-pptx-ecma376-and-images' && s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2418,12 +2419,12 @@ test('Release v5.7.2-GA (SVN-r407.5-GA) & BUG-512: 4-Tier Grounding Pipeline (Li
 
   // 7. Autonomous CI/CD Self-Test Audit includes BUG-512 and st-v572-ga-4tier-grounding-source-verification-and-reground
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-512'));
   assert.ok(
     audit.selfTests.some(
-      (s) => s.id === 'st-v572-ga-4tier-grounding-source-verification-and-reground' && s.status === 'PASSED'
+      (s) => s.id === 'st-v572-ga-4tier-grounding-source-verification-and-reground' && s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2565,15 +2566,15 @@ test('Release v5.8-GA (SVN-r408.0-GA) & BUG-513: Admin Integrations Hub (Website
   assert.ok(snap.ingestedDocumentsAndFlatfiles.length >= 3);
 
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(audit.totalSelfTests >= 20);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-513'));
   assert.ok(
     audit.selfTests.some(
       (s) =>
         s.id === 'st-v58-ga-integrations-websites-rag-files-mcp-and-subagents' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2659,14 +2660,14 @@ test('Release v5.9-GA (SVN-r409.0-GA) & BUG-514: Strict "Data Not Available" Off
 
   // 6. Autonomous CI/CD Self-Test Audit includes BUG-514
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-514'));
   assert.ok(
     audit.selfTests.some(
       (s) =>
         s.id === 'st-v59-ga-auto-prompt-engineer-60s-thinking-preview-tab-and-strict-accuracy' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
@@ -2761,19 +2762,19 @@ test('Release v6.0-GA (SVN-r410.0-GA) & BUG-515: REST API & MCP Agent/Server PDF
 
   // 4. Autonomous CI/CD Self-Test Audit includes passing gates & BUG-515
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, audit.totalSelfTests);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-515'));
   assert.ok(
     audit.selfTests.some(
       (s) =>
         s.id === 'st-v60-ga-rest-mcp-pdf-docs-gguf-model-updater-and-150s-backend-internet-timer' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
 
-test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/Merging & Chat/PPTX Grounding, Backend CLI (panini-cli & Ollama GGUF), Prepackaged Local Offline RBAC DB, Persistent Online-by-Default Settings, Interactive Swagger 100% Suite, & Release Version Selector Auto-Update', () => {
+test('Release v6.1 legacy behavior: shard helpers, CLI examples, and endpoint reports are not HTTP verification', () => {
   // 1. Knowledge Shards allow saving new sources and merging/updating existing shards, and immediately ground both Chat and PPTX
   const customTopic = 'Rubrik Zero Trust Data Security';
   const createRes = upsertAndIndexKnowledgeShardV61({
@@ -2888,9 +2889,11 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
 
   // 5. Interactive Swagger UI & 100% All-Endpoints Verification Suite (30/30 endpoint probes)
   const suite = runAllApiEndpointsVerificationSuiteV61();
-  assert.equal(suite.coveragePercentage, 100);
-  assert.equal(suite.passedEndpoints, suite.totalEndpoints);
+  assert.equal(suite.coveragePercentage, 0);
+  assert.equal(suite.passedEndpoints, 0);
   assert.equal(suite.totalEndpoints, 30);
+  assert.equal(suite.executedEndpoints, 0);
+  assert.equal(suite.verificationMode, 'NOT_EXECUTED');
 
   // 6. Release Version Selector Auto-Selects v6.4-GA + Automatic Release & Artifact Synchronization Engine
   assert.equal(CURRENT_ACTIVE_RELEASE_VERSION, 'v6.4-GA');
@@ -2935,8 +2938,8 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
 
   // 7. Autonomous CI/CD Self-Test Audit passes 25/25 gates & BUG-516 + BUG-517 + BUG-518 + BUG-519
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.equal(audit.totalSelfTests, 25);
   assert.equal(audit.resolvedBugLedger.length, 19);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-516'));
@@ -2945,25 +2948,23 @@ test('Release v6.1-GA (SVN-r411.0-GA) & BUG-516: Knowledge Shard Source Saving/M
       (s) =>
         s.id ===
           'st-v61-ga-shards-cli-local-rbac-db-persistent-online-swagger-and-release-selector' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
 
-test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine, Fixed Image Studio, P2P GGUF Shard Mesh, FIDO2/WebAuthn RBAC Signing, Swagger Request Replay & Separate REST/CLI/MCP Artifact Guide', () => {
+test('Release v6.2-GA (SVN-r412.0-GA): search results preserve real source attribution, with no synthetic Google citations', () => {
   // 1. Active Release Version is promoted to v6.4-GA (SVN-r414.0-GA)
   assert.equal(CURRENT_ACTIVE_RELEASE_VERSION, 'v6.4-GA');
   assert.equal(CURRENT_ACTIVE_SVN_REVISION, 'SVN-r414.0-GA');
 
-  // 2. Google Search & Knowledge Graph Engine is primary in Online Search & buildGoogleSearchGroundedSourcesV62
-  const googleSources = buildGoogleSearchGroundedSourcesV62(
+  // Search results must be derived from retrieved provider records, never synthetic claims.
+  const noRetrievedSources = buildGoogleSearchGroundedSourcesV62(
     'Search Google for Gurucul company history and REVEAL UEBA platform'
   );
-  assert.ok(googleSources.length >= 2);
-  assert.ok((googleSources[0].sourceEngine || '').includes('Google Search'));
-  assert.ok(googleSources[0].snippet.includes('Gurucul'));
+  assert.equal(noRetrievedSources.length, 0);
 
-  const crowdStrikeGoogleSources = buildGoogleSearchGroundedSourcesV62(
+  const crowdStrikeSources = buildGoogleSearchGroundedSourcesV62(
     'Tell me about CrowdStrike Falcon platform and its architecture',
     [
       {
@@ -2979,12 +2980,12 @@ test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine,
   );
   const searchStream = buildRetrievedSearchStream(
     'Tell me about CrowdStrike Falcon platform and its architecture',
-    crowdStrikeGoogleSources
+    crowdStrikeSources
   );
-  assert.ok(searchStream.activeEnginesCount >= 2);
+  assert.equal(searchStream.activeEnginesCount, 1);
   assert.ok(
-    searchStream.engines[0].engineName.includes('Google Search'),
-    'First search stream engine in Online mode must be Google Search & Knowledge Graph Engine'
+    searchStream.engines[0].engineName.includes('Wikipedia'),
+    'Search telemetry must preserve the actual source provider'
   );
   assert.ok(searchStream.engines[0].streamedSnippet.includes('CrowdStrike'));
 
@@ -2992,9 +2993,8 @@ test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine,
   const cliGoogleOut = executePaniniBackendCliCommandV61(
     'panini-cli search "Snowflake AI Data Cloud" --engine google'
   );
-  assert.equal(cliGoogleOut.exitCode, 0);
-  assert.ok(cliGoogleOut.stdout.includes('Google Search Grounding'));
-  assert.ok(cliGoogleOut.stdout.includes('Snowflake'));
+  assert.equal(cliGoogleOut.exitCode, 2);
+  assert.ok(cliGoogleOut.stdout.includes('no source or shard was created'));
 
   // 4. Image Generation & Multimodal Scene Synthesis (No false Data Not Available bleed)
   const imageScene = buildPromptConstructedScene(
@@ -3052,8 +3052,10 @@ test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine,
   // 8. 30/30 REST API & MCP Endpoint Probes Verified + Separate Artifact `rest_api_cli_and_mcp_usage_guide.md` Synced
   const allEndpointsSuite = runAllApiEndpointsVerificationSuiteV61();
   assert.equal(allEndpointsSuite.totalEndpoints, 30);
-  assert.equal(allEndpointsSuite.passedEndpoints, 30);
-  assert.equal(allEndpointsSuite.coveragePercentage, 100);
+  assert.equal(allEndpointsSuite.passedEndpoints, 0);
+  assert.equal(allEndpointsSuite.coveragePercentage, 0);
+  assert.equal(allEndpointsSuite.executedEndpoints, 0);
+  assert.equal(allEndpointsSuite.verificationMode, 'NOT_EXECUTED');
 
   const docsSpec = getRestApiAndMcpDocumentationSpecV60();
   assert.equal(docsSpec.docVersion, 'v6.4-GA (SVN-r414.0-GA)');
@@ -3066,8 +3068,8 @@ test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine,
 
   // 9. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-517
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.equal(audit.totalSelfTests, 25);
   assert.equal(audit.resolvedBugLedger.length, 19);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-517'));
@@ -3076,12 +3078,12 @@ test('Release v6.2-GA (SVN-r412.0-GA) & BUG-517: Google Search Grounding Engine,
       (s) =>
         s.id ===
           'st-v62-ga-google-search-image-studio-p2p-shard-mesh-fido2-and-swagger-replay' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
 
-test('Release v6.3-GA (SVN-r413.0-GA) & BUG-518: Local Model TTS Accessibility & Voice Selection, D3 Interactive Knowledge Graph, Interactive GGUF Fetch & Auto-Apply Terminal (ollama/curl/irm/wget), Streaming Multi-Agent MCP DAG Recorder & Creative Image Prompt Fix', () => {
+test('Release v6.3 legacy behavior: procedural previews remain distinct from model-backed TTS and GGUF downloads fail closed', () => {
   // 1. BUG-518: Creative 4K Image Studio prompt in Chat never triggers false Data Not Available or unrelated shard bleed
   const creativeImgPrompt =
     'Create a 4K image of a futuristic sovereign AI data center in Bengaluru with liquid cooling racks';
@@ -3155,34 +3157,33 @@ test('Release v6.3-GA (SVN-r413.0-GA) & BUG-518: Local Model TTS Accessibility &
     command:
       'curl -fsSL https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf -o panini-400b-moe-flagship-v6.3-q5_k_m.gguf --apply',
   });
-  assert.equal(curlExec.exitCode, 0);
+  assert.equal(curlExec.exitCode, 1);
   assert.equal(curlExec.detectedTool, 'curl');
-  assert.equal(curlExec.autoAppliedToModel, true);
-  assert.ok(curlExec.parsedGgufUpdate.versionTag);
-  assert.ok(curlExec.terminalStdout.includes('[AUTO-APPLY]'));
+  assert.equal(curlExec.autoAppliedToModel, false);
+  assert.ok(curlExec.terminalStdout.includes('unavailable'));
 
   const wgetExec = executeGgufModelTerminalCommandV63({
     command:
       'wget https://models.panini.local/gguf/panini-coder-polyglot-v6.3-q8_0.gguf',
   });
-  assert.equal(wgetExec.exitCode, 0);
+  assert.equal(wgetExec.exitCode, 1);
   assert.equal(wgetExec.detectedTool, 'wget');
-  assert.equal(wgetExec.autoAppliedToModel, true);
+  assert.equal(wgetExec.autoAppliedToModel, false);
 
   const irmExec = executeGgufModelTerminalCommandV63({
     command:
       'irm https://models.panini.local/gguf/panini-vision-omni-v6.3-q4_k_m.gguf -OutFile omni.gguf',
   });
-  assert.equal(irmExec.exitCode, 0);
+  assert.equal(irmExec.exitCode, 1);
   assert.equal(irmExec.detectedTool, 'irm');
-  assert.equal(irmExec.autoAppliedToModel, true);
+  assert.equal(irmExec.autoAppliedToModel, false);
 
   const ollamaRunExec = executeGgufModelTerminalCommandV63({
     command: 'ollama pull panini-secops-reveal-v6.3-iq3_xxs.gguf',
   });
-  assert.equal(ollamaRunExec.exitCode, 0);
+  assert.equal(ollamaRunExec.exitCode, 1);
   assert.equal(ollamaRunExec.detectedTool, 'ollama');
-  assert.equal(ollamaRunExec.autoAppliedToModel, true);
+  assert.equal(ollamaRunExec.autoAppliedToModel, false);
 
   // 5. Roadmap v6.3-GA Features: Streaming Multi-Agent MCP DAG Recorder, WASM OpenXML PPTX Verifier & `panini-cli top/tts/graph`
   const dagRecord = recordMcpAgentDagExecutionV63({
@@ -3216,8 +3217,8 @@ test('Release v6.3-GA (SVN-r413.0-GA) & BUG-518: Local Model TTS Accessibility &
 
   // 6. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-518
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.equal(audit.totalSelfTests, 25);
   assert.equal(audit.resolvedBugLedger.length, 19);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-518'));
@@ -3226,33 +3227,17 @@ test('Release v6.3-GA (SVN-r413.0-GA) & BUG-518: Local Model TTS Accessibility &
       (s) =>
         s.id ===
           'st-v63-ga-local-tts-d3-knowledge-graph-gguf-terminal-and-mcp-dag' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
 
-test('Release v6.4-GA (SVN-r414.0-GA) & BUG-519: Downloadable GGUF / Ollama Modelfile / Installer Exporter, Terminal Auto-Complete, INFO/DEBUG/VERBOSE Output Modes & /? Command Guide, Online Frontier Model Hub Menu (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen), Autonomous Self-Learning Model Auto-Updater, D3 Sub-Graph Export & Duplex Voice-to-Voice', () => {
+test('Release v6.4 legacy model operations fail closed; informational catalog and command help remain available', () => {
   // 1. Portable GGUF v3 Binary, Ollama Modelfile & Installer Exporter (`exportPaniniModelGgufAndInstallBundleV64`)
-  const bundle = exportPaniniModelGgufAndInstallBundleV64({
-    modelId: 'panini-400b-flagship',
-    modelName: 'Panini-400B-MoE-Flagship',
-    quantType: 'Q5_K_M',
-    contextLength: 262144,
-    activeLayers: 96,
-    totalLayers: 96,
-    loraRank: 96,
-  });
-  assert.ok(bundle.ggufFileName.endsWith('.gguf'));
-  assert.equal(bundle.ggufBytes[0], 0x47); // 'G'
-  assert.equal(bundle.ggufBytes[1], 0x47); // 'G'
-  assert.equal(bundle.ggufBytes[2], 0x55); // 'U'
-  assert.equal(bundle.ggufBytes[3], 0x46); // 'F'
-  assert.equal(bundle.ggufBytes[4], 3); // GGUF v3
-  assert.ok(bundle.ggufDataUrl.startsWith('data:application/octet-stream;base64,'));
-  assert.ok(bundle.modelfileContent.includes('FROM ./'));
-  assert.ok(bundle.shellInstallerContent.includes('ollama create'));
-  assert.ok(bundle.powershellInstallerContent.includes('ollama create'));
-  assert.ok(bundle.compatibleRuntimes.includes('Ollama'));
+  assert.throws(
+    () => exportPaniniModelGgufAndInstallBundleV64({ modelId: 'panini-400b-flagship' }),
+    /unavailable/
+  );
 
   // 2. Terminal Auto-Complete (`getTerminalAutocompleteSuggestionsV64`), Output Modes (`INFO`/`DEBUG`/`VERBOSE`), and `/?` Command Guide
   const autoCompleteList = getTerminalAutocompleteSuggestionsV64('panini-cli model-menu');
@@ -3301,53 +3286,39 @@ test('Release v6.4-GA (SVN-r414.0-GA) & BUG-519: Downloadable GGUF / Ollama Mode
   assert.ok(menuExec.terminalStdout.includes('DeepSeek'));
   assert.ok(menuExec.terminalStdout.includes('Bonsai D3'));
 
-  const deepseekInstall = installOnlineCatalogModelV64({
-    modelKeyOrFamily: 'deepseek',
-    outputMode: 'DEBUG',
-  });
-  assert.equal(deepseekInstall.catalogEntry.family, 'DeepSeek');
-  assert.equal(deepseekInstall.installedModel.name, 'DeepSeek-R1-671B-Sovereign-Q4_K_M');
-  assert.ok(deepseekInstall.persistedShardFile.endsWith('.gguf'));
-  assert.ok(deepseekInstall.terminalStdout.includes('[MODE: DEBUG'));
+  assert.throws(
+    () => installOnlineCatalogModelV64({ modelKeyOrFamily: 'deepseek', outputMode: 'DEBUG' }),
+    /unavailable/
+  );
 
   const bonsaiInstallExec = executeGgufModelTerminalCommandV63({
     command: 'panini-cli model-menu install bonsai-d3',
     outputMode: 'INFO',
   });
-  assert.ok(bonsaiInstallExec.installedExternalModel);
-  assert.equal(
-    bonsaiInstallExec.installedExternalModel?.name,
-    'Bonsai-D3-Graph-Reasoner-14B-Q5_K_M'
-  );
+  assert.equal(bonsaiInstallExec.exitCode, 1);
+  assert.equal(bonsaiInstallExec.installedExternalModel, undefined);
+  assert.ok(bonsaiInstallExec.terminalStdout.includes('unavailable'));
 
   // 4. Autonomous Self-Learning Model Auto-Updater (`runAutonomousModelSelfLearningAndTuningV64`)
-  const tuneRes = runAutonomousModelSelfLearningAndTuningV64({
-    targetModelId: 'panini-400b-flagship',
-    tuningStrategy: 'QLoRA-Differential-HotSwap',
-    enableAutoContinuousLearning: true,
-  });
-  assert.equal(tuneRes.autoContinuousLearningEnabled, true);
-  assert.ok(tuneRes.validationPerplexityAfter < tuneRes.validationPerplexityBefore);
-  assert.ok(tuneRes.maturityScoreAfter > tuneRes.maturityScoreBefore);
-  assert.equal(tuneRes.tunedHyperparameters.loraRank, 96);
-  assert.ok(getModelSelfLearningStateV64().totalAutoTuningRuns >= 2);
+  assert.throws(() => runAutonomousModelSelfLearningAndTuningV64(), /unavailable/);
+  assert.equal(getModelSelfLearningStateV64().totalAutoTuningRuns, 0);
 
   // 5. v6.4-GA Roadmap Deliverables: D3 Sub-Graph Export to GGUF Shard & Duplex Voice-to-Voice Turn
-  const d3Export = exportD3SubGraphToGgufShardV64({ focusQuery: 'Gurucul' });
-  assert.ok(d3Export.ggufShardFile.endsWith('.gguf'));
-  assert.ok(d3Export.exportedNodesCount >= 5);
-  assert.ok(d3Export.ggufDownloadDataUrl.startsWith('data:application/octet-stream;base64,'));
-
-  const duplexTurn = runDuplexVoiceToVoiceTurnV64({
-    spokenTranscript: 'Summarize Gurucul REVEAL SIEM and UEBA architecture',
-  });
-  assert.ok(duplexTurn.groundedResponseText.includes('Gurucul'));
-  assert.ok(duplexTurn.ttsAudio.audioDataUrl.startsWith('data:audio/wav;base64,'));
+  assert.throws(
+    () => exportD3SubGraphToGgufShardV64({ focusQuery: 'Gurucul' }),
+    /unavailable/
+  );
+  assert.throws(
+    () => runDuplexVoiceToVoiceTurnV64({
+      spokenTranscript: 'Summarize Gurucul REVEAL SIEM and UEBA architecture',
+    }),
+    /unavailable/
+  );
 
   // 6. Autonomous CI/CD Self-Test Audit passes 25/25 gates & includes BUG-519
   const audit = runAutonomousCiCdSelfTestAndBugAudit();
-  assert.equal(audit.overallHealthPct, 100);
-  assert.equal(audit.passedSelfTests, 25);
+  assert.equal(audit.overallHealthPct, 0);
+  assert.equal(audit.passedSelfTests, 0);
   assert.equal(audit.totalSelfTests, 25);
   assert.equal(audit.resolvedBugLedger.length, 19);
   assert.ok(audit.resolvedBugLedger.some((b) => b.bugId === 'BUG-519'));
@@ -3356,13 +3327,7 @@ test('Release v6.4-GA (SVN-r414.0-GA) & BUG-519: Downloadable GGUF / Ollama Mode
       (s) =>
         s.id ===
           'st-v64-ga-gguf-export-terminal-autocomplete-model-menu-and-self-learning-autotune' &&
-        s.status === 'PASSED'
+        s.status === 'NOT_EXECUTED'
     )
   );
 });
-
-
-
-
-
-

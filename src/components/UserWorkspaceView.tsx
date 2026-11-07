@@ -3482,72 +3482,93 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>('16:9');
   const [isLiveVoiceOpen, setIsLiveVoiceOpen] = useState<boolean>(false);
   const [isTranscribingMic, setIsTranscribingMic] = useState<boolean>(false);
+  const [isRecordingMic, setIsRecordingMic] = useState<boolean>(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedAudioChunksRef = useRef<Blob[]>([]);
   const [micTranscriptNotice, setMicTranscriptNotice] = useState<string | null>(null);
 
   const handleMicTranscribe = async () => {
     if (isTranscribingMic) return;
-    setIsTranscribingMic(true);
-    setMicTranscriptNotice(
-      isOnlineLearning
-        ? 'Listening via Panini-Speech-Decoder (Unified Shard Sync)...'
-        : 'Listening via Panini-Speech-Decoder (Offline Shard Engine)...'
-    );
-
-    const applyTranscribedPrompt = (transcriptText: string, engineBadge: string) => {
-      setPromptInput(transcriptText);
-      setIsTranscribingMic(false);
-      setMicTranscriptNotice(`Transcribed (${engineBadge}): "${transcriptText.slice(0, 62)}..."`);
-    };
-
-    try {
-      if (isOnlineLearning) {
-        const res = await fetch('/api/multimodal/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            promptHint:
-              promptInput.trim() ||
-              'Create a cinematic 16:9 video of a golden-hour Italian panini sizzling on a cast-iron press with basil and melted mozzarella',
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.transcription?.transcript) {
-            applyTranscribedPrompt(
-              data.transcription.transcript,
-              'Panini-Speech-Decoder'
-            );
-            return;
-          }
-        }
-      }
-    } catch {
-      // Fallback to deterministic voice transcript below
+    if (isRecordingMic) {
+      mediaRecorderRef.current?.stop();
+      setIsRecordingMic(false);
+      setIsTranscribingMic(true);
+      setMicTranscriptNotice('Uploading microphone recording for transcription…');
+      return;
     }
 
-    const fallbackVoicePrompts =
-      chatCapability === 'video_gen' || chatCapability === 'image_gen'
-        ? [
-            'Animate a crimson cyberpunk bullet train gliding through neon rain in Tokyo at night with reflections on wet asphalt',
-            'Show an artisan Italian panini sizzling on a cast-iron grill press with melted mozzarella, heirloom tomatoes, and fresh basil',
-            'Depict ancient scholar Maharshi Panini teaching Sanskrit grammar sutras in a sunlit Himalayan cedar courtyard',
-          ]
-        : [
-            'Analyze BRCA1 protein 3D structure with AlphaFold pLDDT confidence, ClinVar variants, and ChEMBL Lipinski metrics',
-            'Compose a 30-second ambient electronic synthwave track with warm analog pads and arpeggiated bass',
-            'Map the coordinates and nearby landmarks of Taxila University and ancient Gandhara with verified search citations',
-          ];
-    const chosenVoicePrompt =
-      promptInput.trim().length > 0
-        ? `${promptInput.trim()} — refined via voice dictation`
-        : fallbackVoicePrompts[chatHistory.length % fallbackVoicePrompts.length];
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setMicTranscriptNotice('Microphone recording is not supported by this browser.');
+      return;
+    }
 
-    setTimeout(() => {
-      applyTranscribedPrompt(
-        chosenVoicePrompt,
-        'Panini-Speech-Decoder'
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedAudioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) recordedAudioChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setIsRecordingMic(false);
+        setIsTranscribingMic(false);
+        setMicTranscriptNotice('Microphone recording failed.');
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const recording = new Blob(recordedAudioChunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        });
+        if (!recording.size || recording.size > 25 * 1024 * 1024) {
+          setIsTranscribingMic(false);
+          setMicTranscriptNotice('Recording is empty or exceeds the 25 MB limit.');
+          return;
+        }
+        try {
+          const audioBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result || '');
+              const separator = dataUrl.indexOf(',');
+              if (separator < 0) reject(new Error('Invalid audio recording.'));
+              else resolve(dataUrl.slice(separator + 1));
+            };
+            reader.onerror = () => reject(new Error('Could not read the audio recording.'));
+            reader.readAsDataURL(recording);
+          });
+          const response = await fetch('/api/multimodal/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioBase64,
+              contentType: recording.type,
+              filename: recording.type.includes('webm') ? 'recording.webm' : 'recording.wav',
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok || typeof data?.transcription?.transcript !== 'string') {
+            throw new Error(data?.error || `Transcription failed (${response.status}).`);
+          }
+          setPromptInput(data.transcription.transcript);
+          setMicTranscriptNotice(`Transcribed with ${data.transcription.modelUsed}.`);
+        } catch (error) {
+          setMicTranscriptNotice(
+            error instanceof Error ? error.message : 'Transcription provider is unavailable.'
+          );
+        } finally {
+          setIsTranscribingMic(false);
+        }
+      };
+      recorder.start();
+      setIsRecordingMic(true);
+      setMicTranscriptNotice('Recording microphone audio. Press Stop when finished.');
+    } catch (error) {
+      setMicTranscriptNotice(
+        error instanceof Error ? error.message : 'Unable to access the microphone.'
       );
-    }, 350);
+    }
   };
 
   const handleAnimateSamplePhotoToVideo = () => {
@@ -6315,16 +6336,17 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                     type="button"
                     data-testid="mic-transcribe-btn"
                     onClick={handleMicTranscribe}
-                    title="Transcribe Microphone Audio into Search Bar (Panini-Speech-Decoder)"
+                    title="Record microphone audio, then transcribe using the configured speech provider"
                     className={`p-2 rounded-lg border transition-colors flex items-center gap-1 text-xs font-semibold ${
-                      isTranscribingMic
+                      isRecordingMic
                         ? 'border-rose-500 bg-rose-500/20 text-rose-300 animate-pulse'
                         : 'border-slate-700 bg-slate-800/90 text-sky-300 hover:border-sky-500/60'
                     }`}
+                    disabled={isTranscribingMic}
                   >
                     <Mic className="w-3.5 h-3.5" />
                     <span className="hidden md:inline text-[11px]">
-                      {isTranscribingMic ? 'Listening...' : 'Mic'}
+                      {isTranscribingMic ? 'Transcribing…' : isRecordingMic ? 'Stop' : 'Record'}
                     </span>
                   </button>
                 </div>

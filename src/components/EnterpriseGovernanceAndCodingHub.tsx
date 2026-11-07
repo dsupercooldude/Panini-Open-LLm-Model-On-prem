@@ -1529,9 +1529,9 @@ export const EnterpriseGovernanceModal: React.FC<{
                     data-testid="model-runtime-disclaimer"
                     className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 text-xs text-amber-100"
                   >
-                    <strong>Model runtime unavailable:</strong> no LLM weights or inference runtime are
-                    installed. This panel saves deterministic scenario outlines and local source records;
-                    it does not train models or schedule automatic internet syncs.
+                    This panel saves deterministic scenario outlines and local source records. Configure
+                    Ollama in Model Registry to enable local inference; this control does not train models
+                    or schedule automatic internet syncs.
                     <div className="mt-1 font-mono text-[11px]">
                       Local scenario entries: {effectiveScenarios.length}
                     </div>
@@ -1915,27 +1915,31 @@ export const EnterpriseGovernanceModal: React.FC<{
               </div>
             </div>
 
-            {/* Autonomous Continuous Self-Testing & Bug-Aware Evolution Ledger */}
+            {/* Historical release assertions; this view does not execute tests. */}
             {(() => {
               const auditReport = runAutonomousCiCdSelfTestAndBugAudit();
               return (
                 <div
                   data-testid="autonomous-cicd-selftest-panel"
-                  className="rounded-xl border border-emerald-500/35 bg-slate-900/90 p-3.5 space-y-3 text-xs"
+                  className="rounded-xl border border-amber-500/35 bg-slate-900/90 p-3.5 space-y-3 text-xs"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/40">
-                        Continuous Self-Test Suite: {auditReport.passedSelfTests}/{auditReport.totalSelfTests} PASSED
+                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/40">
+                        Historical test declarations: {auditReport.totalSelfTests} · executed: {auditReport.executedSelfTests}
                       </span>
-                      <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold border border-cyan-500/40">
-                        Tracked Bugs Verified: {auditReport.resolvedBugLedger.length}/{auditReport.resolvedBugLedger.length} FIXED
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] font-bold border border-slate-700">
+                        Historical issue entries: {auditReport.resolvedBugLedger.length} · revalidated: 0
                       </span>
                     </div>
                     <span className="font-mono text-[10px] text-amber-300">
                       Next Evolution Target: {auditReport.evolutionRecommendationsForNextRelease[0]}
                     </span>
                   </div>
+
+                  <p role="note" className="rounded-lg border border-amber-500/30 bg-amber-950/30 p-2 text-amber-100">
+                    {auditReport.verificationNote}
+                  </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {auditReport.selfTests.map((st) => (
@@ -1948,8 +1952,8 @@ export const EnterpriseGovernanceModal: React.FC<{
                           <span className="text-sky-300 font-bold">
                             [{st.releaseVersion}] {st.id}: {st.subsystem}
                           </span>
-                          <span className="text-emerald-400 font-bold">
-                            ✓ {st.status} ({st.latencyMs}ms)
+                          <span className="text-amber-300 font-bold">
+                            {st.status}
                           </span>
                         </div>
                         <div className="text-slate-300 font-sans text-[11px]">
@@ -1961,7 +1965,7 @@ export const EnterpriseGovernanceModal: React.FC<{
 
                   <div className="border-t border-slate-800 pt-2.5 space-y-1.5">
                     <div className="font-mono text-[10px] text-amber-300 font-bold uppercase tracking-wider">
-                      Bug-Aware Roadmap Ledger (Verified Prior to Every Release Promotion):
+                      Historical Bug Ledger (Not Revalidated):
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {auditReport.resolvedBugLedger.map((bug) => (
@@ -1974,7 +1978,7 @@ export const EnterpriseGovernanceModal: React.FC<{
                             <span className="text-amber-300 font-bold">
                               {bug.bugId} · Found in {bug.reportedInRelease} &rarr; Fixed in {bug.fixedInRelease}
                             </span>
-                            <span className="text-emerald-400 font-bold">✓ {bug.verificationStatus}</span>
+                            <span className="text-amber-300 font-bold">{bug.verificationStatus}</span>
                           </div>
                           <div className="font-semibold text-white">{bug.symptomReported}</div>
                           <div className="text-slate-300 text-[10px]">{bug.permanentFixAndGuardrail}</div>
@@ -3995,6 +3999,4 @@ export const Phase3ProductionArchitectureCardV57: React.FC<{
     </div>
   );
 };
-
-
 

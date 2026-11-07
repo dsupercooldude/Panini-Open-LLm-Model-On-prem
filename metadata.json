@@ -1,6 +1,6 @@
 {
-  "name": "AetherQuant 400B — Offline Glass-Box LLM & Multimodal Studio",
-  "description": "Local quantized 400B parameter LLM, NLP, image, and custom-timed video inference studio with mobile thermal governance, glass-box model cloning, version rollbacks, RBAC, and 10,000 pretrained scenarios.",
+  "name": "Panini Studio — Local-First Deterministic Demo",
+  "description": "Local-first prototype with deterministic text workflows, online source retrieval, research planning, scenario management, and procedural creative previews. Includes no LLM weights or inference runtime.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -4809,143 +4809,12 @@ export interface LiveOnlineSearchSource {
 }
 
 export function buildGoogleSearchGroundedSourcesV62(
-  query: string,
+  _query: string,
   existingSources: LiveOnlineSearchSource[] = []
 ): LiveOnlineSearchSource[] {
-  const cleanTopic = extractCleanEntityTopic(query) || query.trim() || 'Enterprise Topic';
-  const qLower = `${cleanTopic} ${query}`.toLowerCase();
-  const currentYear = new Date().getFullYear();
-  const hasGoogleSource = existingSources.some((s) =>
-    (s.sourceEngine || s.publicationOrSource || '').toLowerCase().includes('google')
-  );
-  const googleResults: LiveOnlineSearchSource[] = [];
-
-  if (!hasGoogleSource) {
-    const shard = getPaniniKnowledgeShard(cleanTopic) || getPaniniKnowledgeShard(query);
-    const primaryExisting = existingSources[0];
-
-    const builtinFactsMap: { match: string[]; topic: string; url: string; facts: string[] }[] = [
-      {
-        match: ['gurucul', 'saryu nayyar', 'smeagle'],
-        topic: 'Gurucul',
-        url: 'https://gurucul.com/platform/reveal-security-analytics',
-        facts: [
-          'Gurucul was founded in 2010 in El Segundo, California by CEO Saryu Nayyar and CTO Nilesh Dherange.',
-          'Gurucul REVEAL unifies Next-Gen SIEM, UEBA (2,500+ ML models), Identity & Access Analytics (IAA), Network Traffic Analysis (NTA/NDR), and Autonomous SOAR powered by Smeagle AI.',
-        ],
-      },
-      {
-        match: ['crowdstrike', 'george kurtz', 'falcon'],
-        topic: 'CrowdStrike',
-        url: 'https://www.crowdstrike.com/platform/',
-        facts: [
-          'CrowdStrike was founded in 2011 by George Kurtz, Dmitri Alperovitch, and Gregg Marston (headquartered in Austin, Texas).',
-          'CrowdStrike Falcon is a cloud-native single-agent XDR, EDR, Cloud Security, Identity Protection, and Charlotte AI SOC platform.',
-        ],
-      },
-      {
-        match: ['snowflake', 'cortex'],
-        topic: 'Snowflake',
-        url: 'https://www.snowflake.com/en/data-cloud/',
-        facts: [
-          'Snowflake was founded in July 2012 in San Mateo, California by Benoît Dageville, Thierry Cruanes, and Marcin Żukowski.',
-          'Snowflake AI Data Cloud separates compute and storage across AWS, Azure, and GCP, featuring Snowflake Cortex AI, Snowpark, and Apache Iceberg tables.',
-        ],
-      },
-      {
-        match: ['zscaler', 'jay chaudhry'],
-        topic: 'Zscaler',
-        url: 'https://www.zscaler.com/products/zscaler-zero-trust-exchange',
-        facts: [
-          'Zscaler was founded in 2007 by Jay Chaudhry and K. Kailash (headquartered in San Jose, California).',
-          'Zscaler Zero Trust Exchange unifies ZIA (Internet Access), ZPA (Private Access), and ZDX across 150+ global data centers.',
-        ],
-      },
-      {
-        match: ['palo alto networks', 'nikesh arora', 'prisma', 'cortex xsi'],
-        topic: 'Palo Alto Networks',
-        url: 'https://www.paloaltonetworks.com/',
-        facts: [
-          'Palo Alto Networks was founded in 2005 by Nir Zuk in Santa Clara, California (led by CEO Nikesh Arora).',
-          'Core platforms include Strata Next-Gen Firewalls, Prisma Cloud & SASE, and Cortex XDR / XSIAM autonomous SOC.',
-        ],
-      },
-      {
-        match: ['databricks', 'ali ghodsi', 'lakehouse'],
-        topic: 'Databricks',
-        url: 'https://www.databricks.com/product/data-intelligence-platform',
-        facts: [
-          'Databricks was founded in 2013 in San Francisco, California by the creators of Apache Spark (Ali Ghodsi, Matei Zaharia, et al.).',
-          'Databricks Data Intelligence Platform unifies Delta Lake, Unity Catalog governance, MLflow, and Mosaic AI.',
-        ],
-      },
-    ];
-
-    const matchedBuiltin = builtinFactsMap.find((b) => b.match.some((m) => qLower.includes(m)));
-
-    if (shard && shard.cachedVerifiedFacts && shard.cachedVerifiedFacts.length > 0) {
-      googleResults.push(
-        {
-          title: `${shard.query || cleanTopic} — Google Search & Knowledge Graph Verified Profile`,
-          authorsOrInstitution: 'Google Search & Knowledge Graph Index',
-          publicationOrSource: 'Google Search (Web & Knowledge Graph)',
-          year: currentYear,
-          url:
-            shard.cachedWikipediaSources?.[0]?.url ||
-            `https://www.google.com/search?q=${encodeURIComponent(cleanTopic)}`,
-          snippet: shard.cachedVerifiedFacts.slice(0, 2).join(' '),
-          sourceEngine: 'Google Search & Knowledge Graph Engine',
-        },
-        {
-          title: `${shard.query || cleanTopic} — Google Technical & Enterprise Citation Index`,
-          authorsOrInstitution: 'Google Web & Technical Index',
-          publicationOrSource: 'Google Search (Enterprise Verification)',
-          year: currentYear,
-          url: `https://www.google.com/search?q=${encodeURIComponent(cleanTopic + ' architecture specifications')}`,
-          snippet: shard.cachedVerifiedFacts.slice(1).join(' ') || shard.cachedVerifiedFacts[0],
-          sourceEngine: 'Google Search & Knowledge Graph Engine',
-        }
-      );
-    } else if (matchedBuiltin) {
-      googleResults.push(
-        {
-          title: `${matchedBuiltin.topic} — Google Search & Knowledge Graph Verified Profile`,
-          authorsOrInstitution: 'Google Search & Knowledge Graph Index',
-          publicationOrSource: 'Google Search (Web & Knowledge Graph)',
-          year: currentYear,
-          url: matchedBuiltin.url,
-          snippet: matchedBuiltin.facts[0],
-          sourceEngine: 'Google Search & Knowledge Graph Engine',
-        },
-        {
-          title: `${matchedBuiltin.topic} — Google Search Architecture & Product Portfolio Index`,
-          authorsOrInstitution: 'Google Web & Technical Index',
-          publicationOrSource: 'Google Search (Product & Technical Verification)',
-          year: currentYear,
-          url: `https://www.google.com/search?q=${encodeURIComponent(matchedBuiltin.topic + ' product portfolio')}`,
-          snippet: matchedBuiltin.facts[1],
-          sourceEngine: 'Google Search & Knowledge Graph Engine',
-        }
-      );
-    } else if (primaryExisting && primaryExisting.snippet) {
-      googleResults.push({
-        title: `${primaryExisting.title} — Google Search Top Web & Knowledge Result`,
-        authorsOrInstitution: primaryExisting.authorsOrInstitution || 'Google Search Index',
-        publicationOrSource: 'Google Search (Top Ranked Web Citation)',
-        year: primaryExisting.year || currentYear,
-        url: primaryExisting.url.startsWith('http')
-          ? primaryExisting.url
-          : `https://www.google.com/search?q=${encodeURIComponent(cleanTopic)}`,
-        snippet: primaryExisting.snippet,
-        sourceEngine: 'Google Search & Knowledge Graph Engine',
-      });
-    }
-  }
-
-  const combined = [...googleResults, ...existingSources];
   const seen = new Set<string>();
-  return combined.filter((item) => {
-    const key = `${(item.sourceEngine || '').toLowerCase()}::${item.title.toLowerCase()}::${item.url.toLowerCase()}`;
+  return existingSources.filter((item) => {
+    const key = `${(item.sourceEngine || item.publicationOrSource || '').toLowerCase()}::${item.title.toLowerCase()}::${item.url.toLowerCase()}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -7310,7 +7179,7 @@ export interface AutonomousSelfTestItem {
   subsystem: string;
   testName: string;
   assertionDetail: string;
-  status: 'PASSED' | 'REPAIRED_AND_LOCKED';
+  status: 'PASSED' | 'REPAIRED_AND_LOCKED' | 'NOT_EXECUTED';
   latencyMs: number;
 }
 
@@ -7322,15 +7191,17 @@ export interface AutonomousBugLedgerEntry {
   rootCauseIdentified: string;
   permanentFixAndGuardrail: string;
   roadmapImpact: string;
-  verificationStatus: 'VERIFIED_ZERO_REGRESSION';
+  verificationStatus: 'VERIFIED_ZERO_REGRESSION' | 'NOT_REVALIDATED';
 }
 
 export interface AutonomousSelfTestAndBugReport {
   runId: string;
   timestampUtc: string;
   totalSelfTests: number;
+  executedSelfTests: number;
   passedSelfTests: number;
   overallHealthPct: number;
+  verificationNote: string;
   selfTests: AutonomousSelfTestItem[];
   resolvedBugLedger: AutonomousBugLedgerEntry[];
   evolutionRecommendationsForNextRelease: string[];
@@ -7867,18 +7738,32 @@ export function runAutonomousCiCdSelfTestAndBugAudit(): AutonomousSelfTestAndBug
     latencyMs: 6,
   });
 
+  const listedTests = selfTests.map((item) => ({
+    ...item,
+    status: 'NOT_EXECUTED' as const,
+    latencyMs: 0,
+    assertionDetail: `Not executed by this report. Historical assertion: ${item.assertionDetail}`,
+  }));
+  const historicalBugLedger = resolvedBugLedger.map((entry) => ({
+    ...entry,
+    verificationStatus: 'NOT_REVALIDATED' as const,
+  }));
+
   return {
     runId: `CICD-AUDIT-${Date.now()}`,
     timestampUtc,
     totalSelfTests: selfTests.length,
-    passedSelfTests: selfTests.length,
-    overallHealthPct: 100,
-    selfTests,
-    resolvedBugLedger,
+    executedSelfTests: 0,
+    passedSelfTests: 0,
+    overallHealthPct: 0,
+    verificationNote:
+      'This report is an inventory of historical test declarations; it does not execute tests. Use the repository test and build commands for verification.',
+    selfTests: listedTests,
+    resolvedBugLedger: historicalBugLedger,
     evolutionRecommendationsForNextRelease: [
-      'Maintain 100% pass rate across all 25 cumulative self-test gates including v6.4-GA (Downloadable GGUF/Modelfile/Installer Exporter, Terminal Autocomplete, DEBUG/INFO/VERBOSE Output Modes, /? Command Guides, Online Frontier Model Hub Menu for DeepSeek/Llama/GLM/MiMo/Kimi/Bonsai D3, Autonomous Self-Learning Model Auto-Tuning, D3 Sub-Graph GGUF Export, and Duplex Voice Studio).',
-      'Promote Dynamic Roadmap Auto-Drafter v6.5-GA (Federated Cross-App Ollama/vLLM Live Bridge, Neural Speculative Decoding Draft-Model Generator, & Continual RLHF Reward-Model Telemetry Visualizer) and v7.0 LTS into upcoming release cuts.',
-      'Auto-sync every roadmap draft and self-test audit with implementation_plan.md, release_verification_and_bug_ledger.md, rest_api_cli_and_mcp_usage_guide.md, and the REST/MCP/CLI PDF Reference Manual.',
+      'Implement an automated test runner that exercises real HTTP routes, authorization failures, search-source provenance, and file outputs before asserting a release gate.',
+      'Do not publish model installation, GGUF export, or self-learning claims until real weights, inference/training runtimes, and independent artifact validation are available.',
+      'Reconcile release plans and API manuals against tested behavior; mark aspirational and historical content explicitly.',
     ],
   };
 }
@@ -17868,6 +17753,16 @@ export function executePaniniBackendCliCommandV61(
       trimmedRaw
     )
   ) {
+    if (/\binstall\b/i.test(trimmedRaw)) {
+      return finalizeCliResult({
+        command: rawCommand,
+        subcommand: 'model-menu install',
+        exitCode: 2,
+        stdout:
+          'Model installation is unavailable: the catalog contains metadata only and no model weight source is configured.',
+        executedAtUtc,
+      });
+    }
     const termRes = executeGgufModelTerminalCommandV63({
       command: trimmedRaw,
       outputMode: resolvedMode,
@@ -17890,24 +17785,14 @@ export function executePaniniBackendCliCommandV61(
 
   // Direct support for curl, wget, irm, or ollama terminal commands
   if (/^(curl|wget|irm|invoke-restmethod|ollama)\b/i.test(trimmedRaw)) {
-    const termRes = executeGgufModelTerminalCommandV63({
-      command: trimmedRaw,
-      outputMode: resolvedMode,
-    });
-    return {
+    return finalizeCliResult({
       command: rawCommand,
-      subcommand: termRes.detectedTool,
-      exitCode: termRes.exitCode ?? 0,
-      outputMode: resolvedMode,
-      stdout: termRes.terminalStdout,
+      subcommand: 'model-download',
+      exitCode: 2,
+      stdout:
+        'Model download and execution are unavailable: no verified model repository or inference runtime is configured.',
       executedAtUtc,
-      structuredData: {
-        ggufTerminalResult: termRes,
-        openOnlineModelMenu: termRes.openOnlineModelMenu,
-        installedExternalModel: termRes.installedExternalModel,
-        outputMode: resolvedMode,
-      },
-    };
+    });
   }
 
   const cleaned = trimmedRaw
@@ -17919,50 +17804,24 @@ export function executePaniniBackendCliCommandV61(
   const sub = (tokens[0] || 'help').toLowerCase();
 
   if (sub === 'export-gguf' || sub === 'export-model' || sub === 'export') {
-    const modelIdx = tokens.findIndex((t) => t === '--model' || t === '-m');
-    const quantIdx = tokens.findIndex((t) => t === '--quant' || t === '-q');
-    const modelId =
-      (modelIdx >= 0 && tokens[modelIdx + 1]) || tokens[1] || 'panini-400b-flagship';
-    const quantType = ((quantIdx >= 0 && tokens[quantIdx + 1]) || 'Q5_K_M') as QuantizationType;
-    const bundle = exportPaniniModelGgufAndInstallBundleV64({ modelId, quantType });
     return finalizeCliResult({
       command: rawCommand,
       subcommand: 'export-gguf',
-      exitCode: 0,
-      stdout: [
-        `[OK] Exported Portable Model Bundle for ${bundle.modelName} (${bundle.modelId}):`,
-        `  1. GGUF Binary    : ${bundle.ggufFileName} (${bundle.ggufByteLength.toLocaleString()} bytes · Header=${bundle.ggufMagicHeader} v${bundle.ggufFormatVersion} · Quant=${bundle.quantType})`,
-        `  2. Ollama Modelfile: ${bundle.ollamaModelfileName} (Ready for \`ollama create ${bundle.ollamaModelTag} -f ${bundle.ollamaModelfileName}\`)`,
-        `  3. Installer Script: ${bundle.installerScriptName} (Compatible with: ${bundle.compatibleApps.join(', ')})`,
-      ].join('\n'),
+      exitCode: 2,
+      stdout:
+        'Model export is unavailable: this app has no model weights, so it cannot produce a runnable GGUF artifact.',
       executedAtUtc,
-      structuredData: { exportBundle: bundle },
     });
   }
 
   if (sub === 'self-learn' || sub === 'autotune' || sub === 'tune') {
-    const modelIdx = tokens.findIndex((t) => t === '--model' || t === '-m');
-    const targetModelId =
-      (modelIdx >= 0 && tokens[modelIdx + 1]) ||
-      (tokens[1] && tokens[1] !== 'tune' ? tokens[1] : 'panini-400b-flagship');
-    const tuneRes = runAutonomousModelSelfLearningAndTuningV64({
-      targetModelId,
-      tuningStrategy: 'QLoRA-Differential-HotSwap',
-      enableAutoContinuousLearning: true,
-    });
     return finalizeCliResult({
       command: rawCommand,
       subcommand: 'self-learn tune',
-      exitCode: 0,
-      stdout: [
-        `[OK] Autonomous Self-Learning & Model Auto-Tuning Complete (${tuneRes.tuningRunId}):`,
-        `  Target Model       : ${tuneRes.targetModelName} (${tuneRes.targetModelId}) -> New Version: ${tuneRes.newVersionTag}`,
-        `  Harvested Telemetry: ${tuneRes.harvestedShardsCount} .gguf Shards · ${tuneRes.harvestedFactsCount} Verified Facts · ${tuneRes.d3GraphEntitiesUsed} D3 Entities`,
-        `  Tuned Hyperparams  : LoRA Rank r=${tuneRes.tunedHyperparameters.loraRank} (alpha=${tuneRes.tunedHyperparameters.loraAlpha}) · Temp=${tuneRes.tunedHyperparameters.temperature} · Top-P=${tuneRes.tunedHyperparameters.topP}`,
-        `  Quality Progression: Maturity ${tuneRes.maturityScoreBefore}% -> ${tuneRes.maturityScoreAfter}% · Perplexity ${tuneRes.validationPerplexityBefore} -> ${tuneRes.validationPerplexityAfter}`,
-      ].join('\n'),
+      exitCode: 2,
+      stdout:
+        'Model training is unavailable: no model weights, training runtime, or validation corpus are configured.',
       executedAtUtc,
-      structuredData: { tuningResult: tuneRes },
     });
   }
 
@@ -18395,30 +18254,14 @@ export function executePaniniBackendCliCommandV61(
   if (sub === 'search' || sub === 'google') {
     const queryTokens = tokens.slice(1).filter((t) => !t.startsWith('--') && t !== 'google');
     const query = queryTokens.join(' ') || 'Gurucul';
-    const googleSources = buildGoogleSearchGroundedSourcesV62(query);
-    const shardUpsert = upsertAndIndexKnowledgeShardV61({
-      topic: extractCleanEntityTopic(query) || query,
-      sourceTitle: googleSources[0]?.title || `${query} — Google Search Grounded`,
-      sourceUrl:
-        googleSources[0]?.url || `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-      facts:
-        googleSources.length > 0
-          ? googleSources.map((s) => s.snippet)
-          : [`${query}: Grounded via Google Search & Knowledge Graph CLI.`],
-      mergeExisting: true,
-    });
     return {
       command: rawCommand,
       subcommand: 'search',
-      exitCode: 0,
-      stdout: `[OK] Google Search Grounding for "${query}" -> ${googleSources.length} verified sources retrieved & committed to ${shardUpsert.shard.ggufShardFile}`,
+      exitCode: 2,
+      stdout:
+        `Online search for "${query}" is unavailable in the standalone CLI. Use the server-backed Search workspace; no source or shard was created.`,
       executedAtUtc,
-      structuredData: {
-        engine: 'Google Search & Knowledge Graph Engine',
-        query,
-        sources: googleSources,
-        shard: shardUpsert.shard.ggufShardFile,
-      },
+      structuredData: { query, sources: [], shardCreated: false },
     };
   }
 
@@ -18506,7 +18349,7 @@ export interface SwaggerEndpointTestResultV61 {
   statusCode: number;
   httpStatus: number;
   passed: boolean;
-  status: 'PASSED' | 'FAILED';
+  status: 'PASSED' | 'FAILED' | 'NOT_EXECUTED';
   latencyMs: number;
   verificationAssertion: string;
   assertionSummary: string;
@@ -18517,18 +18360,58 @@ export interface AllApiEndpointsVerificationReportV61 {
   runId: string;
   executedAtUtc: string;
   totalEndpoints: number;
+  executedEndpoints: number;
   passedCount: number;
   passedEndpoints: number;
   coveragePct: number;
   coveragePercentage: number;
   totalLatencyMs: number;
   allPassed: boolean;
+  verificationMode: 'NOT_EXECUTED';
+  verificationNote: string;
   results: SwaggerEndpointTestResultV61[];
 }
 
 export type AllEndpointsTestSuiteReportV61 = AllApiEndpointsVerificationReportV61;
 
 export function runAllApiEndpointsVerificationSuiteV61(): AllApiEndpointsVerificationReportV61 {
+  const spec = getRestApiAndMcpDocumentationSpecV60();
+  const executedAtUtc = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const results: SwaggerEndpointTestResultV61[] = spec.restEndpoints.map((endpoint) => ({
+    endpointId: endpoint.id,
+    method: endpoint.method,
+    path: endpoint.path,
+    category: endpoint.category,
+    statusCode: 0,
+    httpStatus: 0,
+    passed: false,
+    status: 'NOT_EXECUTED',
+    latencyMs: 0,
+    verificationAssertion: 'No HTTP request was made; this endpoint is not verified.',
+    assertionSummary: 'Not executed.',
+    sampleResponsePreview: '{"verification":"not_executed"}',
+  }));
+
+  return {
+    runId: `SWAGGER-VERIFY-NOT-RUN-${Date.now()}`,
+    executedAtUtc,
+    totalEndpoints: results.length,
+    executedEndpoints: 0,
+    passedCount: 0,
+    passedEndpoints: 0,
+    coveragePct: 0,
+    coveragePercentage: 0,
+    totalLatencyMs: 0,
+    allPassed: false,
+    verificationMode: 'NOT_EXECUTED',
+    verificationNote:
+      'This prototype has no HTTP integration-test runner. Endpoint claims must be verified by real requests and authorization tests before release.',
+    results,
+  };
+}
+
+function runLegacyEndpointFixtureSimulationV61() {
+  throw new Error('Legacy endpoint fixture simulation is disabled; it did not make HTTP requests.');
   const spec = getRestApiAndMcpDocumentationSpecV60();
   const executedAtUtc = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
@@ -18689,9 +18572,9 @@ export function runAllApiEndpointsVerificationSuiteV61(): AllApiEndpointsVerific
       sampleResponsePreview = JSON.stringify({
         ok: true,
         detectedTool: term.detectedTool,
-        versionTag: term.parsedGgufUpdate.versionTag,
+        versionTag: term.parsedGgufUpdate?.versionTag ?? null,
       });
-      verificationAssertion = `Verified GGUF terminal command execution (${term.detectedTool}) & automatic model version application (${term.parsedGgufUpdate.versionTag}).`;
+      verificationAssertion = `Not executed; terminal result: ${term.terminalStdout}`;
     } else if (ep.path === '/api/v63/mcp/dag-recorder') {
       const dag = recordMcpAgentDagExecutionV63({
         workflowPrompt: 'Verify Gurucul REVEAL architecture and OpenXML PPTX telemetry',
@@ -18702,50 +18585,14 @@ export function runAllApiEndpointsVerificationSuiteV61(): AllApiEndpointsVerific
         maxLogitVarianceDelta: dag.maxLogitVarianceDelta,
       });
       verificationAssertion = `Verified Streaming Multi-Agent MCP DAG Recorder (${dag.dagRunId}, max logit variance ${dag.maxLogitVarianceDelta}).`;
-    } else if (ep.path === '/api/v64/models/export') {
-      const exp = exportPaniniModelGgufAndInstallBundleV64({
-        modelId: 'panini-400b-flagship',
-        quantType: 'Q5_K_M',
-      });
-      sampleResponsePreview = JSON.stringify({
-        ok: true,
-        ggufFileName: exp.ggufFileName,
-        ggufMagicHeader: exp.ggufMagicHeader,
-        ollamaModelfileName: exp.ollamaModelfileName,
-      });
-      verificationAssertion = `Verified GGUF v3 binary (${exp.ggufFileName}) + Ollama Modelfile + Installer Script export.`;
-    } else if (ep.path === '/api/v64/terminal/model-menu') {
-      const menuInst = installOnlineCatalogModelV64({
-        modelKeyOrFamily: 'deepseek',
-        outputMode: 'DEBUG',
-      });
-      sampleResponsePreview = JSON.stringify({
-        ok: true,
-        installedModelId: menuInst.installedModel.id,
-        family: menuInst.catalogEntry.family,
-        ggufFileName: menuInst.catalogEntry.ggufFileName,
-      });
-      verificationAssertion = `Verified Online Frontier Model Menu auto-install (${menuInst.catalogEntry.family}: ${menuInst.catalogEntry.ggufFileName}).`;
-    } else if (ep.path === '/api/v64/models/self-learn-tune') {
-      const tune = runAutonomousModelSelfLearningAndTuningV64({
-        targetModelId: 'panini-400b-flagship',
-      });
-      sampleResponsePreview = JSON.stringify({
-        ok: true,
-        tuningRunId: tune.tuningRunId,
-        newVersionTag: tune.newVersionTag,
-        maturityScoreAfter: tune.maturityScoreAfter,
-      });
-      verificationAssertion = `Verified Autonomous Self-Learning & QLoRA Model Auto-Tuning (${tune.newVersionTag}, maturity ${tune.maturityScoreAfter}%).`;
-    } else if (ep.path === '/api/v64/integrations/d3-subgraph-export') {
-      const subExp = exportD3SubGraphToGgufShardV64({ focusQuery: 'Gurucul' });
-      sampleResponsePreview = JSON.stringify({
-        ok: true,
-        exportId: subExp.exportId,
-        ggufShardFile: subExp.ggufShardFile,
-        exportedNodesCount: subExp.exportedNodesCount,
-      });
-      verificationAssertion = `Verified D3 Sub-Graph export to standalone .gguf Knowledge Shard (${subExp.ggufShardFile}).`;
+    } else if (
+      ep.path === '/api/v64/models/export' ||
+      ep.path === '/api/v64/terminal/model-menu' ||
+      ep.path === '/api/v64/models/self-learn-tune' ||
+      ep.path === '/api/v64/integrations/d3-subgraph-export'
+    ) {
+      sampleResponsePreview = '{"verification":"not_executed"}';
+      verificationAssertion = 'Not executed; legacy endpoint fixture simulation is disabled.';
     }
 
     const latencyMs = 3 + (idx % 5);
@@ -19657,8 +19504,8 @@ export interface GgufTerminalExecutionResultV63 {
   autoAppliedToModel?: boolean;
   exitCode?: number;
   terminalStdout: string;
-  parsedGgufUpdate: GgufModelUpdateDescriptorV60;
-  persistedShardFile: string;
+  parsedGgufUpdate?: GgufModelUpdateDescriptorV60;
+  persistedShardFile?: string;
   executedAtUtc: string;
 }
 
@@ -19689,10 +19536,6 @@ export function executeGgufModelTerminalCommandV63(input: {
   if (cleanedCmd === '/?' || cleanedCmd.includes(' /?') || cleanedCmd.startsWith('/?')) {
     const topic = cleanedCmd.replace(/\/\?/g, '').trim();
     const guideText = buildTerminalCommandGuideV64(topic || 'all');
-    const fallbackUpdate = parseGgufFileAndBuildModelUpdateV60({
-      fileName: 'panini-400b-moe-flagship-v6.3-q5_k_m.gguf',
-      targetModelId: input.targetModelId || 'panini-400b-flagship',
-    });
     return {
       executionId: `GGUF-HELP-${Date.now().toString().slice(-5)}`,
       rawCommand,
@@ -19701,17 +19544,12 @@ export function executeGgufModelTerminalCommandV63(input: {
       outputMode,
       isHelpGuide: true,
       isHelpGuideOutput: true,
-      fetchedUrl: 'https://models.panini.local/docs/terminal-command-guide',
-      fetchedUrlOrModel: 'https://models.panini.local/docs/terminal-command-guide',
-      ggufFileName: fallbackUpdate.ggufFileName,
       autoAppliedToModel: false,
       exitCode: 0,
       terminalStdout: formatTerminalOutputWithModeV64(guideText, outputMode, {
         command: rawCommand,
         detectedTool: 'help-guide',
       }),
-      parsedGgufUpdate: fallbackUpdate,
-      persistedShardFile: 'panini-terminal-guide.gguf',
       executedAtUtc,
     };
   }
@@ -19729,7 +19567,7 @@ export function executeGgufModelTerminalCommandV63(input: {
     const menuLines = [
       `$ ${rawCommand}`,
       `┌──────────────────────────────────────────────────────────────────────────────────────────────┐`,
-      `│ ONLINE FRONTIER MODEL HUB MENU (DeepSeek · Llama · GLM · MiMo · Kimi · Bonsai D3 · Qwen)     │`,
+      `│ UNVERIFIED MODEL CATALOG (installation is disabled in this prototype)                        │`,
       `├──────────────┬────────────────────────────────────────┬──────────┬──────────┬────────────────┤`,
       `│ FAMILY       │ GGUF MODEL PACKAGE                     │ QUANT    │ CONTEXT  │ INSTALL SYNTAX │`,
       `├──────────────┼────────────────────────────────────────┼──────────┼──────────┼────────────────┤`,
@@ -19738,12 +19576,8 @@ export function executeGgufModelTerminalCommandV63(input: {
           `│ ${m.family.padEnd(12)} │ ${m.ggufFileName.slice(0, 38).padEnd(38)} │ ${m.quantType.padEnd(8)} │ ${String(m.contextLength).padEnd(8)} │ ${m.installCommand} │`
       ),
       `└──────────────┴────────────────────────────────────────┴──────────┴──────────┴────────────────┘`,
-      `[TIP] Select any model in the interactive Online Model Hub Menu above or run \`panini-cli model-menu install <deepseek|llama|glm|mimo|kimi|bonsai-d3>\` to auto-install.`,
+      `[INFO] Entries are metadata only. Verified downloads and model installation are unavailable.`,
     ];
-    const fallbackUpdate = parseGgufFileAndBuildModelUpdateV60({
-      fileName: 'panini-400b-moe-flagship-v6.3-q5_k_m.gguf',
-      targetModelId: input.targetModelId || 'panini-400b-flagship',
-    });
     return {
       executionId: `GGUF-MENU-${Date.now().toString().slice(-5)}`,
       rawCommand,
@@ -19752,9 +19586,6 @@ export function executeGgufModelTerminalCommandV63(input: {
       outputMode,
       isMenuOpened: true,
       openOnlineModelMenu: true,
-      fetchedUrl: 'https://registry.panini.local/v64/online-frontier-models',
-      fetchedUrlOrModel: 'https://registry.panini.local/v64/online-frontier-models',
-      ggufFileName: fallbackUpdate.ggufFileName,
       autoAppliedToModel: false,
       exitCode: 0,
       terminalStdout: formatTerminalOutputWithModeV64(menuLines.join('\n'), outputMode, {
@@ -19762,8 +19593,31 @@ export function executeGgufModelTerminalCommandV63(input: {
         detectedTool: 'model-menu',
         catalogCount: catalog.length,
       }),
-      parsedGgufUpdate: fallbackUpdate,
-      persistedShardFile: 'panini-online-model-catalog.gguf',
+      executedAtUtc,
+    };
+  }
+
+  if (
+    /\b(?:install|pull|download|fetch|update)\b|\.gguf\b|\b(?:deepseek|llama|glm|mimo|kimi|qwen|bonsai)\b/i.test(
+      cleanedCmd
+    )
+  ) {
+    const detectedTool: GgufTerminalExecutionResultV63['detectedTool'] =
+      lower.startsWith('ollama') ? 'ollama' : lower.startsWith('curl') ? 'curl' : lower.startsWith('wget') ? 'wget' : lower.startsWith('irm') ? 'irm' : 'panini-gguf-fetch';
+    const unavailableMessage =
+      'Model download and installation are unavailable: no verified model source or GGUF runtime is configured.';
+    return {
+      executionId: `GGUF-UNAVAILABLE-${Date.now().toString().slice(-5)}`,
+      rawCommand,
+      command: rawCommand,
+      detectedTool,
+      outputMode,
+      autoAppliedToModel: false,
+      exitCode: 1,
+      terminalStdout: formatTerminalOutputWithModeV64(unavailableMessage, outputMode, {
+        command: rawCommand,
+        detectedTool,
+      }),
       executedAtUtc,
     };
   }
@@ -20322,6 +20176,9 @@ export function exportPaniniModelGgufAndInstallBundleV64(input: {
   systemDirective?: string;
   systemPromptOverride?: string;
 }): ExportedModelGgufAndInstallBundleV64 {
+  throw new Error(
+    'GGUF export is unavailable: this app has no model weights or validated GGUF serializer.'
+  );
   const rawModelId = (input.modelId || 'panini-400b-flagship').trim();
   const matchedPkg =
     PREBUILT_GGUF_MODEL_PACKAGES_V60.find((p) => p.targetModelId === rawModelId) ||
@@ -20774,6 +20631,9 @@ export function installOnlineCatalogModelV64(input: {
   targetPaniniModelId?: string;
   outputMode?: TerminalOutputVerbosityModeV64;
 }): OnlineCatalogModelInstallResultV64 {
+  throw new Error(
+    'Model installation is unavailable: no verified model download or GGUF parser is configured.'
+  );
   const keyLower = (input.modelKeyOrFamily || 'deepseek').toLowerCase().trim();
   const matched =
     ONLINE_EXTERNAL_MODEL_CATALOG_V64.find(
@@ -20927,12 +20787,17 @@ const TERMINAL_AUTOCOMPLETE_CATALOG_V64: TerminalAutocompleteSuggestionV64[] = [
   {
     command: 'panini-cli model-menu',
     category: 'Online Model Menu',
-    description: 'Open interactive Online Frontier Model Hub Menu (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3)',
+    description: 'Browse unverified model catalog metadata; downloads are unavailable',
+  },
+  {
+    command: 'panini-cli model-menu list',
+    category: 'Online Model Menu',
+    description: 'List unverified model catalog metadata; downloads are unavailable',
   },
   {
     command: '/menu',
     category: 'Online Model Menu',
-    description: 'Shortcut syntax to open the Online Frontier Model Hub Menu & auto-installer',
+    description: 'Browse unverified model catalog metadata; downloads are unavailable',
   },
   {
     command: 'panini-cli model-menu install deepseek',
@@ -21033,14 +20898,19 @@ export function getTerminalAutocompleteSuggestionsV64(
   partialInput: string,
   limit = 8
 ): TerminalAutocompleteSuggestionV64[] {
+  const unavailableOperation =
+    /model-menu install|export-gguf|self-learn tune|ollama pull|curl -l |wget -q|^irm /i;
+  const availableCommands = TERMINAL_AUTOCOMPLETE_CATALOG_V64.filter(
+    (item) => !unavailableOperation.test(item.command)
+  );
   const clean = (partialInput || '').trim().toLowerCase();
   if (!clean) {
-    return TERMINAL_AUTOCOMPLETE_CATALOG_V64.slice(0, limit);
+    return availableCommands.slice(0, limit);
   }
-  const prefixMatches = TERMINAL_AUTOCOMPLETE_CATALOG_V64.filter((item) =>
+  const prefixMatches = availableCommands.filter((item) =>
     item.command.toLowerCase().startsWith(clean)
   );
-  const substringMatches = TERMINAL_AUTOCOMPLETE_CATALOG_V64.filter(
+  const substringMatches = availableCommands.filter(
     (item) =>
       !item.command.toLowerCase().startsWith(clean) &&
       (item.command.toLowerCase().includes(clean) ||
@@ -21113,27 +20983,18 @@ export function buildTerminalCommandGuideV64(topicOrCommand = 'all'): string {
     `================================================================================`,
     `Filter Topic: "${cleanTopic || 'all'}" | Supported Output Modes: --info (default) | --debug | --verbose`,
     ``,
-    `1. ONLINE FRONTIER MODEL CATALOG MENU (DeepSeek, Llama, GLM, MiMo, Kimi, Bonsai D3, Qwen):`,
+    `1. UNVERIFIED MODEL CATALOG METADATA (not an online model provider):`,
     `   Syntax : panini-cli model-menu              (or /menu, ollama menu)`,
-    `   Install: panini-cli model-menu install <deepseek | llama | glm | mimo | kimi | bonsai-d3 | qwen>`,
-    `   What It Does: Opens the interactive Online Model Hub Menu and automatically downloads,`,
-    `                 parses GGUF v3 headers, and installs the selected frontier model.`,
+    `   Status : Catalog entries are informational only; model downloads and installation are unavailable.`,
     ``,
-    `2. DOWNLOADABLE GGUF BINARY, OLLAMA MODELFILE & INSTALLER EXPORTER:`,
-    `   Syntax : panini-cli export-gguf --model <model-id> --quant <Q4_K_M|Q5_K_M|Q8_0|IQ3_XXS>`,
-    `   What It Does: Exports a portable .gguf binary, Ollama Modelfile, and cross-platform`,
-    `                 installer script (.sh/.ps1) compatible with Ollama, LM Studio & llama.cpp.`,
+    `2. GGUF BINARY, OLLAMA MODELFILE & INSTALLER EXPORT:`,
+    `   Status : Unavailable; no model weights or validated GGUF writer is configured.`,
     ``,
-    `3. AUTONOMOUS SELF-LEARNING MODEL AUTO-UPDATE & QLORA TUNING:`,
-    `   Syntax : panini-cli self-learn tune --model <model-id>`,
-    `   What It Does: Harvests local .gguf Knowledge Shards & D3 entities to auto-tune LoRA rank,`,
-    `                 temperature, top-p, and differential GGUF tensors without downtime.`,
+    `3. MODEL TRAINING & SELF-LEARNING:`,
+    `   Status : Unavailable; no model weights, training runtime, or validation corpus is configured.`,
     ``,
-    `4. GGUF FETCH & AUTO-APPLY COMMANDS (ollama, curl, irm, wget):`,
-    `   * ollama pull panini-400b-moe-flagship-v6.3-q5_k_m.gguf [--debug]`,
-    `   * curl -L https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf --apply`,
-    `   * wget -qO- https://models.panini.local/gguf/panini-coder-polyglot-v6.3-q8_0.gguf --apply-model panini-coder-polyglot`,
-    `   * irm https://models.panini.local/gguf/panini-vision-omni-v6.3-q4_k_m.gguf -OutFile panini-vision-omni.gguf`,
+    `4. GGUF DOWNLOAD & AUTO-APPLY COMMANDS:`,
+    `   Status : Unavailable; no verified hosted GGUF package or model runtime is configured.`,
     ``,
     `5. DIAGNOSTICS, SHARDS, TTS, D3 KNOWLEDGE GRAPH & RBAC COMMANDS:`,
     `   * panini-cli doctor [--debug]       -> Full gateway, network, RBAC & shard health check`,
@@ -21179,122 +21040,24 @@ export interface AutonomousModelSelfLearningResultV64 {
 
 export interface ModelSelfLearningStateSnapshotV64 {
   autoUpdateAndSelfLearningEnabled: boolean;
-  activeTuningStrategy: AutonomousModelSelfLearningResultV64['tuningStrategy'];
+  activeTuningStrategy: AutonomousModelSelfLearningResultV64['tuningStrategy'] | null;
   totalAutoTuningRuns: number;
-  lastTuningResult: AutonomousModelSelfLearningResultV64;
+  lastTuningResult?: AutonomousModelSelfLearningResultV64;
   tuningHistory: AutonomousModelSelfLearningResultV64[];
 }
 
-let autoSelfLearningEnabledRuntimeV64 = true;
-const modelSelfLearningHistoryV64: AutonomousModelSelfLearningResultV64[] = [
-  {
-    tuningRunId: 'AUTOTUNE-V64-00',
-    targetModelId: 'panini-400b-flagship',
-    targetModelName: 'Panini-400B-MoE-Flagship',
-    tuningStrategy: 'QLoRA-Differential-HotSwap',
-    autoContinuousLearningEnabled: true,
-    harvestedShardsCount: 6,
-    harvestedFactsCount: 28,
-    d3GraphEntitiesUsed: 12,
-    newVersionTag: 'v6.4-autotuned-qlora',
-    maturityScoreBefore: 98.9,
-    maturityScoreAfter: 99.6,
-    validationPerplexityBefore: 1.24,
-    validationPerplexityAfter: 1.12,
-    tunedHyperparameters: {
-      loraRank: 96,
-      loraAlpha: 192,
-      temperature: 0.18,
-      topP: 0.9,
-      activeLayers: 96,
-      totalLayers: 96,
-    },
-    differentialGgufPatchSummary:
-      'Applied rank-96 QLoRA differential GGUF tensor patch across 96/96 layers using 6 active Knowledge Shards & 12 D3 Knowledge Graph entities.',
-    tunedAtUtc: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
-  },
-];
-
-export function runAutonomousModelSelfLearningAndTuningV64(input?: {
-  targetModelId?: string;
-  targetModelName?: string;
-  tuningStrategy?: AutonomousModelSelfLearningResultV64['tuningStrategy'];
-  enableAutoContinuousLearning?: boolean;
-}): AutonomousModelSelfLearningResultV64 {
-  if (typeof input?.enableAutoContinuousLearning === 'boolean') {
-    autoSelfLearningEnabledRuntimeV64 = input.enableAutoContinuousLearning;
-  }
-  const targetModelId = (input?.targetModelId || 'panini-400b-flagship').trim();
-  const matchedPkg =
-    PREBUILT_GGUF_MODEL_PACKAGES_V60.find((p) => p.targetModelId === targetModelId) ||
-    PREBUILT_GGUF_MODEL_PACKAGES_V60[0];
-  const targetModelName =
-    input?.targetModelName || matchedPkg?.targetModelName || 'Panini-400B-MoE-Flagship';
-  const tuningStrategy = input?.tuningStrategy || 'QLoRA-Differential-HotSwap';
-
-  const shards = listPaniniKnowledgeShards();
-  const harvestedFactsCount = Math.max(
-    18,
-    shards.reduce((acc, s) => acc + (s.cachedVerifiedFacts?.length || 0), 0)
+export function runAutonomousModelSelfLearningAndTuningV64(): never {
+  throw new Error(
+    'Model training is unavailable: no model weights, training runtime, or validation corpus are configured.'
   );
-  const kg = buildKnowledgeGraphD3SpecV63({ focusQuery: 'Gurucul' });
-  const d3GraphEntitiesUsed = Math.max(6, kg.stats.entityNodesCount);
-
-  const runNum = modelSelfLearningHistoryV64.length + 1;
-  const tuningRunId = `AUTOTUNE-V64-${String(runNum).padStart(2, '0')}`;
-  const newVersionTag = `v6.4-autotuned-r${runNum}`;
-  const tunedAtUtc = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-
-  const result: AutonomousModelSelfLearningResultV64 = {
-    tuningRunId,
-    targetModelId,
-    targetModelName,
-    tuningStrategy,
-    autoContinuousLearningEnabled: autoSelfLearningEnabledRuntimeV64,
-    harvestedShardsCount: shards.length,
-    harvestedFactsCount,
-    d3GraphEntitiesUsed,
-    newVersionTag,
-    maturityScoreBefore: 99.1,
-    maturityScoreAfter: Number(Math.min(99.9, 99.4 + runNum * 0.1).toFixed(1)),
-    validationPerplexityBefore: 1.21,
-    validationPerplexityAfter: Number(Math.max(1.04, 1.14 - runNum * 0.01).toFixed(2)),
-    tunedHyperparameters: {
-      loraRank: 96,
-      loraAlpha: 192,
-      temperature: 0.18,
-      topP: 0.9,
-      activeLayers: matchedPkg?.totalLayers || 96,
-      totalLayers: matchedPkg?.totalLayers || 96,
-    },
-    differentialGgufPatchSummary: `Auto-updated & self-tuned ${targetModelName} (${newVersionTag}) via ${tuningStrategy} across ${shards.length} .gguf shards (${harvestedFactsCount} verified facts) & ${d3GraphEntitiesUsed} D3 graph entities.`,
-    tunedAtUtc,
-  };
-
-  modelSelfLearningHistoryV64.unshift(result);
-
-  upsertAndIndexKnowledgeShardV61({
-    topic: `${targetModelName} Self-Learning Auto-Tune`,
-    sourceTitle: `${tuningRunId} (${tuningStrategy})`,
-    sourceUrl: `https://models.panini.local/autotune/${encodeURIComponent(tuningRunId)}`,
-    facts: [
-      result.differentialGgufPatchSummary,
-      `Validation perplexity improved from ${result.validationPerplexityBefore} to ${result.validationPerplexityAfter} (Maturity: ${result.maturityScoreAfter}%).`,
-    ],
-    mergeExisting: true,
-  });
-
-  return result;
 }
 
 export function getModelSelfLearningStateV64(): ModelSelfLearningStateSnapshotV64 {
   return {
-    autoUpdateAndSelfLearningEnabled: autoSelfLearningEnabledRuntimeV64,
-    activeTuningStrategy:
-      modelSelfLearningHistoryV64[0]?.tuningStrategy || 'QLoRA-Differential-HotSwap',
-    totalAutoTuningRuns: modelSelfLearningHistoryV64.length,
-    lastTuningResult: modelSelfLearningHistoryV64[0],
-    tuningHistory: [...modelSelfLearningHistoryV64],
+    autoUpdateAndSelfLearningEnabled: false,
+    activeTuningStrategy: null,
+    totalAutoTuningRuns: 0,
+    tuningHistory: [],
   };
 }
 
@@ -21321,6 +21084,9 @@ export function exportD3SubGraphToGgufShardV64(input?: {
   focusQuery?: string;
   selectedNodeId?: string;
 }): D3SubGraphGgufExportResultV64 {
+  throw new Error(
+    'GGUF shard export is unavailable: this app has no validated GGUF writer or model artifact.'
+  );
   const focusQuery = (input?.focusQuery || 'Gurucul').trim();
   const kg = buildKnowledgeGraphD3SpecV63({ focusQuery });
   const extractedFacts = kg.nodes
@@ -21372,6 +21138,9 @@ export function runDuplexVoiceToVoiceTurnV64(input: {
   voiceId?: string;
   speechRate?: number;
 }): DuplexVoiceToVoiceTurnResultV64 {
+  throw new Error(
+    'Voice-to-voice generation is unavailable: no speech recognition or synthesis model is configured.'
+  );
   const spokenTranscript = (
     input.spokenTranscript || 'Summarize Gurucul REVEAL SIEM and UEBA architecture'
   ).trim();
@@ -21391,4 +21160,3 @@ export function runDuplexVoiceToVoiceTurnV64(input: {
     roundTripLatencyMs: 38,
   };
 }
-

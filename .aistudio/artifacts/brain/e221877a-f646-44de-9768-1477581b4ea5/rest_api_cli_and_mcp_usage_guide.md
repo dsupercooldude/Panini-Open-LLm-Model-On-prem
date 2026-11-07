@@ -1,5 +1,7 @@
 # Panini Sovereign Master AI — REST API, Backend CLI (`panini-cli`) & MCP Usage Guide (`v6.4-GA / SVN-r414.0-GA`)
 
+> **Compatibility warning:** The endpoint, CLI, MCP, model, and verification descriptions below are legacy documentation, not a contract for the current prototype. In particular, the stated `30/30` endpoint pass rate, model downloads, GGUF export, training, and generated speech are not verified and must not be relied on. The API report now returns `NOT_EXECUTED`; unsupported model artifact operations fail closed. Production API access requires the configured sign-in described in the repository [README.md](../../../../README.md). Treat each route as unsupported until it has a real integration test and current implementation evidence.
+
 ## 1. Overview & KISS Architecture Principles
 
 This dedicated artifact provides the complete, copy-ready reference for integrating with, operating, and troubleshooting **Panini Sovereign Master AI (`v6.4-GA / SVN-r414.0-GA`)** across three unified interfaces:
@@ -10,7 +12,7 @@ This dedicated artifact provides the complete, copy-ready reference for integrat
 
 ---
 
-## 2. REST API Reference (`30/30` Verified Endpoints — `100%` Pass Rate)
+## 2. Historical REST API Reference (routes and behaviors are not verified)
 
 ### 2.1 Summary Table of All Documented REST Endpoints
 

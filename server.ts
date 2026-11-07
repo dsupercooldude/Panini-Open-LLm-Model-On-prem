@@ -1,7 +1,19 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { SessionAuthenticator } from './src/utils/serverAuth';
+import { SqliteStore } from './src/utils/sqliteStore';
+import { OllamaRuntime, OllamaRuntimeError } from './src/utils/ollamaRuntime';
+import {
+  OnlineAiProviderError,
+  createChatCompletion,
+  createFineTuningJob,
+  getFineTuningJob,
+  synthesizeSpeech,
+  transcribeAudio,
+} from './src/utils/onlineAiProvider';
 import {
   autoCorrectUserQuery,
   translateNlpToUseCase,
@@ -116,9 +128,419 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
+  const HOST = process.env.PANINI_BIND_HOST || '127.0.0.1';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isLoopbackHost = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost';
+
+  if (!Number.isInteger(PORT) || PORT < 0 || PORT > 65535) {
+    throw new Error('PORT must be an integer between 0 and 65535.');
+  }
+  if (!isProduction && !isLoopbackHost) {
+    throw new Error('Non-production servers must bind to loopback only.');
+  }
+  if (isProduction && (!process.env.PANINI_ADMIN_PASSWORD || process.env.PANINI_ADMIN_PASSWORD.length < 16)) {
+    throw new Error('Production requires PANINI_ADMIN_PASSWORD with at least 16 characters.');
+  }
+
+  app.disable('x-powered-by');
+  app.set('trust proxy', process.env.PANINI_TRUST_PROXY === '1');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(), geolocation=(), payment=()');
+    next();
+  });
 
   app.use(express.json({ limit: '10mb' }));
+
+  const sqliteStore = new SqliteStore(
+    process.env.PANINI_DB_PATH || path.join(__dirname, 'data', 'panini.sqlite')
+  );
+  function recordResearchEvidence(query: string, sources: Array<{ title: string; url: string }>) {
+    const records = sources.flatMap((source) => {
+      try {
+        const url = new URL(source.url);
+        if (url.protocol !== 'https:') return [];
+        return [{ title: source.title.slice(0, 500), url: url.toString(), domain: url.hostname.toLowerCase() }];
+      } catch {
+        return [];
+      }
+    });
+    const hostCount = new Set(records.map((source) => source.domain)).size;
+    const validationStatus =
+      hostCount > 1 ? 'multiple_hosts' : hostCount === 1 ? 'single_host' : 'unverified';
+    const evidenceCoverage = {
+      sourceCount: records.length,
+      uniqueHostCount: hostCount,
+      status: validationStatus,
+      independentlyFactChecked: false,
+    } as const;
+    sqliteStore.saveResearchValidation({
+      query: query.slice(0, 2000),
+      sourceCount: records.length,
+      independentDomainCount: hostCount,
+      validationStatus,
+      sources: records,
+      createdAt: new Date().toISOString(),
+    });
+    return evidenceCoverage;
+  }
+
+  const authenticator = isProduction
+    ? new SessionAuthenticator(
+        process.env.PANINI_ADMIN_USERNAME || 'admin',
+        process.env.PANINI_ADMIN_PASSWORD!,
+        sqliteStore
+      )
+    : undefined;
+  const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+  const sessionCookieName = 'panini_session';
+  const unavailableCapability = (res: express.Response, capability: string) =>
+    res.status(501).json({
+      ok: false,
+      code: 'CAPABILITY_UNAVAILABLE',
+      capability,
+      error: 'This prototype has no configured model weights or inference/training runtime.',
+    });
+  const ollama = new OllamaRuntime();
+
+  function getSessionId(req: express.Request): string | undefined {
+    const cookieHeader = req.headers.cookie;
+    if (!cookieHeader) return undefined;
+    const cookie = cookieHeader
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${sessionCookieName}=`));
+    return cookie?.slice(sessionCookieName.length + 1);
+  }
+
+  function requestHasSameOrigin(req: express.Request): boolean {
+    const origin = req.get('origin');
+    if (!origin) return true;
+    try {
+      return new URL(origin).host === req.get('host');
+    } catch {
+      return false;
+    }
+  }
+
+  app.get('/api/auth/session', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      authRequired: isProduction,
+      authenticated: !isProduction || authenticator!.isAuthenticated(getSessionId(req)),
+    });
+  });
+
+  app.post('/api/auth/login', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (isProduction && !req.secure) {
+      res.status(400).json({ ok: false, error: 'Production sign-in requires HTTPS.' });
+      return;
+    }
+    if (!requestHasSameOrigin(req)) {
+      res.status(403).json({ ok: false, error: 'Request origin rejected.' });
+      return;
+    }
+    if (!isProduction || !authenticator) {
+      res.status(404).json({ ok: false, error: 'Login is only enabled in production mode.' });
+      return;
+    }
+
+    const now = Date.now();
+    const clientKey = req.ip || req.socket.remoteAddress || 'unknown';
+    const attempts = loginAttempts.get(clientKey);
+    if (attempts && attempts.resetAt > now && attempts.count >= 5) {
+      res.status(429).json({ ok: false, error: 'Too many login attempts. Try again later.' });
+      return;
+    }
+
+    const username = typeof req.body?.username === 'string' ? req.body.username : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (username.length > 256 || password.length > 256) {
+      res.status(401).json({ ok: false, error: 'Invalid credentials.' });
+      return;
+    }
+    const sessionId = authenticator.login(
+      username,
+      password,
+      now
+    );
+    if (!sessionId) {
+      const current = attempts && attempts.resetAt > now ? attempts : { count: 0, resetAt: now + 15 * 60 * 1000 };
+      current.count += 1;
+      loginAttempts.set(clientKey, current);
+      res.status(401).json({ ok: false, error: 'Invalid credentials.' });
+      return;
+    }
+
+    loginAttempts.delete(clientKey);
+    res.setHeader(
+      'Set-Cookie',
+      `${sessionCookieName}=${sessionId}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=28800`
+    );
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    authenticator?.logout(getSessionId(req));
+    res.setHeader(
+      'Set-Cookie',
+      `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0`
+    );
+    res.json({ ok: true });
+  });
+
+  app.use('/api', (req, res, next) => {
+    if (!isProduction) {
+      next();
+      return;
+    }
+    if (
+      req.path === '/auth/session' ||
+      req.path === '/auth/login' ||
+      req.path === '/auth/logout' ||
+      req.path === '/install/manifest.json' ||
+      req.path === '/install/setup.sh' ||
+      req.path === '/install/setup.ps1'
+    ) {
+      next();
+      return;
+    }
+    if (!authenticator?.isAuthenticated(getSessionId(req))) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    if (!requestHasSameOrigin(req)) {
+      res.status(403).json({ ok: false, error: 'Request origin rejected.' });
+      return;
+    }
+    next();
+  });
+
+  app.get('/api/llm/online/status', (_req, res) => {
+    res.json({
+      ok: true,
+      configured: Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_CHAT_MODEL),
+      model: process.env.OPENAI_CHAT_MODEL || null,
+      speechConfigured: Boolean(process.env.OPENAI_API_KEY),
+      fineTuningConfigured: Boolean(process.env.OPENAI_API_KEY),
+    });
+  });
+
+  app.get('/api/llm/status', async (_req, res) => {
+    const status = await ollama.status();
+    res.json({
+      ok: true,
+      provider: 'ollama',
+      defaultModelConfigured: Boolean(process.env.PANINI_OLLAMA_MODEL),
+      configuredDefaultModel: process.env.PANINI_OLLAMA_MODEL || null,
+      ...status,
+    });
+  });
+
+  app.get('/api/llm/models', async (_req, res) => {
+    try {
+      res.json({ ok: true, models: await ollama.listModels() });
+    } catch (error) {
+      const status = error instanceof OllamaRuntimeError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'OLLAMA_UNAVAILABLE', error: String(error) });
+    }
+  });
+
+  app.post('/api/llm/models/pull', async (req, res) => {
+    try {
+      const model = typeof req.body?.model === 'string' ? req.body.model : '';
+      const result = await ollama.pullModel(model);
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      const status = error instanceof OllamaRuntimeError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'MODEL_PULL_FAILED', error: String(error) });
+    }
+  });
+
+  app.post('/api/llm/chat', async (req, res) => {
+    try {
+      const model =
+        typeof req.body?.model === 'string'
+          ? req.body.model
+          : process.env.PANINI_OLLAMA_MODEL || '';
+      const messages = req.body?.messages;
+      if (
+        !Array.isArray(messages) ||
+        !messages.every(
+          (message: unknown) =>
+            Boolean(message) &&
+            typeof message === 'object' &&
+            ['system', 'user', 'assistant'].includes(
+              String((message as { role?: unknown }).role)
+            ) &&
+            typeof (message as { content?: unknown }).content === 'string' &&
+            (message as { content: string }).content.length <= 50000
+        )
+      ) {
+        res.status(400).json({ ok: false, code: 'INVALID_MESSAGES', error: 'Invalid chat messages.' });
+        return;
+      }
+      if (!model) {
+        res.status(503).json({
+          ok: false,
+          code: 'MODEL_NOT_CONFIGURED',
+          error: 'Select a downloaded Ollama model or set PANINI_OLLAMA_MODEL.',
+        });
+        return;
+      }
+      const result = await ollama.chat(model, messages);
+      res.json({ ok: true, provider: 'ollama', ...result });
+    } catch (error) {
+      const status = error instanceof OllamaRuntimeError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'INFERENCE_FAILED', error: String(error) });
+    }
+  });
+
+  app.post('/api/llm/online/chat', async (req, res) => {
+    try {
+      const model =
+        typeof req.body?.model === 'string'
+          ? req.body.model
+          : process.env.OPENAI_CHAT_MODEL || '';
+      if (!model) {
+        res.status(503).json({
+          ok: false,
+          code: 'ONLINE_MODEL_NOT_CONFIGURED',
+          error: 'Set OPENAI_CHAT_MODEL and OPENAI_API_KEY to enable online model inference.',
+        });
+        return;
+      }
+      const result = await createChatCompletion({ model, messages: req.body?.messages });
+      res.json({ ok: true, provider: 'openai-compatible', ...result });
+    } catch (error) {
+      const status = error instanceof OnlineAiProviderError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'ONLINE_INFERENCE_FAILED', error: String(error) });
+    }
+  });
+
+  app.get('/api/llm/export/modelfile', async (req, res) => {
+    try {
+      const model = typeof req.query.model === 'string' ? req.query.model : '';
+      const result = await ollama.exportModelfile(model);
+      const safeName = result.model.replace(/[^a-zA-Z0-9._-]/g, '_');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.Modelfile"`);
+      res.send(result.modelfile);
+    } catch (error) {
+      const status = error instanceof OllamaRuntimeError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'MODEL_EXPORT_FAILED', error: String(error) });
+    }
+  });
+
+  app.get('/api/llm/export/gguf', async (req, res) => {
+    const exportDir = process.env.PANINI_GGUF_EXPORT_DIR;
+    const model = typeof req.query.model === 'string' ? req.query.model : '';
+    if (!exportDir) {
+      res.status(503).json({
+        ok: false,
+        code: 'GGUF_EXPORT_NOT_CONFIGURED',
+        error: 'Set PANINI_GGUF_EXPORT_DIR to a directory of actual GGUF weight files.',
+      });
+      return;
+    }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,160}$/.test(model)) {
+      res.status(400).json({ ok: false, code: 'INVALID_MODEL_NAME', error: 'Invalid GGUF model filename.' });
+      return;
+    }
+    const filePath = path.resolve(exportDir, `${model}.gguf`);
+    const root = path.resolve(exportDir) + path.sep;
+    if (!filePath.startsWith(root)) {
+      res.status(400).json({ ok: false, code: 'INVALID_MODEL_NAME', error: 'Invalid GGUF model filename.' });
+      return;
+    }
+    try {
+      const handle = await fs.promises.open(filePath, 'r');
+      const header = Buffer.alloc(8);
+      try {
+        const { bytesRead } = await handle.read(header, 0, header.length, 0);
+        const version = header.readUInt32LE(4);
+        if (
+          bytesRead !== 8 ||
+          header.toString('ascii', 0, 4) !== 'GGUF' ||
+          (version !== 2 && version !== 3)
+        ) {
+          res.status(422).json({ ok: false, code: 'INVALID_GGUF', error: 'File does not have a supported GGUF v2/v3 header.' });
+          return;
+        }
+      } finally {
+        await handle.close();
+      }
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${model}.gguf"`);
+      fs.createReadStream(filePath).pipe(res);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        res.status(404).json({ ok: false, code: 'GGUF_NOT_FOUND', error: 'GGUF weights were not found in the configured export directory.' });
+        return;
+      }
+      res.status(500).json({ ok: false, code: 'GGUF_EXPORT_FAILED', error: String(error) });
+    }
+  });
+
+  app.post('/api/llm/train', async (req, res) => {
+    try {
+      const job = await createFineTuningJob({
+        model: req.body?.model,
+        examples: req.body?.examples,
+      });
+      const jobId = typeof job.id === 'string' ? job.id : '';
+      if (!jobId) {
+        res.status(502).json({ ok: false, code: 'TRAINING_JOB_INVALID', error: 'Training provider returned no job ID.' });
+        return;
+      }
+      const createdAt = new Date().toISOString();
+      sqliteStore.saveTrainingJob({
+        jobId,
+        modelName: String(req.body.model),
+        status: String(job.status || 'queued'),
+        provider: 'openai-compatible',
+        createdAt,
+        detail: job,
+      });
+      res.status(202).json({ ok: true, job });
+    } catch (error) {
+      const status = error instanceof OnlineAiProviderError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'TRAINING_FAILED', error: String(error) });
+    }
+  });
+
+  app.get('/api/llm/train/jobs', (_req, res) => {
+    res.json({ ok: true, jobs: sqliteStore.listTrainingJobs() });
+  });
+
+  app.get('/api/llm/train/jobs/:jobId', async (req, res) => {
+    try {
+      const job = await getFineTuningJob(req.params.jobId);
+      const jobId = String(job.id || req.params.jobId);
+      const previous = sqliteStore.listTrainingJobs().find((item) => item.jobId === jobId);
+      sqliteStore.saveTrainingJob({
+        jobId,
+        modelName: String(job.model || previous?.modelName || 'unknown'),
+        status: String(job.status || 'unknown'),
+        provider: 'openai-compatible',
+        createdAt: previous?.createdAt || new Date().toISOString(),
+        detail: job,
+      });
+      res.json({ ok: true, job });
+    } catch (error) {
+      const status = error instanceof OnlineAiProviderError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'TRAINING_STATUS_FAILED', error: String(error) });
+    }
+  });
+
+  app.get('/api/research/validation/recent', (req, res) => {
+    const limit = Number(req.query.limit) || 50;
+    res.json({ ok: true, records: sqliteStore.listResearchValidations(limit) });
+  });
 
   // Valid Live Localhost Installation Script Endpoints
   app.get('/api/install/setup.sh', (req, res) => {
@@ -158,15 +580,10 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     const hostOrigin = `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
     res.json({
       package: 'panini-400b-studio',
-      version: '5.6.0',
-      svnRevision: 'SVN-r406.0',
-      zeroExternalModelCalls: true,
-      modelProfiles: [
-        'panini-omni-flash-v56 (Panini-Omni-Flash-1.1-Sovereign)',
-        'panini-lyria-3-pro-v56 (Panini-Lyria-3-Pro-Sovereign)',
-        'panini-omega-2t-master (Panini-Omega-2.0T-Sovereign-Master)',
-        'panini-400b-flagship (Panini-400B-MoE-Flagship)',
-      ],
+      version: '6.4.0',
+      releaseVersion: CURRENT_ACTIVE_RELEASE_VERSION,
+      svnRevision: CURRENT_ACTIVE_SVN_REVISION,
+      modelProfilesAreMetadataOnly: true,
       inferenceRuntime: {
         available: false,
         weightsLoaded: false,
@@ -511,20 +928,19 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       // Results from other live providers remain available.
     }
 
-    // Ensure Google Search & Knowledge Graph Engine is synthesized at the top of the grounded results
-    const googleEnhanced = buildGoogleSearchGroundedSourcesV62(cleanQ, results).map((s) => ({
+    const actualSources = buildGoogleSearchGroundedSourcesV62(cleanQ, results).map((s) => ({
       ...s,
       doiOrUrl: s.url,
-      sourceEngine: s.sourceEngine || 'Google Search & Knowledge Graph Engine',
+      sourceEngine: s.sourceEngine || s.publicationOrSource || 'Unknown source provider',
     }));
 
-    const sourcesByProvider = new Map<string, typeof googleEnhanced>();
-    for (const result of googleEnhanced) {
+    const sourcesByProvider = new Map<string, typeof actualSources>();
+    for (const result of actualSources) {
       const providerResults = sourcesByProvider.get(result.sourceEngine) || [];
       providerResults.push(result);
       sourcesByProvider.set(result.sourceEngine, providerResults);
     }
-    const balancedResults: typeof googleEnhanced = [];
+    const balancedResults: typeof actualSources = [];
     while (balancedResults.length < maxResults) {
       let addedResult = false;
       for (const providerResults of sourcesByProvider.values()) {
@@ -600,6 +1016,15 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         ...r,
         refNumber: i + 1,
       }));
+      const evidenceCoverage = isOnline
+        ? recordResearchEvidence(
+            rawTopic,
+            numberedRefs.map((reference) => ({
+              title: reference.title,
+              url: reference.doiOrUrl,
+            }))
+          )
+        : undefined;
 
       res.json({
         ok: true,
@@ -614,6 +1039,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         stagesValidated: steps.length,
         references: numberedRefs,
         liveStageSnippets,
+        evidenceCoverage,
       });
     } catch (err) {
       res.status(500).json({ ok: false, error: String(err) });
@@ -634,6 +1060,10 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       const limit = Number(req.body?.limit || req.query?.limit || 6);
       const persistToShard = req.body?.persistToShard !== false;
       const liveSources = await fetchLiveInternetSources(rawQuery, Math.max(4, Math.min(10, limit)));
+      const evidenceCoverage = recordResearchEvidence(
+        rawQuery,
+        liveSources.map((source) => ({ title: source.title, url: source.url }))
+      );
       const cleanSubject = extractCleanEntityTopic(rawQuery) || rawQuery;
 
       let persistedShardFile: string | undefined;
@@ -658,6 +1088,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         query: rawQuery,
         cleanSubject,
         sourcesCount: liveSources.length,
+        evidenceCoverage,
         persistedShard: persistedShardFile,
         sources: liveSources,
         liveSources,
@@ -1092,26 +1523,35 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  // 6. Audio Transcription Endpoint (gemini-3.5-transcribe)
+  // Speech recognition requires a real provider and audio payload; spoken hints are not transcripts.
   app.post('/api/multimodal/transcribe', async (req, res) => {
     try {
-      const spokenHint = typeof req.body?.spokenHint === 'string' ? req.body.spokenHint.trim() : '';
-      const transcript =
-        spokenHint ||
-        'Create a cinematic 16:9 video and 3D bioscience analysis of CRISPR-Cas9 gene editing with ambient classical music';
+      const encoded = typeof req.body?.audioBase64 === 'string' ? req.body.audioBase64 : '';
+      if (!encoded || encoded.length > 35_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+        res.status(400).json({
+          ok: false,
+          code: 'AUDIO_REQUIRED',
+          error: 'Provide audioBase64 and contentType; spokenHint text is not an audio transcription.',
+        });
+        return;
+      }
+      const result = await transcribeAudio({
+        audio: new Uint8Array(Buffer.from(encoded, 'base64')),
+        filename: String(req.body?.filename || 'recording.wav'),
+        contentType: String(req.body?.contentType || 'audio/wav'),
+        model: typeof req.body?.model === 'string' ? req.body.model : undefined,
+      });
       res.json({
         ok: true,
         transcription: {
-          transcript,
-          modelUsed: 'Panini-Speech-Decoder',
-          durationSec: 4.1,
-          confidencePct: 99.4,
-          detectedLanguage: 'en-US',
-          executionSource: 'Panini Unified Speech Decoder',
+          transcript: result.text,
+          modelUsed: result.model,
+          executionSource: 'Configured speech transcription provider',
         },
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      const status = err instanceof OnlineAiProviderError ? err.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'TRANSCRIPTION_FAILED', error: String(err) });
     }
   });
 
@@ -1685,59 +2125,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   });
 
   app.post('/api/v60/gguf-parse-and-update', (req, res) => {
-    try {
-      const fileName = String(
-        req.body?.fileName || 'panini-400b-moe-flagship-v6.0-q5_k_m.gguf'
-      );
-      const targetModelId = req.body?.targetModelId
-        ? String(req.body.targetModelId)
-        : undefined;
-      const rawContentOrBase64 = req.body?.rawContentOrBase64
-        ? String(req.body.rawContentOrBase64)
-        : undefined;
-      const customQuantType = req.body?.customQuantType as QuantizationType | undefined;
-      const customContextLength = req.body?.customContextLength
-        ? Number(req.body.customContextLength)
-        : undefined;
-      const customActiveLayers = req.body?.customActiveLayers
-        ? Number(req.body.customActiveLayers)
-        : undefined;
-      const customLoraRank = req.body?.customLoraRank
-        ? Number(req.body.customLoraRank)
-        : undefined;
-      const customSystemDirective = req.body?.customSystemDirective
-        ? String(req.body.customSystemDirective)
-        : undefined;
-
-      const ggufDescriptor = parseGgufFileAndBuildModelUpdateV60({
-        fileName,
-        targetModelId,
-        rawContentOrBase64,
-        customQuantType,
-        customContextLength,
-        customActiveLayers,
-        customLoraRank,
-        customSystemDirective,
-      });
-
-      const appliedResult = applyGgufUpdateToPaniniModelsV60(
-        INITIAL_MODELS,
-        ggufDescriptor,
-        String(req.body?.author || 'dsupercooldude@gmail.com')
-      );
-
-      res.json({
-        ok: true,
-        releaseVersion: 'v6.0-GA (SVN-r410.0-GA)',
-        ggufDescriptor,
-        committedVersion: appliedResult.committedVersion,
-        updatedModelName: appliedResult.updatedModel.name,
-        persistedShardFile: appliedResult.persistedShardFile,
-        prebuiltPackages: PREBUILT_GGUF_MODEL_PACKAGES_V60,
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'GGUF model update');
   });
 
   app.get('/api/v60/docs/rest-mcp-spec', (_req, res) => {
@@ -1772,7 +2160,9 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   // PREPACKAGED OFFLINE RBAC USERS, INTERNET-BY-DEFAULT SETTINGS), BACKEND CLI
   // (`panini-cli` & OLLAMA GGUF), AND 100% ALL-ENDPOINTS SWAGGER TEST RUNNER
   // ============================================================================
-  const LOCAL_DB_PATH = path.join(__dirname, 'data', 'panini-local-sovereign-db.json');
+  const LOCAL_DB_PATH =
+    process.env.PANINI_JSON_DB_PATH ||
+    path.join(__dirname, 'data', 'panini-local-sovereign-db.json');
 
   function persistLocalSovereignDbToDisk() {
     try {
@@ -1886,7 +2276,14 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   // 2. Prepackaged Local Offline RBAC User Database (/api/v61/rbac/users)
   app.get('/api/v61/rbac/users', (_req, res) => {
     try {
-      const users = listLocalRbacUsersV61();
+      const users = listLocalRbacUsersV61().map((user) => {
+        const {
+          passwordHashSha256: _passwordHashSha256,
+          offlinePinOrPasskeyId: _offlinePinOrPasskeyId,
+          ...safeUser
+        } = user;
+        return safeUser;
+      });
       res.json({
         ok: true,
         releaseVersion: 'v6.1-GA (SVN-r411.0-GA)',
@@ -2047,65 +2444,24 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   // ==========================================================================
 
   app.get('/api/v62/shards/p2p-sync', (_req, res) => {
-    try {
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        meshSync: getPeerToPeerShardMeshStatusV62(),
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    res.json({
+      ok: true,
+      configured: false,
+      status: 'NOT_CONFIGURED',
+      peers: [],
+    });
   });
 
-  app.post('/api/v62/shards/p2p-sync', (req, res) => {
-    try {
-      const meshSync = syncPeerToPeerGgufShardMeshV62({
-        targetPeerNodes: Array.isArray(req.body?.targetPeerNodes)
-          ? req.body.targetPeerNodes
-          : undefined,
-        syncMode: req.body?.syncMode,
-      });
-      persistLocalSovereignDbToDisk();
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        meshSync,
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+  app.post('/api/v62/shards/p2p-sync', (_req, res) => {
+    return unavailableCapability(res, 'Peer-to-peer shard synchronization');
   });
 
   app.get('/api/v62/rbac/fido2-sign', (_req, res) => {
-    try {
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        ledger: getFido2SignatureLedgerV62(),
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    res.json({ ok: true, configured: false, ledger: [] });
   });
 
-  app.post('/api/v62/rbac/fido2-sign', (req, res) => {
-    try {
-      const attestation = signRbacActionWithFido2WebAuthnV62({
-        userEmail: req.body?.userEmail,
-        actionType: String(req.body?.actionType || 'RESTRICTED_EXEC_DOCUMENT_ACCESS'),
-        targetResource: req.body?.targetResource,
-      });
-      persistLocalSovereignDbToDisk();
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        attestation,
-        ledger: getFido2SignatureLedgerV62(),
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+  app.post('/api/v62/rbac/fido2-sign', (_req, res) => {
+    return unavailableCapability(res, 'FIDO2/WebAuthn signing');
   });
 
   app.get('/api/v62/swagger/replay', (_req, res) => {
@@ -2169,27 +2525,35 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     }
   });
 
-  app.post('/api/v63/tts/synthesize', (req, res) => {
+  app.post('/api/v63/tts/synthesize', async (req, res) => {
     try {
       const settings = getPersistentSovereignSettingsV61();
-      const text = String(
-        req.body?.text ||
-          'Gurucul REVEAL unifies Next-Gen SIEM, UEBA, Identity Analytics, and Network Traffic Analysis.'
-      );
-      const voiceId = String(req.body?.voiceId || settings.ttsVoiceId || 'panini-voice-aria-en-us');
-      const speechRate = Number(req.body?.speechRate || settings.ttsSpeechRate || 1.0);
-      const ttsResult = synthesizeLocalModelTtsAudioV63({
+      const text = typeof req.body?.text === 'string' ? req.body.text : '';
+      const requestedVoice = String(req.body?.voiceId || '');
+      const voice =
+        /^[a-zA-Z0-9_-]{1,64}$/.test(requestedVoice) && !requestedVoice.startsWith('panini-')
+          ? requestedVoice
+          : process.env.OPENAI_TTS_VOICE || 'alloy';
+      const result = await synthesizeSpeech({
         text,
-        voiceId,
-        speechRate,
+        voice,
+        model: typeof req.body?.model === 'string' ? req.body.model : undefined,
       });
       res.json({
         ok: true,
         releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        ttsResult,
+        provider: 'openai-compatible',
+        ttsResult: {
+          audioDataUrl: `data:${result.contentType};base64,${Buffer.from(result.audio).toString('base64')}`,
+          modelUsed: result.model,
+          voiceUsed: result.voice,
+          byteLength: result.audio.byteLength,
+          speechRateRequested: Number(req.body?.speechRate || settings.ttsSpeechRate || 1),
+        },
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      const status = err instanceof OnlineAiProviderError ? err.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'SPEECH_SYNTHESIS_FAILED', error: String(err) });
     }
   });
 
@@ -2231,50 +2595,28 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   });
 
   app.get('/api/v63/gguf/download/:fileName', (req, res) => {
-    try {
-      const fileName = String(
-        req.params.fileName || 'panini-400b-moe-flagship-v6.3-q5_k_m.gguf'
-      );
-      const parsed = parseGgufFileAndBuildModelUpdateV60({ fileName });
-      res.json({
-        ok: true,
-        magicHeader: parsed.magicHeader,
-        ggufFormatVersion: parsed.ggufFormatVersion,
-        ggufDescriptor: parsed,
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'Hosted GGUF download');
   });
 
   app.post('/api/v63/gguf/terminal-exec', (req, res) => {
-    try {
-      const command = String(
-        req.body?.command ||
-          'curl -L https://models.panini.local/gguf/panini-400b-moe-flagship-v6.3-q5_k_m.gguf --apply'
-      );
-      const targetModelId = req.body?.targetModelId ? String(req.body.targetModelId) : undefined;
-      const customFacts = Array.isArray(req.body?.customFacts)
-        ? req.body.customFacts.map(String)
-        : undefined;
-      const outputMode = req.body?.outputMode as TerminalOutputVerbosityModeV64 | undefined;
-      const execution = executeGgufModelTerminalCommandV63({
-        command,
-        targetModelId,
-        customFacts,
-        outputMode,
-      });
-      persistLocalSovereignDbToDisk();
+    const command = typeof req.body?.command === 'string' ? req.body.command.trim() : '';
+    if (/^(\/\?|(?:panini-cli\s+)?\/\?)$/i.test(command)) {
       res.json({
         ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        execution,
-        hostedCatalog: listHostedOnlineGgufCatalogV63(),
-        onlineModelCatalog: listOnlineExternalModelCatalogV64(),
+        execution: executeGgufModelTerminalCommandV63({ command }),
+        note: 'Help output only; model execution is not configured.',
       });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      return;
     }
+    if (/^(\/menu|menu|model-menu|ollama\s+menu|panini-cli\s+(?:model-menu|menu))$/i.test(command)) {
+      res.json({
+        ok: true,
+        catalog: listOnlineExternalModelCatalogV64(),
+        note: 'Catalog metadata only; model downloads and installation are unavailable.',
+      });
+      return;
+    }
+    return unavailableCapability(res, 'GGUF download, update, and installation');
   });
 
   app.get('/api/v63/mcp/dag-recorder', (_req, res) => {
@@ -2317,74 +2659,11 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   // ==========================================================================
 
   app.post('/api/v64/models/export', (req, res) => {
-    try {
-      const exportBundle = exportPaniniModelGgufAndInstallBundleV64({
-        modelId: req.body?.modelId ? String(req.body.modelId) : 'panini-400b-flagship',
-        modelName: req.body?.modelName ? String(req.body.modelName) : undefined,
-        architecture: req.body?.architecture ? String(req.body.architecture) : undefined,
-        quantType: req.body?.quantType as QuantizationType | undefined,
-        contextLength: req.body?.contextLength ? Number(req.body.contextLength) : undefined,
-        loraRank: req.body?.loraRank ? Number(req.body.loraRank) : undefined,
-      });
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        exportBundle: {
-          ...exportBundle,
-          ggufBytes: undefined,
-        },
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'Runnable model export');
   });
 
   app.get('/api/v64/models/export/:modelId', (req, res) => {
-    try {
-      const modelId = String(req.params.modelId || 'panini-400b-flagship');
-      const format = String(req.query.format || 'json').toLowerCase();
-      const exportBundle = exportPaniniModelGgufAndInstallBundleV64({
-        modelId,
-        quantType: req.query.quantType as QuantizationType | undefined,
-      });
-      if (format === 'gguf') {
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${exportBundle.ggufFileName}"`
-        );
-        res.send(Buffer.from(exportBundle.ggufBytes));
-        return;
-      }
-      if (format === 'modelfile') {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${exportBundle.ollamaModelfileName}"`
-        );
-        res.send(exportBundle.ollamaModelfileContent);
-        return;
-      }
-      if (format === 'installer') {
-        res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${exportBundle.installerScriptName}"`
-        );
-        res.send(exportBundle.installerScriptContent);
-        return;
-      }
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        exportBundle: {
-          ...exportBundle,
-          ggufBytes: undefined,
-        },
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'Runnable model export');
   });
 
   app.get('/api/v64/terminal/model-menu', (_req, res) => {
@@ -2401,35 +2680,16 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   });
 
   app.post('/api/v64/terminal/model-menu', (req, res) => {
-    try {
-      const action = String(req.body?.action || 'install').toLowerCase();
-      if (action === 'list') {
-        res.json({
-          ok: true,
-          releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-          catalog: listOnlineExternalModelCatalogV64(),
-          installedModels: listInstalledOnlineExternalModelsV64(),
-        });
-        return;
-      }
-      const installResult = installOnlineCatalogModelV64({
-        modelKeyOrFamily: String(req.body?.modelKeyOrFamily || 'deepseek'),
-        targetPaniniModelId: req.body?.targetPaniniModelId
-          ? String(req.body.targetPaniniModelId)
-          : undefined,
-        outputMode: req.body?.outputMode as TerminalOutputVerbosityModeV64 | undefined,
-      });
-      persistLocalSovereignDbToDisk();
+    if (String(req.body?.action || '').toLowerCase() === 'list') {
       res.json({
         ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        installResult,
-        installedModel: installResult.installedModel,
         catalog: listOnlineExternalModelCatalogV64(),
+        installedModels: [],
+        note: 'Catalog metadata only; model downloads and installation are unavailable.',
       });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      return;
     }
+    return unavailableCapability(res, 'Online model installation');
   });
 
   app.get('/api/v64/terminal/autocomplete', (req, res) => {
@@ -2460,43 +2720,11 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
   });
 
   app.post('/api/v64/models/self-learn-tune', (req, res) => {
-    try {
-      const tuningResult = runAutonomousModelSelfLearningAndTuningV64({
-        targetModelId: req.body?.targetModelId ? String(req.body.targetModelId) : undefined,
-        targetModelName: req.body?.targetModelName ? String(req.body.targetModelName) : undefined,
-        tuningStrategy: req.body?.tuningStrategy,
-        enableAutoContinuousLearning:
-          typeof req.body?.enableAutoContinuousLearning === 'boolean'
-            ? req.body.enableAutoContinuousLearning
-            : undefined,
-      });
-      persistLocalSovereignDbToDisk();
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        tuningResult,
-        state: getModelSelfLearningStateV64(),
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'Model training and tuning');
   });
 
   app.post('/api/v64/integrations/d3-subgraph-export', (req, res) => {
-    try {
-      const subGraphExport = exportD3SubGraphToGgufShardV64({
-        focusQuery: req.body?.focusQuery ? String(req.body.focusQuery) : 'Gurucul',
-        selectedNodeId: req.body?.selectedNodeId ? String(req.body.selectedNodeId) : undefined,
-      });
-      persistLocalSovereignDbToDisk();
-      res.json({
-        ok: true,
-        releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        subGraphExport,
-      });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
-    }
+    return unavailableCapability(res, 'D3 graph GGUF model export');
   });
 
   app.post('/api/v64/voice/duplex', (req, res) => {
@@ -2537,8 +2765,8 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Panini 400B Full-Stack Server listening on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Panini Studio listening on http://${HOST}:${PORT}`);
   });
 }
 
