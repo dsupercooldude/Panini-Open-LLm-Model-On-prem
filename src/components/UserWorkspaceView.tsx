@@ -1642,6 +1642,10 @@ function drawStoryboardShotOverlay(
  * Live Prompt-Driven 8K Cinema Studio & Multi-Shot Storyboard Video/Image Synthesizer.
  * Splits any prompt into sentence-by-sentence storyboard shots and animates each shot dynamically.
  */
+function hasGeneratedVideo(media: GeneratedMediaItem): boolean {
+  return media.modality === 'Video';
+}
+
 const RealisticMediaCanvas: React.FC<{
   media: GeneratedMediaItem;
   messageId: string;
@@ -2120,6 +2124,44 @@ const RealisticMediaCanvas: React.FC<{
 
     handleDownloadPng();
   };
+
+  if (hasGeneratedVideo(media)) {
+    return (
+      <div
+        data-testid="model-generated-video-card"
+        className="mt-1 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4"
+      >
+        {media.videoUrl ? (
+          <>
+            <video
+              data-testid="model-generated-video"
+              src={media.videoUrl}
+              controls
+              playsInline
+              className="w-full max-h-[720px] rounded-lg bg-black"
+            />
+            <div className="flex items-center justify-between gap-3 text-xs text-slate-300">
+              <span>{media.modelUsed || 'Configured video model'} · {media.resolution}</span>
+              <a
+                href={media.videoUrl}
+                download={`panini-video-${media.id}.mp4`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded bg-sky-500 px-3 py-1.5 font-semibold text-slate-950"
+              >
+                Download generated MP4
+              </a>
+            </div>
+          </>
+        ) : (
+          <p data-testid="video-generation-unavailable" className="text-sm text-amber-200">
+            No model-generated video artifact is available. The procedural preview is disabled and is not a generated video.
+          </p>
+        )}
+        <p className="text-xs text-slate-400">{media.prompt}</p>
+      </div>
+    );
+  }
 
   const chipBase = isDark
     ? 'border-slate-800 bg-slate-900/90 text-slate-300 hover:border-slate-700'
@@ -4505,7 +4547,12 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
               const isPureImageMsg = !isUser && Boolean(msg.imageStudio && !msg.generatedMedia);
               const isPureVideoMsg = !isUser && Boolean(msg.generatedMedia);
               const isPureAudioMsg =
-                !isUser && Boolean(msg.musicTrack && !msg.generatedMedia && !msg.imageStudio);
+                !isUser &&
+                Boolean(
+                  (msg.musicTrack || msg.generatedAudio) &&
+                    !msg.generatedMedia &&
+                    !msg.imageStudio
+                );
               const isCodingMsg = !isUser && Boolean(msg.codingResolution);
               const isDeepResearchMsg =
                 !isUser &&
@@ -4813,6 +4860,31 @@ export const UserWorkspaceView: React.FC<UserWorkspaceViewProps> = ({
                       )}
 
                     {/* AUDIO SYNTHESIZE OUTPUT: Focuses purely on audio player + waveform by default */}
+                    {!isUser && msg.generatedAudio && (
+                      <div
+                        data-testid="model-generated-audio-card"
+                        className="rounded-xl border border-violet-500/30 bg-slate-950 p-4 space-y-3"
+                      >
+                        <div className="text-sm font-semibold text-violet-200">
+                          Model-generated audio · {msg.generatedAudio.model}
+                        </div>
+                        <audio
+                          data-testid="model-generated-audio"
+                          controls
+                          src={msg.generatedAudio.audioUrl}
+                          className="w-full"
+                        />
+                        <a
+                          href={msg.generatedAudio.audioUrl}
+                          download="panini-generated-audio"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex rounded bg-violet-500/20 px-3 py-1.5 text-xs text-violet-200"
+                        >
+                          Download generated audio
+                        </a>
+                      </div>
+                    )}
                     {!isUser && msg.musicTrack && !msg.generatedMedia && !msg.imageStudio && (
                       <MusicSynthStudioCard
                         initialTrack={msg.musicTrack}

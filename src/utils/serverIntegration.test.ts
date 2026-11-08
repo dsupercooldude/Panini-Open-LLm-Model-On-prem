@@ -21,6 +21,12 @@ async function listen(handler: (request: IncomingMessage, response: ServerRespon
   };
 }
 
+async function readBody(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
 async function reservePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -104,6 +110,47 @@ test('production API serves online chat and restores authenticated sessions afte
     response.statusCode = 404;
     response.end('not found');
   });
+  const mockOllama = await listen(async (request, response) => {
+    const body = await readBody(request);
+    response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/api/version') {
+      response.end(JSON.stringify({ version: '0.5.0' }));
+      return;
+    }
+    if (request.url === '/api/tags') {
+      response.end(JSON.stringify({
+        models: [{ name: 'qwen3:8b', model: 'qwen3:8b', size: 1000, digest: 'abc' }],
+      }));
+      return;
+    }
+    if (request.url === '/api/chat') {
+      const requestBody = JSON.parse(body.toString());
+      const isPresentation = requestBody.messages.some(
+        (message: { content?: string }) => message.content?.includes('Return only valid JSON')
+      );
+      const content = isPresentation
+        ? JSON.stringify({
+            title: 'Model-authored presentation',
+            subtitle: 'Integration test',
+            slides: [1, 2, 3].map((number) => ({
+              title: `Slide ${number}`,
+              subtitle: '',
+              bullets: [`Provider-authored content ${number}`],
+              citation: '',
+              table: { headers: [], rows: [] },
+            })),
+          })
+        : '# Model-authored document\n\nA real local inference response.';
+      response.end(JSON.stringify({
+        model: 'qwen3:8b',
+        message: { content },
+        done: true,
+      }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end('not found');
+  });
   const env = {
     NODE_ENV: 'production',
     PANINI_ADMIN_USERNAME: 'integration-admin',
@@ -114,12 +161,15 @@ test('production API serves online chat and restores authenticated sessions afte
     OPENAI_API_KEY: 'integration-test-key',
     OPENAI_CHAT_MODEL: 'test-chat-model',
     OPENAI_API_BASE_URL: `http://127.0.0.1:${mockProvider.port}/v1`,
+    OLLAMA_BASE_URL: `http://127.0.0.1:${mockOllama.port}`,
+    PANINI_OLLAMA_MODEL: 'qwen3:8b',
   };
 
   let child: ChildProcess | undefined;
   t.after(async () => {
     if (child) await stopServer(child);
     await mockProvider.close();
+    await mockOllama.close();
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -152,7 +202,29 @@ test('production API serves online chat and restores authenticated sessions afte
   assert.equal(chatResponse.status, 200);
   assert.equal((await chatResponse.json()).response, 'Integrated provider response');
 
-  const unavailableMedia = await Promise.all([
+  const documentResults = await Promise.all(
+    (['docx', 'pptx'] as const).map(async (format) => {
+      const response = await fetch(`${baseUrl}/api/documents/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+        body: JSON.stringify({
+          format,
+          prompt: format === 'pptx' ? 'Create a short presentation about SQLite' : 'Create a short document about SQLite',
+          isOnline: false,
+        }),
+      });
+      return { response, result: await response.json() };
+    })
+  );
+  assert.deepEqual(documentResults.map(({ response }) => response.status), [200, 200]);
+  const docxBytes = Buffer.from(documentResults[0].result.binaryBase64, 'base64');
+  const pptxBytes = Buffer.from(documentResults[1].result.binaryBase64, 'base64');
+  assert.equal(docxBytes.subarray(0, 4).toString('hex'), '504b0304');
+  assert.equal(pptxBytes.subarray(0, 4).toString('hex'), '504b0304');
+  assert.equal(documentResults[0].result.model, 'qwen3:8b');
+  assert.equal(documentResults[1].result.slidesPreview.length, 3);
+
+  const unconfiguredMedia = await Promise.all([
     fetch(`${baseUrl}/api/multimodal/video`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
@@ -169,10 +241,10 @@ test('production API serves online chat and restores authenticated sessions afte
       body: JSON.stringify({ prompt: 'A botanical illustration', isOnline: false }),
     }),
   ]);
-  assert.deepEqual(unavailableMedia.map((response) => response.status), [501, 501, 503]);
+  assert.deepEqual(unconfiguredMedia.map((response) => response.status), [503, 503, 503]);
   assert.deepEqual(
-    await Promise.all(unavailableMedia.map(async (response) => (await response.json()).code)),
-    ['VIDEO_MODEL_UNAVAILABLE', 'MUSIC_MODEL_UNAVAILABLE', 'OFFLINE_IMAGE_MODEL_UNAVAILABLE']
+    await Promise.all(unconfiguredMedia.map(async (response) => (await response.json()).code)),
+    ['VIDEO_MODEL_NOT_CONFIGURED', 'MUSIC_MODEL_NOT_CONFIGURED', 'OFFLINE_IMAGE_MODEL_UNAVAILABLE']
   );
 
   const evidenceResponse = await fetch(`${baseUrl}/api/research/verify`, {

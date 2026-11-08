@@ -11,6 +11,8 @@ import {
   createChatCompletion,
   createFineTuningJob,
   generateImage,
+  generateReplicateMusic,
+  generateReplicateVideo,
   getFineTuningJob,
   synthesizeSpeech,
   transcribeAudio,
@@ -92,6 +94,10 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
     apiKey: process.env.OPENAI_API_KEY,
     baseUrl: process.env.OPENAI_API_BASE_URL,
     imageModel: process.env.OPENAI_IMAGE_MODEL,
+    replicateToken: process.env.PANINI_REPLICATE_API_TOKEN,
+    replicateModel: process.env.PANINI_REPLICATE_VIDEO_MODEL,
+    replicateMusicModel: process.env.PANINI_REPLICATE_MUSIC_MODEL,
+    replicateBaseUrl: process.env.PANINI_REPLICATE_API_BASE_URL,
   };
   const wav = Buffer.alloc(64);
   wav.write('RIFF', 0);
@@ -101,10 +107,29 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
   png.write('IHDR', 12);
   png.writeUInt32BE(1024, 16);
   png.writeUInt32BE(1024, 20);
+  let videoOutput = 'https://replicate.delivery/test/video.mp4';
+  const musicOutput = 'https://replicate.delivery/test/audio.wav';
   const mock = await listen(async (request, response) => {
     const body = await readBody(request);
     response.setHeader('Content-Type', 'application/json');
-    if (request.url === '/v1/chat/completions') {
+    if (
+      request.url === '/v1/models/test-owner/test-video/predictions' ||
+      request.url === '/v1/models/test-owner/test-music/predictions'
+    ) {
+      const requestBody = JSON.parse(body.toString());
+      if (request.url.includes('test-video')) {
+        assert.equal(requestBody.input.prompt, 'A cinematic mountain sunrise');
+        assert.equal(requestBody.input.duration, 5);
+      } else {
+        assert.equal(requestBody.input.prompt, 'A gentle piano piece');
+        assert.equal(requestBody.input.duration, 30);
+      }
+      response.end(JSON.stringify({
+        id: 'prediction-test',
+        status: 'succeeded',
+        output: request.url.includes('test-video') ? videoOutput : musicOutput,
+      }));
+    } else if (request.url === '/v1/chat/completions') {
       response.end(JSON.stringify({ model: 'test-chat', choices: [{ message: { content: 'Provider response' } }] }));
     } else if (request.url === '/v1/images/generations') {
       response.end(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }));
@@ -130,6 +155,10 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
   process.env.OPENAI_API_KEY = 'test-key-not-a-secret';
   process.env.OPENAI_API_BASE_URL = `${mock.baseUrl}/v1`;
   process.env.OPENAI_IMAGE_MODEL = 'test-image';
+  process.env.PANINI_REPLICATE_API_TOKEN = 'replicate-test-token';
+  process.env.PANINI_REPLICATE_VIDEO_MODEL = 'test-owner/test-video';
+  process.env.PANINI_REPLICATE_MUSIC_MODEL = 'test-owner/test-music';
+  process.env.PANINI_REPLICATE_API_BASE_URL = `${mock.baseUrl}/v1`;
   t.after(async () => {
     await mock.close();
     if (previous.apiKey === undefined) delete process.env.OPENAI_API_KEY;
@@ -138,6 +167,14 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
     else process.env.OPENAI_API_BASE_URL = previous.baseUrl;
     if (previous.imageModel === undefined) delete process.env.OPENAI_IMAGE_MODEL;
     else process.env.OPENAI_IMAGE_MODEL = previous.imageModel;
+    if (previous.replicateToken === undefined) delete process.env.PANINI_REPLICATE_API_TOKEN;
+    else process.env.PANINI_REPLICATE_API_TOKEN = previous.replicateToken;
+    if (previous.replicateModel === undefined) delete process.env.PANINI_REPLICATE_VIDEO_MODEL;
+    else process.env.PANINI_REPLICATE_VIDEO_MODEL = previous.replicateModel;
+    if (previous.replicateMusicModel === undefined) delete process.env.PANINI_REPLICATE_MUSIC_MODEL;
+    else process.env.PANINI_REPLICATE_MUSIC_MODEL = previous.replicateMusicModel;
+    if (previous.replicateBaseUrl === undefined) delete process.env.PANINI_REPLICATE_API_BASE_URL;
+    else process.env.PANINI_REPLICATE_API_BASE_URL = previous.replicateBaseUrl;
   });
 
   assert.deepEqual(
@@ -148,6 +185,29 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
   assert.equal(generatedImage.model, 'test-image');
   assert.equal(generatedImage.width, 1024);
   assert.match(generatedImage.imageDataUrl, /^data:image\/png;base64,/);
+  assert.deepEqual(
+    await generateReplicateVideo({
+      prompt: 'A cinematic mountain sunrise',
+      durationSeconds: 5,
+      aspectRatio: '16:9',
+    }),
+    {
+      videoUrl: videoOutput,
+      model: 'test-owner/test-video',
+    }
+  );
+  videoOutput = 'https://example.com/not-a-video.mp4';
+  await assert.rejects(
+    () => generateReplicateVideo({ prompt: 'A cinematic mountain sunrise' }),
+    /unsupported video artifact URL/
+  );
+  assert.deepEqual(
+    await generateReplicateMusic({ prompt: 'A gentle piano piece' }),
+    {
+      audioUrl: musicOutput,
+      model: 'test-owner/test-music',
+    }
+  );
   const examples = Array.from({ length: 10 }, (_, index) => ({
     messages: [
       { role: 'user', content: `Question ${index}` },

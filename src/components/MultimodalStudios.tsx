@@ -10,15 +10,12 @@ import {
   PromptConstructedSceneSpec,
   SovereignV56HardwareFormFactor,
   SOVEREIGN_AUDIO_MASTERS_V55,
-  applyImageEditInstruction,
   adaptMusicTrackToVisualBackground,
   buildPromptConstructedScene,
   buildSovereignV56OmniLyriaStitchSpec,
   detectMultilingualSpeechAndText,
   formatReceiptCurrencyAmount,
-  generatePureReceiptPdfBytes,
   learnFromOfflineMediaShardsV56,
-  synthesizeCommercialReceiptSpec,
 } from '../utils/multimodalSuite';
 import {
   translateNlpToUseCase,
@@ -826,130 +823,21 @@ export const ImageCreateAndEditCard: React.FC<{
   initialImageSpec: ImageStudioSpec;
 }> = ({ initialImageSpec }) => {
   const [imageSpec, setImageSpec] = useState<ImageStudioSpec>(initialImageSpec);
-  const [editInstruction, setEditInstruction] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'hybrid' | 'photo_plate' | 'volumetric_3d'>('hybrid');
-  const [yawDeg, setYawDeg] = useState<number>(
-    initialImageSpec.sceneElements.aether3DSpec?.cameraYawDeg || 0
-  );
-  const [pitchDeg, setPitchDeg] = useState<number>(
-    initialImageSpec.sceneElements.aether3DSpec?.cameraPitchDeg || 12
-  );
-  const [lightAzimuthDeg, setLightAzimuthDeg] = useState<number>(
-    initialImageSpec.sceneElements.aether3DSpec?.lightAzimuthDeg || 38
-  );
-
-  // Commercial Receipt Clarification Gate State
-  const receiptSpec = imageSpec.sceneElements.commercialReceiptSpec;
-  const [venueName, setVenueName] = useState<string>(
-    receiptSpec?.establishmentName || 'Jumeirah Palm Lounge & Grill'
-  );
-  const [currencySymbol, setCurrencySymbol] = useState<string>(
-    receiptSpec?.currencySymbol || 'AED'
-  );
-  const [taxRatePct, setTaxRatePct] = useState<number>(receiptSpec?.taxRatePct ?? 5);
-  const [serviceChargePct, setServiceChargePct] = useState<number>(
-    receiptSpec?.serviceChargePct ?? 10
-  );
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const activePhotoPlateUrl =
-    imageSpec.photographicPlateUrl ||
-    imageSpec.sceneElements.photographicPlateUrl ||
-    imageSpec.sourceImageDataUrl;
 
   useEffect(() => {
     setImageSpec(initialImageSpec);
   }, [initialImageSpec]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const updatedScene: PromptConstructedSceneSpec = {
-      ...imageSpec.sceneElements,
-      aether3DSpec: {
-        ...imageSpec.sceneElements.aether3DSpec,
-        cameraYawDeg: yawDeg,
-        cameraPitchDeg: pitchDeg,
-        lightAzimuthDeg,
-      },
-    };
-
-    renderPromptConstructedCanvasFrame(ctx, canvas.width, canvas.height, updatedScene, 0.5, {
-      shotBadgeText: `${imageSpec.modelUsed} · ${imageSpec.resolution} · Panini-Aether-3D Volumetric`,
-      hudTelemetryText: `6-DoF Yaw: ${yawDeg}° · Pitch: ${pitchDeg}° · Light Azimuth: ${lightAzimuthDeg}° · Attribute Alignment: ${imageSpec.sceneElements.aether3DSpec?.universalAttributeAlignment?.alignmentCoveragePct ?? 100}%`,
-    });
-  }, [imageSpec, yawDeg, pitchDeg, lightAzimuthDeg]);
-
-  const handleApplyEdit = async () => {
-    const cleanEdit = editInstruction.trim();
-    if (!cleanEdit) return;
-    const localUpdated = applyImageEditInstruction(imageSpec, cleanEdit);
-    setImageSpec(localUpdated);
-    setEditInstruction('');
-    try {
-      const res = await fetch('/api/multimodal/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: imageSpec.prompt,
-          editInstruction: cleanEdit,
-          currentSpec: localUpdated,
-          isOnline: true,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.imageSpec) {
-          setImageSpec(data.imageSpec);
-        }
-      }
-    } catch {
-      // Local deterministic edit already applied
-    }
-  };
-
-  const handleDownloadCanvasPng = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const pngDataUrl = canvas.toDataURL('image/png');
+  const handleDownloadGeneratedPng = () => {
+    const pngDataUrl = imageSpec.renderedImageDataUrl;
+    if (!pngDataUrl?.startsWith('data:image/png;base64,')) return;
     const a = document.createElement('a');
     a.href = pngDataUrl;
     a.download = `${(imageSpec.prompt || 'panini-studio-image')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .slice(0, 40)}-4k.png`;
+      .slice(0, 40)}.png`;
     a.click();
-  };
-
-  const handleConfirmReceiptClarification = () => {
-    const updatedReceipt = synthesizeCommercialReceiptSpec(imageSpec.prompt, {
-      venueName,
-      currencySymbol: currencySymbol as 'AED' | 'USD' | 'INR' | 'EUR' | 'GBP',
-      taxRatePct,
-      serviceChargePct,
-      clarificationConfirmed: true,
-    });
-    const updatedScene = buildPromptConstructedScene(imageSpec.prompt, '16:9', undefined);
-    updatedScene.commercialReceiptSpec = updatedReceipt;
-    setImageSpec((prev) => ({
-      ...prev,
-      sceneElements: updatedScene,
-    }));
-  };
-
-  const handleDownloadPureReceiptPdf = () => {
-    if (!receiptSpec) return;
-    const pdfBytes = generatePureReceiptPdfBytes(receiptSpec);
-    const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${receiptSpec.receiptNumber || 'panini-receipt'}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -961,140 +849,34 @@ export const ImageCreateAndEditCard: React.FC<{
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-sky-400" />
           <span className="text-xs font-semibold text-slate-100">
-            Panini-Aether-3D Relightable 3D Scene & 8K Grounded Image Studio
+            Model-Generated Image
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="inline-flex rounded-lg border border-slate-700 bg-slate-950 p-0.5 text-[10px]">
-            <button
-              type="button"
-              data-testid="image-view-mode-hybrid"
-              onClick={() => setViewMode('hybrid')}
-              className={`px-2 py-0.5 rounded font-medium ${
-                viewMode === 'hybrid' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Hybrid 3D + Grounded Plate
-            </button>
-            <button
-              type="button"
-              data-testid="image-view-mode-plate"
-              onClick={() => setViewMode('photo_plate')}
-              className={`px-2 py-0.5 rounded font-medium ${
-                viewMode === 'photo_plate' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Grounded Reference Plate
-            </button>
-            <button
-              type="button"
-              data-testid="image-view-mode-3d"
-              onClick={() => setViewMode('volumetric_3d')}
-              className={`px-2 py-0.5 rounded font-medium ${
-                viewMode === 'volumetric_3d' ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              3D Volumetric Canvas
-            </button>
-          </div>
-          <span
-            data-testid="image-3d-alignment-badge"
-            className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-          >
-            True 3D Volumetric · Alignment:{' '}
-            {imageSpec.sceneElements.aether3DSpec?.universalAttributeAlignment
-              ?.alignmentCoveragePct ?? 100}
-            %
-          </span>
-        </div>
+        <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-300">
+          {imageSpec.modelUsed} · {imageSpec.resolution}
+        </span>
       </div>
 
-      {/* Zero-Assumption Interactive Receipt Clarification Gate */}
-      {receiptSpec?.needsParameterClarification && (
+      {imageSpec.renderedImageDataUrl ? (
+        <div className="space-y-1" data-testid="image-studio-generated-image-container">
+          <div className="text-[10px] font-mono text-slate-400">
+            Provider output · {imageSpec.resolution}
+          </div>
+            <img
+              src={imageSpec.renderedImageDataUrl}
+              alt={imageSpec.prompt}
+              data-testid="image-studio-generated-image"
+              className="w-full max-h-[720px] object-contain rounded-lg border border-slate-700 bg-slate-950"
+            />
+        </div>
+      ) : (
         <div
-          data-testid="receipt-clarification-gate"
-          className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2 text-xs"
+          data-testid="image-studio-no-generated-image"
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100"
         >
-          <div className="font-semibold text-amber-200">
-            Zero-Assumption Clarification Gate — Specify Receipt Parameters Before Finalizing
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <input
-              type="text"
-              value={venueName}
-              onChange={(e) => setVenueName(e.target.value)}
-              placeholder="Venue Name"
-              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100"
-            />
-            <input
-              type="text"
-              value={currencySymbol}
-              onChange={(e) => setCurrencySymbol(e.target.value)}
-              placeholder="Currency (AED, USD, INR)"
-              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100"
-            />
-            <input
-              type="number"
-              value={taxRatePct}
-              onChange={(e) => setTaxRatePct(Number(e.target.value))}
-              placeholder="Tax %"
-              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100"
-            />
-            <input
-              type="number"
-              value={serviceChargePct}
-              onChange={(e) => setServiceChargePct(Number(e.target.value))}
-              placeholder="Service %"
-              className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-100"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleConfirmReceiptClarification}
-            className="px-3 py-1 rounded bg-amber-500 text-slate-950 font-semibold"
-          >
-            Confirm & Render Verified Receipt
-          </button>
+          No model-generated image artifact is available for this result.
         </div>
       )}
-
-      <div
-        className={`grid gap-3 ${
-          viewMode === 'hybrid' && activePhotoPlateUrl ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'
-        }`}
-      >
-        {viewMode !== 'photo_plate' && (
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-              <span>3D VOLUMETRIC RAYMARCHED SCENE ({imageSpec.resolution})</span>
-              <span>Panini-Flux.1-Dev-12B DiT</span>
-            </div>
-            <canvas
-              ref={canvasRef}
-              data-testid="image-studio-3d-canvas"
-              width={768}
-              height={432}
-              className="w-full rounded-lg border border-slate-800 bg-slate-950"
-            />
-          </div>
-        )}
-
-        {(viewMode === 'hybrid' || viewMode === 'photo_plate') && activePhotoPlateUrl && (
-          <div className="space-y-1" data-testid="image-studio-grounded-plate-container">
-            <div className="flex items-center justify-between text-[10px] font-mono text-emerald-300">
-              <span>GOOGLE SEARCH / WIKIMEDIA GROUNDED REFERENCE PLATE</span>
-              <span>Verified Visual Reference</span>
-            </div>
-            <img
-              src={activePhotoPlateUrl}
-              alt={imageSpec.prompt}
-              data-testid="image-studio-grounded-plate-img"
-              className="w-full h-[240px] md:h-[260px] object-cover rounded-lg border border-emerald-500/30 bg-slate-950"
-            />
-          </div>
-        )}
-      </div>
-
       {/* 1-Click Image Export & Edit History Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-300">
@@ -1109,110 +891,16 @@ export const ImageCreateAndEditCard: React.FC<{
           <button
             type="button"
             data-testid="download-generated-image-png-btn"
-            onClick={handleDownloadCanvasPng}
+            onClick={handleDownloadGeneratedPng}
+            disabled={!imageSpec.renderedImageDataUrl}
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400"
           >
             <Download className="w-3.5 h-3.5" />
-            Download 4K PNG (.png)
-          </button>
-          {activePhotoPlateUrl && (
-            <a
-              href={activePhotoPlateUrl}
-              download={`${(imageSpec.prompt || 'panini-reference-plate')
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .slice(0, 36)}-plate.svg`}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="download-generated-image-plate-btn"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/40 font-medium hover:bg-emerald-500/30"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open Reference Plate
-            </a>
-          )}
-        </div>
-      </div>
-
-      {/* 6-DoF Relightable 3D Controls */}
-      <div
-        data-testid="image-aether-3d-controls"
-        className="grid grid-cols-1 md:grid-cols-3 gap-2 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 text-[11px] font-mono"
-      >
-        <label className="flex items-center justify-between gap-2 text-slate-300">
-          <span>3D Yaw ({yawDeg}°)</span>
-          <input
-            type="range"
-            min={-45}
-            max={45}
-            value={yawDeg}
-            onChange={(e) => setYawDeg(Number(e.target.value))}
-            className="w-28 accent-sky-400"
-          />
-        </label>
-        <label className="flex items-center justify-between gap-2 text-slate-300">
-          <span>3D Pitch ({pitchDeg}°)</span>
-          <input
-            type="range"
-            min={-15}
-            max={45}
-            value={pitchDeg}
-            onChange={(e) => setPitchDeg(Number(e.target.value))}
-            className="w-28 accent-sky-400"
-          />
-        </label>
-        <label className="flex items-center justify-between gap-2 text-slate-300">
-          <span>Light Azimuth ({lightAzimuthDeg}°)</span>
-          <input
-            type="range"
-            min={-90}
-            max={90}
-            value={lightAzimuthDeg}
-            onChange={(e) => setLightAzimuthDeg(Number(e.target.value))}
-            className="w-28 accent-amber-400"
-          />
-        </label>
-      </div>
-
-      {/* Receipt PDF Export Button when a Commercial Receipt is active */}
-      {receiptSpec?.isReceiptPrompt && (
-        <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
-          <span className="font-mono text-emerald-200">
-            {receiptSpec.establishmentName} · Total:{' '}
-            {formatReceiptCurrencyAmount(receiptSpec.grandTotal, receiptSpec.currencySymbol)}
-          </span>
-          <button
-            type="button"
-            data-testid="download-pure-receipt-pdf-btn"
-            onClick={handleDownloadPureReceiptPdf}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-emerald-500 text-slate-950 font-semibold"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Pure Receipt PDF (%PDF-1.4)
+            Download generated PNG
           </button>
         </div>
-      )}
-
-      {/* Non-Destructive Image Edit Bar */}
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          data-testid="image-studio-edit-input"
-          value={editInstruction}
-          onChange={(e) => setEditInstruction(e.target.value)}
-          placeholder="Describe 3D relighting or inpaint edit (e.g., golden hour rim light)..."
-          className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-100"
-        />
-        <button
-          type="button"
-          data-testid="image-studio-apply-edit-btn"
-          onClick={handleApplyEdit}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-200 border border-sky-500/40 text-xs font-medium hover:bg-sky-500/30"
-        >
-          <Wand2 className="w-3.5 h-3.5" />
-          Apply 3D Edit
-        </button>
       </div>
+
     </div>
   );
 };

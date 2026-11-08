@@ -260,3 +260,190 @@ export async function transcribeAudio(input: {
   }
   return { text: result.text, model };
 }
+
+function replicateApiBaseUrl(): string {
+  const baseUrl = (process.env.PANINI_REPLICATE_API_BASE_URL || 'https://api.replicate.com/v1')
+    .replace(/\/+$/, '');
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    throw new OnlineAiProviderError('PANINI_REPLICATE_API_BASE_URL must be an absolute URL.', 500);
+  }
+  if (
+    !['https:', 'http:'].includes(base.protocol) ||
+    (process.env.NODE_ENV === 'production' &&
+      base.protocol !== 'https:' &&
+      !['localhost', '127.0.0.1'].includes(base.hostname))
+  ) {
+    throw new OnlineAiProviderError('The Replicate API URL must use HTTPS in production.', 500);
+  }
+  return base.toString().replace(/\/+$/, '');
+}
+
+async function runReplicatePrediction(
+  model: string,
+  token: string,
+  input: Record<string, unknown>,
+  mediaLabel: string
+): Promise<string> {
+  if (!/^[a-z0-9][a-z0-9_-]{0,62}\/[a-z0-9][a-z0-9_-]{0,62}$/i.test(model)) {
+    throw new OnlineAiProviderError('A valid Replicate model slug is required.', 400);
+  }
+  const baseUrl = replicateApiBaseUrl();
+  let result: {
+    id?: string;
+    status?: string;
+    output?: string | string[];
+  };
+  try {
+    const response = await fetch(
+      `${baseUrl}/models/${model
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}/predictions`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json',
+          Prefer: 'wait=60',
+        },
+        body: JSON.stringify({ input }),
+        signal: AbortSignal.timeout(70_000),
+      }
+    );
+    if (!response.ok) {
+      throw new OnlineAiProviderError(
+        `Replicate ${mediaLabel} generation returned HTTP ${response.status}.`,
+        response.status >= 400 && response.status < 500 ? response.status : 502
+      );
+    }
+    result = await response.json() as typeof result;
+  } catch (error) {
+    if (error instanceof OnlineAiProviderError) throw error;
+    throw new OnlineAiProviderError(`Replicate ${mediaLabel} generation could not be reached.`, 503);
+  }
+
+  if (typeof result.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result.id)) {
+    throw new OnlineAiProviderError('Replicate returned an invalid prediction identifier.', 502);
+  }
+  const predictionId = result.id;
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (result.status === 'starting' || result.status === 'processing') {
+    if (Date.now() >= deadline) {
+      throw new OnlineAiProviderError(`Replicate ${mediaLabel} generation timed out.`, 504);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      const response = await fetch(
+        `${baseUrl}/predictions/${encodeURIComponent(predictionId)}`,
+        { headers: { Authorization: `Token ${token}` }, signal: AbortSignal.timeout(15000) }
+      );
+      if (!response.ok) {
+        throw new OnlineAiProviderError(
+          `Replicate prediction lookup returned HTTP ${response.status}.`,
+          response.status >= 400 && response.status < 500 ? response.status : 502
+        );
+      }
+      result = await response.json() as typeof result;
+    } catch (error) {
+      if (error instanceof OnlineAiProviderError) throw error;
+      throw new OnlineAiProviderError('Replicate prediction status could not be retrieved.', 502);
+    }
+  }
+  if (result.status !== 'succeeded') {
+    throw new OnlineAiProviderError(
+      `Replicate ${mediaLabel} generation ended with status "${String(result.status || 'unknown')}".`,
+      502
+    );
+  }
+  const output = Array.isArray(result.output) ? result.output[0] : result.output;
+  if (typeof output !== 'string') {
+    throw new OnlineAiProviderError(`Replicate completed without returning a ${mediaLabel} URL.`, 502);
+  }
+  return output;
+}
+
+function validateReplicateArtifactUrl(output: string, fileExtension: RegExp, label: string): string {
+  let url: URL;
+  try {
+    url = new URL(output);
+  } catch {
+    throw new OnlineAiProviderError(`Replicate returned an invalid ${label} URL.`, 502);
+  }
+  if (
+    url.protocol !== 'https:' ||
+    !/(^|\.)replicate\.delivery$/i.test(url.hostname) ||
+    !fileExtension.test(`${url.pathname}${url.search}`)
+  ) {
+    throw new OnlineAiProviderError(`Replicate returned an unsupported ${label} artifact URL.`, 502);
+  }
+  return url.toString();
+}
+
+export async function generateReplicateVideo(input: {
+  prompt: string;
+  durationSeconds?: number;
+  aspectRatio?: '16:9' | '9:16' | '1:1';
+}): Promise<{ videoUrl: string; model: string }> {
+  const prompt = input.prompt.trim();
+  const model = process.env.PANINI_REPLICATE_VIDEO_MODEL?.trim() || '';
+  const token = process.env.PANINI_REPLICATE_API_TOKEN?.trim() || '';
+  if (!token || !model) {
+    throw new OnlineAiProviderError(
+      'Video generation is not configured. Set PANINI_REPLICATE_API_TOKEN and PANINI_REPLICATE_VIDEO_MODEL.',
+      503
+    );
+  }
+  if (!prompt || prompt.length > 10000) {
+    throw new OnlineAiProviderError('Video prompts must contain 1 to 10,000 characters.', 400);
+  }
+  const durationSeconds = input.durationSeconds ?? 5;
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 30) {
+    throw new OnlineAiProviderError('Video duration must be between 1 and 30 seconds.', 400);
+  }
+  const aspectRatio = input.aspectRatio || '16:9';
+  const output = await runReplicatePrediction(
+    model,
+    token,
+    { prompt, duration: durationSeconds, aspect_ratio: aspectRatio },
+    'video'
+  );
+  return {
+    videoUrl: validateReplicateArtifactUrl(output, /\.mp4(?:$|\?)/i, 'video'),
+    model,
+  };
+}
+
+export async function generateReplicateMusic(input: {
+  prompt: string;
+  durationSeconds?: number;
+}): Promise<{ audioUrl: string; model: string }> {
+  const prompt = input.prompt.trim();
+  const model = process.env.PANINI_REPLICATE_MUSIC_MODEL?.trim() || '';
+  const token = process.env.PANINI_REPLICATE_API_TOKEN?.trim() || '';
+  if (!token || !model) {
+    throw new OnlineAiProviderError(
+      'Music generation is not configured. Set PANINI_REPLICATE_API_TOKEN and PANINI_REPLICATE_MUSIC_MODEL.',
+      503
+    );
+  }
+  if (!prompt || prompt.length > 10000) {
+    throw new OnlineAiProviderError('Music prompts must contain 1 to 10,000 characters.', 400);
+  }
+  const durationSeconds = input.durationSeconds ?? 30;
+  if (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 120) {
+    throw new OnlineAiProviderError('Music duration must be between 1 and 120 seconds.', 400);
+  }
+  const output = await runReplicatePrediction(
+    model,
+    token,
+    { prompt, duration: durationSeconds },
+    'music'
+  );
+  return {
+    audioUrl: validateReplicateArtifactUrl(output, /\.(?:mp3|wav|flac)(?:$|\?)/i, 'audio'),
+    model,
+  };
+}

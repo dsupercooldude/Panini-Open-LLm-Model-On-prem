@@ -87,6 +87,10 @@ export interface ChatMessage {
   contextInheritedFrom?: string;
   attachedFile?: UploadedAttachment;
   generatedMedia?: GeneratedMediaItem;
+  generatedAudio?: {
+    audioUrl: string;
+    model: string;
+  };
   synthesizedUseCase?: UseCaseScenario;
   synthesizedModelName?: string;
   bioscienceAnalysis?: BioscienceAnalysisResult;
@@ -127,6 +131,8 @@ export interface GeneratedMediaItem {
   resolution: string;
   aspectRatio?: VideoAspectRatio;
   sourcePhotoDataUrl?: string;
+  videoUrl?: string;
+  modelUsed?: string;
   durationSec?: number;
   fps?: number;
   interFrameYieldMs?: number;
