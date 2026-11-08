@@ -12,6 +12,7 @@ import {
   getFineTuningJob,
   synthesizeSpeech,
   transcribeAudio,
+  generateImage,
 } from './onlineAiProvider';
 
 async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>) {
@@ -96,6 +97,10 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
     } else if (request.url === '/v1/audio/speech') {
       response.setHeader('Content-Type', 'audio/wav');
       response.end(wav);
+    } else if (request.url === '/v1/images/generations') {
+      const png = Buffer.alloc(64);
+      Buffer.from('89504e470d0a1a0a', 'hex').copy(png);
+      response.end(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }));
     } else if (request.url === '/v1/audio/transcriptions') {
       assert.match(request.headers['content-type'] || '', /multipart\/form-data/);
       response.end(JSON.stringify({ text: 'Recorded words from the microphone.' }));
@@ -136,6 +141,7 @@ test('OpenAI-compatible chat, fine-tuning, speech, and transcription use provide
     })).text,
     'Recorded words from the microphone.'
   );
+  assert.match((await generateImage({ prompt: 'A green hillside at sunrise' })).imageDataUrl, /^data:image\/png;base64,/);
   await assert.rejects(
     () => createFineTuningJob({ model: 'test-model', examples: [] }),
     /between 10 and 10,000/

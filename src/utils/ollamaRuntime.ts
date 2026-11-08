@@ -9,6 +9,7 @@ export interface OllamaModel {
 export interface OllamaChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  images?: string[];
 }
 
 export class OllamaRuntimeError extends Error {

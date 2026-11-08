@@ -14,7 +14,13 @@ export interface ResearchValidationRecord {
   sourceCount: number;
   independentDomainCount: number;
   validationStatus: 'multiple_hosts' | 'single_host' | 'unverified';
-  sources: Array<{ title: string; url: string; domain: string }>;
+  sources: Array<{
+    title: string;
+    url: string;
+    domain: string;
+    sourceEngine?: string;
+    excerpt?: string;
+  }>;
   createdAt: string;
 }
 

@@ -4,7 +4,7 @@ Panini Studio is a local-first application with deterministic workflows and opti
 
 ## What this repository provides
 
-- Ask and Coding can call a configured Ollama model locally or an OpenAI-compatible online chat provider. Deterministic output remains available when no provider is configured and is identified as such.
+- Ask, Coding, Research synthesis, and supported attachment analysis call the configured Ollama model locally by default (the first installed model unless `PANINI_OLLAMA_MODEL` is set) or an OpenAI-compatible online chat provider. Deterministic output remains a fallback when a model runtime is unavailable and is identified as such.
 - Ollama integration supports runtime status, installed-model listing, model pulls, inference, and Modelfile export. GGUF export serves only validated weight files from a separately configured directory.
 - OpenAI-compatible endpoints support online chat, provider fine-tuning job submission/status, speech synthesis, and transcription. Fine-tuning is provider-hosted, not local offline training.
 - SQLite stores production authentication sessions, research-validation records, and provider fine-tuning job metadata. Existing application settings and knowledge shards still use their current local JSON persistence.
@@ -29,7 +29,7 @@ The development server binds to `127.0.0.1:3000`. To use npm instead, install de
 ### Optional model providers
 
 - For local inference, install and start Ollama separately. Configure `OLLAMA_BASE_URL` if it is not `http://127.0.0.1:11434`, then download a model in the Model Registry or with Ollama. Set `PANINI_OLLAMA_MODEL` to choose the default. Ollama downloads its own model weights; none are checked into this repository.
-- For online chat, speech, transcription, or fine-tuning, configure `OPENAI_API_KEY` and the relevant model variables: `OPENAI_CHAT_MODEL`, `OPENAI_TTS_MODEL`, and `OPENAI_TRANSCRIPTION_MODEL`. `OPENAI_API_BASE_URL` can point at an OpenAI-compatible provider. Fine-tuning requires an eligible provider model and 10–10,000 valid training examples.
+- For online chat, image generation, speech, transcription, or fine-tuning, configure `OPENAI_API_KEY` and the relevant model variables: `OPENAI_CHAT_MODEL`, `OPENAI_IMAGE_MODEL`, `OPENAI_TTS_MODEL`, and `OPENAI_TRANSCRIPTION_MODEL`. `OPENAI_API_BASE_URL` can point at an OpenAI-compatible provider. Fine-tuning requires an eligible provider model and 10–10,000 valid training examples.
 - `PANINI_DB_PATH` selects the SQLite database location. `PANINI_GGUF_EXPORT_DIR` enables export of actual `.gguf` files from a trusted local directory; it does not convert other model formats.
 
 The server loads `.env` through dotenv. Keep provider credentials in environment variables or a protected deployment secret store. Do not commit credentials or model weights.
@@ -48,4 +48,4 @@ npm run build
 
 Production mode requires `NODE_ENV=production` and `PANINI_ADMIN_PASSWORD` (at least 16 characters). Set `PANINI_ADMIN_USERNAME` to override the default username. Authentication sessions persist in SQLite for eight hours. Use HTTPS. When TLS terminates at a trusted reverse proxy, set `PANINI_TRUST_PROXY=1` and ensure the proxy overwrites forwarded headers. The default bind address is loopback; a remote bind must be explicitly configured with `PANINI_BIND_HOST`.
 
-These integrations do not by themselves establish production readiness. Real-provider credentials and model acceptance, deployment hardening, per-user authorization, independent research verification, and full browser acceptance must be validated for each deployment. Review release documents’ legacy claims before relying on them.
+Image generation uses the configured image endpoint when credentials are available; otherwise the Image Studio uses its grounded preview path. Video and music workspaces currently create procedural previews, not outputs from video- or music-generation model weights. Text research returns source records but does not automatically verify each factual claim. These integrations do not by themselves establish production readiness. Real-provider credentials and model acceptance, deployment hardening, per-user authorization, independent research verification, and full browser acceptance must be validated for each deployment. Review release documents’ legacy claims before relying on them.

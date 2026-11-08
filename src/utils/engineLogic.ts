@@ -14729,7 +14729,7 @@ export interface ThinkingModeExecutionPlanV59 {
 export interface PreviewableFileArtifactV59 {
   id: string;
   fileName: string;
-  fileExtension: 'pptx' | 'pdf' | 'docx' | 'xlsx' | 'csv' | 'html' | 'py' | 'ts';
+  fileExtension: 'pptx' | 'pdf' | 'docx' | 'xlsx' | 'csv' | 'html' | 'png' | 'py' | 'ts';
   mimeType: string;
   sourceCapability: string;
   createdAt: string;

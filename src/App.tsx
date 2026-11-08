@@ -151,11 +151,45 @@ export default function App() {
     initialUrlHasAdminTab ? 'admin' : 'user'
   );
   const [adminSection, setAdminSection] = useState<AdminSection>('registry');
+  const [modelRuntimeLabel, setModelRuntimeLabel] = useState('Checking local AI runtime…');
+  const [modelRuntimeReady, setModelRuntimeReady] = useState(false);
   const [isAdminSidebarCollapsed, setIsAdminSidebarCollapsed] = useState<boolean>(false);
   const [opsInitialSubTab, setOpsInitialSubTab] = useState<
     'install_scripts' | 'logs_backups' | 'docs_mobile_release'
   >('install_scripts');
   const [isDark, setIsDark] = useState<boolean>(true);
+
+  React.useEffect(() => {
+    let active = true;
+    const refreshRuntimeStatus = async () => {
+      try {
+        const response = await fetch('/api/llm/status');
+        const status = (await response.json()) as {
+          connected?: boolean;
+          configuredDefaultModel?: string | null;
+        };
+        if (!response.ok) throw new Error('Local runtime status request failed.');
+        if (!active) return;
+        const model = status.configuredDefaultModel;
+        setModelRuntimeReady(Boolean(status.connected && model));
+        setModelRuntimeLabel(
+          status.connected && model
+            ? `Local AI ready · ${model}`
+            : 'Local AI unavailable · install a model in Model Registry'
+        );
+      } catch {
+        if (!active) return;
+        setModelRuntimeReady(false);
+        setModelRuntimeLabel('Local AI status unavailable · check Model Registry');
+      }
+    };
+    void refreshRuntimeStatus();
+    const intervalId = window.setInterval(() => void refreshRuntimeStatus(), 30000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // Active Chat Capability Workspace (Default: 'ask_math' -> Ask and Math)
   const [chatCapability, setChatCapability] = useState<ChatCapabilityMode>('ask_math');
@@ -839,11 +873,72 @@ export default function App() {
         targetVer.quantType,
         isOnlineLearning
       );
+      let attachmentAnswer = attResult.answerMarkdown;
+      let attachmentModelName = targetModel.name;
+      let attachmentInferenceNotice =
+        'The attachment was summarized by local rules; no model analysis was completed.';
+      const imageMatch =
+        attachment.kind === 'image'
+          ? attachment.previewDataUrl?.match(
+              /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/i
+            )
+          : null;
+      const attachmentText =
+        attachment.kind === 'document'
+          ? (attachment.textContentPreview || '').slice(0, 30000)
+          : '';
+      const attachmentPrompt = [
+        `User question: ${effectivePrompt}`,
+        attachmentText
+          ? `Extracted text from ${attachment.name}:\n${attachmentText}`
+          : attachment.kind === 'document'
+            ? `No readable text was extracted from ${attachment.name}.`
+            : 'Analyze the attached image and answer the user question. State uncertainty about details that cannot be seen.',
+      ].join('\n\n');
+      if (attachment.kind === 'image' && !imageMatch) {
+        attachmentInferenceNotice =
+          'Image analysis unavailable: this upload is not a supported embedded PNG, JPEG, or WebP image.';
+      } else {
+        try {
+          const messages: Array<{ role: string; content: string; images?: string[] }> = [
+          {
+            role: 'system',
+            content:
+              'Analyze only the supplied attachment and user question. Distinguish visible or extracted evidence from inference. Do not invent text or claim independent fact verification.',
+          },
+          {
+            role: 'user',
+            content: attachmentPrompt,
+            ...(imageMatch ? { images: [imageMatch[1]] } : {}),
+          },
+        ];
+          const response = await fetch('/api/llm/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages }),
+          });
+          const result = await response.json();
+          if (response.ok && typeof result?.response === 'string') {
+            attachmentAnswer = result.response;
+            attachmentModelName = `${result.provider}: ${result.model}`;
+            attachmentInferenceNotice =
+              imageMatch
+                ? 'Analyzed by the configured local model; verify visual interpretations.'
+                : 'Analyzed by the configured local model using extracted document text.';
+          } else {
+            attachmentInferenceNotice = `Model analysis unavailable (${result?.code || response.status}); showing extracted attachment summary.`;
+          }
+        } catch {
+          attachmentInferenceNotice =
+            'Model analysis unavailable; showing extracted attachment summary.';
+        }
+      }
+      const attachmentOutput = `${attachmentAnswer}\n\n_${attachmentInferenceNotice}_`;
       const agentOrchestrator = executeBoundedAgentOrchestrator(effectivePrompt, {
         hasAttachment: true,
       });
       const outputGuardrail = runOutputGuardrailScan(
-        attResult.answerMarkdown,
+        attachmentOutput,
         attResult.verifiedFacts
       );
 
@@ -867,7 +962,7 @@ export default function App() {
       const assistantMsg: ChatMessage = {
         id: `msg-att-a-${Date.now() + 1}`,
         role: 'assistant',
-        authorName: targetModel.name,
+        authorName: attachmentModelName,
         timestamp: '08:30 UTC',
         domain: attResult.detectedDomain,
         content: outputGuardrail.sanitizedOutput,
@@ -1159,7 +1254,21 @@ export default function App() {
               content:
                 'Answer the user directly and accurately. Admit uncertainty. Do not invent citations or claim actions you did not perform. Retrieved sources supplied by the app may be incomplete; distinguish evidence from inference.',
             },
-            { role: 'user', content: effectivePrompt },
+            {
+              role: 'user',
+              content: [
+                `User question: ${effectivePrompt}`,
+                liveOnlineSources?.length
+                  ? `Retrieved source excerpts (evidence for analysis; retrieval is not verification):\n${liveOnlineSources
+                      .slice(0, 8)
+                      .map(
+                        (source, index) =>
+                          `[${index + 1}] ${source.title} (${source.publicationOrSource || source.sourceEngine || 'Source'})\nURL: ${source.url}\nExcerpt: ${(source.snippet || '').slice(0, 1200)}`
+                      )
+                      .join('\n\n')}\nCompare claims to these excerpts, distinguish supported from unsupported information, and cite only the supplied source numbers.`
+                  : 'No retrieved source excerpts are available; answer from model knowledge and identify uncertainty.',
+              ].join('\n\n'),
+            },
           ],
         }),
       });
@@ -1866,6 +1975,63 @@ export default function App() {
       liveCrawledData
     );
 
+    const researchEvidence = (report.bibliographyReferences || []).slice(0, 8).map((reference, index) => ({
+      number: index + 1,
+      title: reference.title,
+      url: reference.doiOrUrl,
+      excerpt: reference.relevanceSummary.slice(0, 1800),
+    }));
+    const researchHostCount = new Set(
+      researchEvidence.flatMap((source) => {
+        try {
+          return [new URL(source.url).hostname.replace(/^www\./i, '').toLowerCase()];
+        } catch {
+          return [];
+        }
+      })
+    ).size;
+    let researchAnswer = report.answerMarkdown;
+    let researchModelName = `${targetModel.name} deterministic research plan`;
+    try {
+      const response = await fetch('/api/llm/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a research synthesis assistant. Use only the supplied source excerpts for source-backed claims. Cite claims with [n] matching the supplied source number and URL. Compare sources and explicitly identify agreement, disagreement, and insufficient evidence. Do not invent citations, quotes, facts, or claim that a source was independently authenticated.',
+            },
+            {
+              role: 'user',
+              content: [
+                `Research question: ${approvedTopic}`,
+                `Research stages: ${approvedSteps.map((step) => `${step.title}: ${step.objective}`).join('\n')}`,
+                researchEvidence.length
+                  ? `Retrieved source excerpts:\n${researchEvidence
+                      .map(
+                        (source) =>
+                          `[${source.number}] ${source.title}\nURL: ${source.url}\nExcerpt: ${source.excerpt}`
+                      )
+                      .join('\n\n')}`
+                  : 'No retrieved source excerpts are available. Answer only from model knowledge and label the answer as unverified.',
+              ].join('\n\n'),
+            },
+          ],
+        }),
+      });
+      const result = await response.json();
+      if (response.ok && typeof result?.response === 'string') {
+        researchAnswer = result.response;
+        researchModelName = `${result.provider}: ${result.model}`;
+      } else {
+        researchModelName = `${targetModel.name} deterministic fallback`;
+      }
+    } catch {
+      researchModelName = `${targetModel.name} deterministic fallback`;
+    }
+
     const newUseCase = translateNlpToUseCase(approvedTopic, nextOffset);
     setCustomScenarios((prev) => [newUseCase, ...prev]);
 
@@ -1879,10 +2045,10 @@ export default function App() {
         m.id === planMessageId
           ? {
               ...m,
-              authorName: `${targetModel.name} profile · ${researchWarning ? 'No live sources' : isOnlineLearning ? 'Live sources retrieved' : 'Offline outline'}`,
+              authorName: `${researchModelName} · ${researchWarning ? 'No live sources' : isOnlineLearning ? 'Live sources retrieved' : 'Offline sources'}`,
               domain: report.detectedDomain,
               subDomain: report.detectedSubDomain,
-              content: report.answerMarkdown,
+              content: `${researchAnswer}\n\n---\n**Evidence comparison:** ${researchEvidence.length} retrieved excerpt(s) from ${researchHostCount} unique host(s). Source similarity is not proof of truth; review the linked references and any conflicting evidence.`,
               simpleAnswerMarkdown: report.simpleAnswerMarkdown,
               researchWarning,
               researchError: undefined,
@@ -1978,16 +2144,28 @@ export default function App() {
     let liveWebContextNote = '';
     let liveOnlineSources: LiveOnlineSearchSource[] | undefined;
     let backendPhotographicPlateUrl: string | undefined;
+    let imageGenerationMode: 'provider-generated-image' | 'grounded-preview' = 'grounded-preview';
+    let imageModelUsed: string | undefined;
 
     try {
       if (modality === 'Image') {
         const imgRes = await fetch('/api/multimodal/image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: cleanPrompt, isOnline: isOnlineLearning }),
+          body: JSON.stringify({
+            prompt: cleanPrompt,
+            isOnline: isOnlineLearning,
+            aspectRatio,
+          }),
         });
         if (imgRes.ok) {
           const imgData = await imgRes.json();
+          imageGenerationMode =
+            imgData?.generationMode === 'provider-generated-image'
+              ? 'provider-generated-image'
+              : 'grounded-preview';
+          imageModelUsed =
+            typeof imgData?.modelUsed === 'string' ? imgData.modelUsed : undefined;
           if (typeof imgData?.photographicPlateUrl === 'string') {
             backendPhotographicPlateUrl = imgData.photographicPlateUrl;
           } else if (typeof imgData?.imageSpec?.photographicPlateUrl === 'string') {
@@ -2078,6 +2256,10 @@ export default function App() {
         : qualityTier === '4K Ultra HD' || qualityTier === '4K Cinema'
         ? '3840x2160'
         : '1920x1080';
+    const outputResolution =
+      modality === 'Image' && imageGenerationMode === 'provider-generated-image'
+        ? aspectRatio === '9:16' ? '1024x1536' : '1536x1024'
+        : resLabel;
 
     const newItem: GeneratedMediaItem = {
       id: `med-${Date.now()}`,
@@ -2086,7 +2268,8 @@ export default function App() {
       timestamp: '2026-10-21 08:35 UTC',
       quantType: targetVer.quantType,
       qualityTier,
-      resolution: resLabel,
+      resolution: outputResolution,
+      generationMode: modality === 'Video' ? 'procedural-preview' : imageGenerationMode,
       aspectRatio,
       sourcePhotoDataUrl: sourcePhotoDataUrl || backendPhotographicPlateUrl,
       durationSec: modality === 'Video' ? 4 : undefined,
@@ -2153,6 +2336,8 @@ export default function App() {
 
     if (!isFailedGeneration && backendPhotographicPlateUrl) {
       const imgArtifactId = `prev-img-${Date.now()}`;
+      const isProviderImage =
+        modality === 'Image' && imageGenerationMode === 'provider-generated-image';
       setPreviewFiles((prev) =>
         [
           {
@@ -2160,14 +2345,18 @@ export default function App() {
             fileName: `${cleanPrompt
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, '-')
-              .slice(0, 36)}-4k-studio.svg`,
-            fileExtension: 'html' as const,
-            mimeType: 'image/svg+xml',
+              .slice(0, 36)}-${isProviderImage ? 'generated.png' : 'grounded-preview'}`,
+            fileExtension: isProviderImage ? 'png' as const : 'html' as const,
+            mimeType: isProviderImage ? 'image/png' : 'image/svg+xml',
             sourceCapability: '8K Cinema Studio',
             createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
-            subjectTitle: `4K Grounded Image Studio Preview: ${cleanPrompt}`,
-            summaryDescription: `Panini-Flux.1-Dev-12B (Rectified Flow DiT) · ${qualityTier} (${resLabel})`,
-            rawTextOrHtmlContent: `### 4K Grounded Image Studio Preview: ${cleanPrompt}\n- **Architecture:** \`Panini-Flux.1-Dev-12B (Rectified Flow DiT)\`\n- **Resolution:** \`${resLabel} (${aspectRatio})\`\n- **Optics & Lighting:** \`${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics}\``,
+            subjectTitle: isProviderImage
+              ? `Provider-generated image: ${cleanPrompt}`
+              : `Grounded Image Studio preview: ${cleanPrompt}`,
+            summaryDescription: isProviderImage
+              ? `${imageModelUsed || 'Configured image model'} · ${outputResolution}`
+              : `Grounded composition preview · ${qualityTier} (${resLabel})`,
+            rawTextOrHtmlContent: `### ${isProviderImage ? 'Provider-generated image' : 'Grounded Image Studio preview'}: ${cleanPrompt}\n- **Model:** \`${imageModelUsed || 'No image-generation model configured'}\`\n- **Output:** \`${outputResolution} (${aspectRatio})\`\n- **Optics & Lighting:** \`${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics}\``,
             embeddedSlideSvgPreviews: [
               {
                 slideNumber: 1,
@@ -2175,7 +2364,7 @@ export default function App() {
                 svgDataUrl: backendPhotographicPlateUrl,
               },
             ],
-            downloadDataUrl: backendPhotographicPlateUrl,
+            binaryBase64: backendPhotographicPlateUrl,
           },
           ...prev,
         ].slice(0, 20)
@@ -2188,8 +2377,10 @@ export default function App() {
       authorName: isFailedGeneration
         ? `${modality} Generation Gate (Strict Zero-Fallback Policy)`
         : modality === 'Image'
-        ? `Panini-Flux.1-Dev-12B (Nano-Banana Open-Source Still Studio · ${qualityTier})`
-        : `Panini-Wan2.1-14B (Veo-3 Open-Source Cinema Video + Foley Studio · ${qualityTier})`,
+        ? imageGenerationMode === 'provider-generated-image'
+          ? `${imageModelUsed || 'Provider image model'} image generation`
+          : 'Grounded Image Studio preview'
+        : 'Procedural video storyboard preview',
       timestamp: '08:35 UTC',
       domain: groundedKnowledgeForMedia.detectedDomain || 'Science',
       simpleAnswerMarkdown: isFailedGeneration
@@ -2197,35 +2388,19 @@ export default function App() {
 - **Reason:** ${sceneSpec.validationReport.contextMatchStatus}
 - **Strict Zero-Default-Fallback Policy:** Default human/sun fallback rendering has been disabled. When a prompt cannot be grounded to a recognizable visual subject, person, place, building, brand, food, vehicle, animal, or object, generation halts and reports **${modality} generation failed**.`
         : modality === 'Image'
-        ? `${cleanMediaSimpleHeader}\n\n---\n### Everyday Simple Guide: Your Open-Source Nano-Banana Still Image
-**How Your Still Image Was Synthesized:**
-- **Open-Source Rectified-Flow DiT Architecture:** Synthesized using **Panini-Flux.1-Dev-12B (Rectified Flow DiT)** with 16-Channel Latent VAE, per-pixel volumetric raymarching, Fractional Brownian Motion (fBm) textures, and ACES Filmic tone mapping.
-- **Grounded Photographic Plate + 3D View Modes:** Switch between **Hybrid 3D + Photo Plate**, **Grounded Photo Plate**, and **3D Volumetric Scene**, or click **Download PNG (.png)** / **Download SVG (.svg)** below!`
-        : `${cleanMediaSimpleHeader}\n\n---\n### Everyday Simple Guide: Your Open-Source Veo-3 Multi-Shot Video & Synchronized Foley
-**How Your Prompt Was Animated Step-by-Step:**
-Instead of rendering a single fixed scene, we broke your prompt into **${visualNlp.storyboardShots?.length || 3} sequential Storyboard Shots** using **Panini-Wan2.1-14B (3D Spatio-Temporal DiT)** and synthesized a native **16-bit PCM Foley & Ambient Audio Track** (${sceneSpec.veo3AudioSpec?.ambientSoundscape || 'Binaural Foley'}):
-
-${storyboardBullets}
-
-**Interactive Controls:**
-- Click **Play Synchronized Foley Audio** on the audio bar to hear the physical acoustics of your scene, switch 3D camera trajectories, or click any **Shot Card** in the Storyboard Scrubber Strip below!`,
+        ? imageGenerationMode === 'provider-generated-image'
+          ? `${cleanMediaSimpleHeader}\n\n---\n### Generated image\nCreated by the configured **${imageModelUsed || 'image provider'}** model at ${outputResolution}.`
+          : `${cleanMediaSimpleHeader}\n\n---\n### Grounded image preview\nThis is a retrieved photo plate or procedural illustration, not a newly generated image-model output. Configure an image-generation provider to create a new image from the prompt.`
+        : `${cleanMediaSimpleHeader}\n\n---\n### Video storyboard preview\nThis workspace creates an interactive, procedural storyboard preview from ${visualNlp.storyboardShots?.length || 3} shots. It does not currently render a prompt-specific video or synthesize foley audio.\n\n${storyboardBullets}`,
       content: isFailedGeneration
         ? `### ✗ ${modality} Generation Failed (Zero Default Fallback)
 - **Status:** \`${modality} generation failed\`
 - **Diagnostic Detail:** \`${sceneSpec.validationReport.contextMatchStatus}\``
-        : `${cleanMediaAnswerHeader}\n\n---\n### Live ${qualityTier} ${modality} Synthesis (${
-            isOnlineLearning ? 'Google Search + Wikimedia Grounded + Open-Source DiT' : '100% Offline Open-Source DiT'
-          })
-- **Open-Source Architecture Routed:** \`${
-            modality === 'Image'
-              ? 'Panini-Flux.1-Dev-12B (Rectified Flow DiT · 16ch VAE)'
-              : 'Panini-Wan2.1-14B (3D Spatio-Temporal DiT + MMAudio Foley)'
-          }\`
-- **Shader & Optics Pipeline:** \`Per-Pixel Volumetric Raymarching + Multi-Octave fBm + ACES Filmic Tone Mapping\`
-- **Data Validation & Entities:** \`${visualNlp.dataValidationStatus}\`
-- **Character & Scene Engine:** \`${visualNlp.characterArchetype}\` (${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics})${
-            liveWebContextNote ? `\n- **Live Online Visual Grounding:** \`${liveWebContextNote}\`` : ''
-          }`,
+        : modality === 'Image' && imageGenerationMode === 'provider-generated-image'
+          ? `${cleanMediaAnswerHeader}\n\n---\n### Provider-generated image\n- **Model:** \`${imageModelUsed || 'Configured image model'}\`\n- **Output resolution:** \`${outputResolution}\`\n- **Data context:** ${liveWebContextNote ? 'The prompt was grounded with retrieved sources; the image itself is not evidence that the depicted details are factual.' : 'No online source grounding was requested.'}`
+          : modality === 'Image'
+            ? `${cleanMediaAnswerHeader}\n\n---\n### Grounded image preview\nThis is a retrieved photographic plate or procedural composition, not a newly generated image. Configure an image provider in the environment to enable prompt-based image generation.${liveWebContextNote ? `\n- **Retrieved context:** \`${liveWebContextNote}\`` : ''}`
+            : `${cleanMediaAnswerHeader}\n\n---\n### Procedural storyboard preview\n- **Output:** Interactive scene/storyboard preview; no prompt-specific video file or synthesized soundtrack is produced.\n- **Data validation:** \`${visualNlp.dataValidationStatus}\`\n- **Scene description:** \`${visualNlp.characterArchetype}\` (${visualNlp.lightingEffect} · ${visualNlp.cinematographyOptics})${liveWebContextNote ? `\n- **Retrieved context:** \`${liveWebContextNote}\`` : ''}`,
       bibliographyReferences: groundedKnowledgeForMedia.bibliographyReferences,
       generatedMedia:
         !isReceiptScene && (modality === 'Video' || /\b(video|animate|clip)\b/i.test(cleanPrompt))
@@ -2236,14 +2411,15 @@ ${storyboardBullets}
           ? {
               id: `img-studio-${Date.now()}`,
               prompt: cleanPrompt,
-              modelUsed: 'Panini-Vision-Studio-8K',
-              openSourceArchitecture: 'Panini-Flux.1-Dev-12B (Rectified Flow DiT)',
-              vaeLatentChannels: '16-Channel Flux Latent VAE',
-              guidanceScale: 3.5,
-              inferenceSteps: 28,
+              modelUsed: imageModelUsed || 'Grounded procedural composition',
+              generationMode: imageGenerationMode,
+              openSourceArchitecture: imageModelUsed
+                ? 'Configured OpenAI-compatible image provider'
+                : 'No image-generation model configured',
+              vaeLatentChannels: imageModelUsed ? 'Provider-managed' : 'Not applicable',
               inpaintRegion: 'Full Canvas',
               photographicPlateUrl: backendPhotographicPlateUrl,
-              resolution: '3840x2160 (4K)',
+              resolution: outputResolution,
               aspectRatio,
               sourceImageDataUrl: sourcePhotoDataUrl,
               editHistory: [],
@@ -2735,16 +2911,17 @@ ${storyboardBullets}
 
   return (
     <div className={`min-h-screen ${bgCanvas} transition-colors`}>
-      <aside
-        role="note"
+      <div
+        role="status"
         data-testid="runtime-capability-notice"
-        className="border-b border-amber-500/30 bg-amber-950/40 px-4 py-2 text-center text-xs text-amber-100"
+        className={`border-b px-4 py-2 text-center text-xs ${
+          modelRuntimeReady
+            ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-100'
+            : 'border-slate-700 bg-slate-900/80 text-slate-300'
+        }`}
       >
-        AI inference, provider fine-tuning, and speech require configured services and models; no model
-        weights are bundled. Unconfigured text/code uses deterministic behavior; online sources are not
-        independently fact-checked; image/video/music workspaces are procedural previews. Do not rely
-        on outputs for safety-critical or high-impact decisions.
-      </aside>
+        {modelRuntimeLabel}
+      </div>
       {/* Top Bar: Always visible when Preview tab, Admin tab, or active conversation is open */}
       {(workspaceMode === 'admin' || workspaceMode === 'preview' || isPreviewTabOpen || chatHistory.length > 0 || isAdminTabOpen) && (
       <header

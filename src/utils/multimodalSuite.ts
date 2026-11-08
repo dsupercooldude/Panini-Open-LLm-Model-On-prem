@@ -414,12 +414,13 @@ export interface ImageEditHistoryItem {
 export interface ImageStudioSpec {
   id: string;
   prompt: string;
-  modelUsed: 'Panini-Vision-Studio-8K';
-  openSourceArchitecture?: OpenSourceImageModelArchitecture;
+  modelUsed: string;
+  generationMode?: 'provider-generated-image' | 'grounded-preview';
+  openSourceArchitecture?: string;
   vaeLatentChannels?: string;
   guidanceScale?: number;
   inferenceSteps?: number;
-  resolution: '1024x1024 (1K)' | '2048x2048 (2K)' | '3840x2160 (4K)';
+  resolution: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   inpaintRegion?: 'Full Canvas' | 'Sky & Atmosphere' | 'Foreground Subject' | 'Lighting & Reflections';
   typographyOverlayText?: string;
@@ -6596,4 +6597,3 @@ export function detectMultilingualSpeechAndText(input: string): MultilingualDete
     localizedGreetingPrefix: 'English Voice & Text Grounding Active:',
   };
 }
-

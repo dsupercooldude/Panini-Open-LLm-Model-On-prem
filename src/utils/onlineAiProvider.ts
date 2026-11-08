@@ -102,6 +102,48 @@ export async function createChatCompletion(input: {
   return { model: result.model || model, response: content };
 }
 
+export async function generateImage(input: {
+  prompt: string;
+  model?: string;
+  size?: string;
+}): Promise<{ imageDataUrl: string; model: string }> {
+  if (!input.prompt.trim() || input.prompt.length > 10000) {
+    throw new OnlineAiProviderError('Image prompts must contain 1 to 10,000 characters.', 400);
+  }
+  const model = validateModelName(input.model || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1');
+  const response = await providerRequest('/images/generations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      prompt: input.prompt,
+      size: input.size || '1536x1024',
+      n: 1,
+      output_format: 'png',
+    }),
+    signal: AbortSignal.timeout(3 * 60 * 1000),
+  });
+  const result = (await response.json()) as {
+    data?: Array<{ b64_json?: string }>;
+  };
+  const image = result.data?.[0];
+  if (typeof image?.b64_json === 'string' && image.b64_json.length > 0) {
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(image.b64_json)) {
+      throw new OnlineAiProviderError('Image provider returned malformed image data.', 502);
+    }
+    const bytes = Buffer.from(image.b64_json, 'base64');
+    if (
+      bytes.length < 16 ||
+      bytes.length > 25 * 1024 * 1024 ||
+      bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
+    ) {
+      throw new OnlineAiProviderError('Image provider returned an invalid or oversized image.', 502);
+    }
+    return { imageDataUrl: `data:image/png;base64,${bytes.toString('base64')}`, model };
+  }
+  throw new OnlineAiProviderError('Image provider returned no image artifact.', 502);
+}
+
 export async function createFineTuningJob(input: {
   model: unknown;
   examples: Array<{ messages: Array<{ role: string; content: string }> }>;

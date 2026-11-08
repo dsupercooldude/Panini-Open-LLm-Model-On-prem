@@ -10,6 +10,7 @@ import {
   OnlineAiProviderError,
   createChatCompletion,
   createFineTuningJob,
+  generateImage,
   getFineTuningJob,
   synthesizeSpeech,
   transcribeAudio,
@@ -158,12 +159,21 @@ async function startServer() {
   const sqliteStore = new SqliteStore(
     process.env.PANINI_DB_PATH || path.join(__dirname, 'data', 'panini.sqlite')
   );
-  function recordResearchEvidence(query: string, sources: Array<{ title: string; url: string }>) {
+  function recordResearchEvidence(
+    query: string,
+    sources: Array<{ title: string; url: string; sourceEngine?: string; excerpt?: string }>
+  ) {
     const records = sources.flatMap((source) => {
       try {
         const url = new URL(source.url);
         if (url.protocol !== 'https:') return [];
-        return [{ title: source.title.slice(0, 500), url: url.toString(), domain: url.hostname.toLowerCase() }];
+        return [{
+          title: source.title.slice(0, 500),
+          url: url.toString(),
+          domain: url.hostname.toLowerCase(),
+          sourceEngine: source.sourceEngine?.slice(0, 200),
+          excerpt: source.excerpt?.slice(0, 3000),
+        }];
       } catch {
         return [];
       }
@@ -176,6 +186,7 @@ async function startServer() {
       uniqueHostCount: hostCount,
       status: validationStatus,
       independentlyFactChecked: false,
+      method: 'Retrieved source-host diversity only; claim-level fact checking has not been performed.',
     } as const;
     sqliteStore.saveResearchValidation({
       query: query.slice(0, 2000),
@@ -325,20 +336,34 @@ async function startServer() {
       ok: true,
       configured: Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_CHAT_MODEL),
       model: process.env.OPENAI_CHAT_MODEL || null,
+      imageConfigured: Boolean(process.env.OPENAI_API_KEY),
+      imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
       speechConfigured: Boolean(process.env.OPENAI_API_KEY),
       fineTuningConfigured: Boolean(process.env.OPENAI_API_KEY),
     });
   });
 
   app.get('/api/llm/status', async (_req, res) => {
-    const status = await ollama.status();
-    res.json({
-      ok: true,
-      provider: 'ollama',
-      defaultModelConfigured: Boolean(process.env.PANINI_OLLAMA_MODEL),
-      configuredDefaultModel: process.env.PANINI_OLLAMA_MODEL || null,
-      ...status,
-    });
+    try {
+      const status = await ollama.status();
+      const models = status.connected ? await ollama.listModels() : [];
+      const preferredModel = process.env.PANINI_OLLAMA_MODEL;
+      const defaultModel =
+        models.find((model) => model.name === preferredModel)?.name ||
+        models.find((model) => model.model === preferredModel)?.model ||
+        models[0]?.name ||
+        null;
+      res.json({
+        ok: true,
+        provider: 'ollama',
+        defaultModelConfigured: Boolean(defaultModel),
+        configuredDefaultModel: defaultModel,
+        ...status,
+      });
+    } catch (error) {
+      const status = error instanceof OllamaRuntimeError ? error.statusCode : 502;
+      res.status(status).json({ ok: false, code: 'OLLAMA_STATUS_FAILED', error: String(error) });
+    }
   });
 
   app.get('/api/llm/models', async (_req, res) => {
@@ -366,7 +391,7 @@ async function startServer() {
       const model =
         typeof req.body?.model === 'string'
           ? req.body.model
-          : process.env.PANINI_OLLAMA_MODEL || '';
+          : process.env.PANINI_OLLAMA_MODEL || (await ollama.listModels())[0]?.name || '';
       const messages = req.body?.messages;
       if (
         !Array.isArray(messages) ||
@@ -378,7 +403,16 @@ async function startServer() {
               String((message as { role?: unknown }).role)
             ) &&
             typeof (message as { content?: unknown }).content === 'string' &&
-            (message as { content: string }).content.length <= 50000
+            (message as { content: string }).content.length <= 50000 &&
+            ((message as { images?: unknown }).images === undefined ||
+              (Array.isArray((message as { images?: unknown }).images) &&
+                ((message as { images: unknown[] }).images.length <= 4) &&
+                (message as { images: unknown[] }).images.every(
+                  (image) =>
+                    typeof image === 'string' &&
+                    image.length <= 12_000_000 &&
+                    /^[A-Za-z0-9+/]+={0,2}$/.test(image)
+                )))
         )
       ) {
         res.status(400).json({ ok: false, code: 'INVALID_MESSAGES', error: 'Invalid chat messages.' });
@@ -388,7 +422,7 @@ async function startServer() {
         res.status(503).json({
           ok: false,
           code: 'MODEL_NOT_CONFIGURED',
-          error: 'Select a downloaded Ollama model or set PANINI_OLLAMA_MODEL.',
+          error: 'Download an Ollama model or set PANINI_OLLAMA_MODEL.',
         });
         return;
       }
@@ -576,8 +610,10 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
 `);
   });
 
-  app.get('/api/install/manifest.json', (req, res) => {
+  app.get('/api/install/manifest.json', async (req, res) => {
     const hostOrigin = `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+    const runtimeStatus = await ollama.status();
+    const installedModels = runtimeStatus.connected ? await ollama.listModels() : [];
     res.json({
       package: 'panini-400b-studio',
       version: '6.4.0',
@@ -585,9 +621,15 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       svnRevision: CURRENT_ACTIVE_SVN_REVISION,
       modelProfilesAreMetadataOnly: true,
       inferenceRuntime: {
-        available: false,
-        weightsLoaded: false,
-        mode: 'deterministic-local-rules',
+        available: installedModels.length > 0,
+        weightsInstalled: installedModels.length > 0,
+        provider: 'ollama',
+        models: installedModels.map((model) => ({ name: model.name, sizeBytes: model.size })),
+      },
+      mediaGeneration: {
+        image: process.env.OPENAI_API_KEY ? 'configured-provider' : 'grounded-preview',
+        video: 'procedural-preview',
+        music: 'procedural-preview',
       },
       hardwareExecutionPolicies: {
         desktop_laptop_onprem: 'on_prem_full_synthesis_and_stitching',
@@ -706,7 +748,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               year: pubYear,
               url: rawLink,
               doiOrUrl: rawLink,
-              snippet: `Google Search verified web record for "${cleanQ}": ${rawTitle} (Published via ${rawSource}, ${pubYear}).`,
+              snippet: `Google Search indexed result for "${cleanQ}": ${rawTitle} (Published via ${rawSource}, ${pubYear}).`,
               sourceEngine: 'Google Search & Knowledge Graph Engine',
             });
           }
@@ -1022,6 +1064,8 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             numberedRefs.map((reference) => ({
               title: reference.title,
               url: reference.doiOrUrl,
+              sourceEngine: reference.crawlerEngine,
+              excerpt: reference.relevanceSummary,
             }))
           )
         : undefined;
@@ -1062,7 +1106,12 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       const liveSources = await fetchLiveInternetSources(rawQuery, Math.max(4, Math.min(10, limit)));
       const evidenceCoverage = recordResearchEvidence(
         rawQuery,
-        liveSources.map((source) => ({ title: source.title, url: source.url }))
+        liveSources.map((source) => ({
+          title: source.title,
+          url: source.url,
+          sourceEngine: source.sourceEngine,
+          excerpt: source.snippet,
+        }))
       );
       const cleanSubject = extractCleanEntityTopic(rawQuery) || rawQuery;
 
@@ -1353,7 +1402,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     return undefined;
   }
 
-  // 3. Create & Edit Images Endpoint (Open-Source FLUX.1-Dev 12B / SDXL-Lightning / PixArt-Sigma 4K + Google/Wikimedia Grounding)
+  // 3. Image generation uses the configured provider when available; grounded plates are a distinct fallback.
   app.post('/api/multimodal/image', async (req, res) => {
     try {
       const prompt = String(req.body?.prompt || 'Prompt-constructed studio illustration');
@@ -1368,6 +1417,13 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
         return;
       }
 
+      const generatedImage = process.env.OPENAI_API_KEY
+        ? await generateImage({
+            prompt,
+            model: process.env.OPENAI_IMAGE_MODEL,
+            size: req.body?.aspectRatio === '9:16' ? '1024x1536' : '1536x1024',
+          })
+        : undefined;
       const [remotePhotoPlate, liveSources] = isOnline
         ? await Promise.all([
             fetchWikimediaOpenSourcePhotoPlate(prompt),
@@ -1377,35 +1433,42 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
 
       const groundedFacts = liveSources.map((s) => s.snippet).filter(Boolean);
       const photographicPlateUrl =
-        remotePhotoPlate || buildFallbackGroundedSvgPlateDataUrl(prompt, groundedFacts);
+        generatedImage?.imageDataUrl ||
+        remotePhotoPlate ||
+        buildFallbackGroundedSvgPlateDataUrl(prompt, groundedFacts);
 
-      const sceneElements = buildPromptConstructedScene(prompt, '16:9');
+      const aspectRatio = req.body?.aspectRatio === '9:16' ? '9:16' : '16:9';
+      const sceneElements = buildPromptConstructedScene(prompt, aspectRatio);
       sceneElements.photographicPlateUrl = photographicPlateUrl;
 
       const imageSpec: ImageStudioSpec = {
         id: `img-${Date.now()}`,
         prompt,
-        modelUsed: 'Panini-Vision-Studio-8K',
-        openSourceArchitecture: 'Panini-Flux.1-Dev-12B (Rectified Flow DiT)',
-        vaeLatentChannels: '16-Channel Flux Latent VAE',
-        guidanceScale: 3.5,
-        inferenceSteps: 28,
+        modelUsed: generatedImage?.model || 'Grounded procedural composition',
+        generationMode: generatedImage ? 'provider-generated-image' : 'grounded-preview',
+        openSourceArchitecture: generatedImage ? 'Configured OpenAI-compatible image provider' : 'No image-generation model configured',
+        vaeLatentChannels: generatedImage ? 'Provider-managed' : 'Not applicable',
         inpaintRegion: 'Full Canvas',
         photographicPlateUrl,
-        resolution: '3840x2160 (4K)',
-        aspectRatio: '16:9',
+        resolution: generatedImage
+          ? aspectRatio === '9:16' ? '1024x1536' : '1536x1024'
+          : '3840x2160 (4K)',
+        aspectRatio,
         editHistory: [],
         sceneElements,
       };
       res.json({
         ok: true,
         releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
+        generationMode: generatedImage ? 'provider-generated-image' : 'grounded-preview',
+        modelUsed: generatedImage?.model || null,
         imageSpec,
         photographicPlateUrl,
         liveSources,
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      const status = err instanceof OnlineAiProviderError ? err.statusCode : 500;
+      res.status(status).json({ ok: false, error: String(err) });
     }
   });
 
