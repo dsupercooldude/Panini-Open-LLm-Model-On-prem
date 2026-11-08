@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { ClaimEvidenceCheck } from './researchVerification';
 
 export interface SessionRecordStore {
   createSession(sessionId: string, expiresAt: number, createdAt: number): void;
@@ -14,13 +15,8 @@ export interface ResearchValidationRecord {
   sourceCount: number;
   independentDomainCount: number;
   validationStatus: 'multiple_hosts' | 'single_host' | 'unverified';
-  sources: Array<{
-    title: string;
-    url: string;
-    domain: string;
-    sourceEngine?: string;
-    excerpt?: string;
-  }>;
+  sources: Array<{ title: string; url: string; domain: string; snippet?: string }>;
+  claimChecks?: ClaimEvidenceCheck[];
   createdAt: string;
 }
 
@@ -46,6 +42,7 @@ export class SqliteStore implements SessionRecordStore {
         independent_domain_count INTEGER NOT NULL,
         validation_status TEXT NOT NULL,
         sources_json TEXT NOT NULL,
+        claim_checks_json TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS model_training_jobs (
@@ -57,6 +54,14 @@ export class SqliteStore implements SessionRecordStore {
         detail_json TEXT NOT NULL
       );
     `);
+    const researchColumns = this.db
+      .prepare('PRAGMA table_info(research_validations)')
+      .all() as Array<{ name: string }>;
+    if (!researchColumns.some((column) => column.name === 'claim_checks_json')) {
+      this.db.exec(
+        "ALTER TABLE research_validations ADD COLUMN claim_checks_json TEXT NOT NULL DEFAULT '[]'"
+      );
+    }
   }
 
   createSession(sessionId: string, expiresAt: number, createdAt: number): void {
@@ -84,8 +89,8 @@ export class SqliteStore implements SessionRecordStore {
     this.db
       .prepare(
         `INSERT INTO research_validations
-          (query, source_count, independent_domain_count, validation_status, sources_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+          (query, source_count, independent_domain_count, validation_status, sources_json, claim_checks_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         record.query,
@@ -93,6 +98,7 @@ export class SqliteStore implements SessionRecordStore {
         record.independentDomainCount,
         record.validationStatus,
         JSON.stringify(record.sources),
+        JSON.stringify(record.claimChecks || []),
         record.createdAt
       );
   }
@@ -101,7 +107,7 @@ export class SqliteStore implements SessionRecordStore {
     const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
     const rows = this.db
       .prepare(
-        `SELECT query, source_count, independent_domain_count, validation_status, sources_json, created_at
+        `SELECT query, source_count, independent_domain_count, validation_status, sources_json, claim_checks_json, created_at
          FROM research_validations ORDER BY id DESC LIMIT ?`
       )
       .all(safeLimit) as Array<{
@@ -110,6 +116,7 @@ export class SqliteStore implements SessionRecordStore {
       independent_domain_count: number;
       validation_status: ResearchValidationRecord['validationStatus'];
       sources_json: string;
+      claim_checks_json: string;
       created_at: string;
     }>;
     return rows.map((row) => ({
@@ -118,6 +125,7 @@ export class SqliteStore implements SessionRecordStore {
       independentDomainCount: row.independent_domain_count,
       validationStatus: row.validation_status,
       sources: JSON.parse(row.sources_json) as ResearchValidationRecord['sources'],
+      claimChecks: JSON.parse(row.claim_checks_json) as ClaimEvidenceCheck[],
       createdAt: row.created_at,
     }));
   }

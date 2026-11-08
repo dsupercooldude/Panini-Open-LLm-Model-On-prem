@@ -106,7 +106,7 @@ export async function generateImage(input: {
   prompt: string;
   model?: string;
   size?: string;
-}): Promise<{ imageDataUrl: string; model: string }> {
+}): Promise<{ imageDataUrl: string; model: string; width: number; height: number }> {
   if (!input.prompt.trim() || input.prompt.length > 10000) {
     throw new OnlineAiProviderError('Image prompts must contain 1 to 10,000 characters.', 400);
   }
@@ -123,25 +123,34 @@ export async function generateImage(input: {
     }),
     signal: AbortSignal.timeout(3 * 60 * 1000),
   });
-  const result = (await response.json()) as {
-    data?: Array<{ b64_json?: string }>;
-  };
-  const image = result.data?.[0];
-  if (typeof image?.b64_json === 'string' && image.b64_json.length > 0) {
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(image.b64_json)) {
-      throw new OnlineAiProviderError('Image provider returned malformed image data.', 502);
-    }
-    const bytes = Buffer.from(image.b64_json, 'base64');
-    if (
-      bytes.length < 16 ||
-      bytes.length > 25 * 1024 * 1024 ||
-      bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
-    ) {
-      throw new OnlineAiProviderError('Image provider returned an invalid or oversized image.', 502);
-    }
-    return { imageDataUrl: `data:image/png;base64,${bytes.toString('base64')}`, model };
+  const result = (await response.json()) as { data?: Array<{ b64_json?: string }> };
+  const encoded = result.data?.[0]?.b64_json;
+  if (
+    typeof encoded !== 'string' ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)
+  ) {
+    throw new OnlineAiProviderError('Image provider returned malformed or missing image data.', 502);
   }
-  throw new OnlineAiProviderError('Image provider returned no image artifact.', 502);
+  const bytes = Buffer.from(encoded, 'base64');
+  if (
+    bytes.length < 24 ||
+    bytes.length > 25 * 1024 * 1024 ||
+    bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' ||
+    bytes.toString('ascii', 12, 16) !== 'IHDR'
+  ) {
+    throw new OnlineAiProviderError('Image provider returned an invalid or oversized PNG artifact.', 502);
+  }
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  if (width < 1 || height < 1 || width > 16384 || height > 16384) {
+    throw new OnlineAiProviderError('Image provider returned an invalid PNG size.', 502);
+  }
+  return {
+    imageDataUrl: `data:image/png;base64,${bytes.toString('base64')}`,
+    model,
+    width,
+    height,
+  };
 }
 
 export async function createFineTuningJob(input: {

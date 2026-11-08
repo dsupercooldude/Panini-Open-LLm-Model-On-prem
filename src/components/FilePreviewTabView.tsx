@@ -11,7 +11,6 @@ import {
   Layers,
   ShieldCheck,
   Eye,
-  Image as ImageIcon,
 } from 'lucide-react';
 import { PreviewableFileArtifactV59 } from '../utils/engineLogic';
 
@@ -184,8 +183,6 @@ export const FilePreviewTabView: React.FC<FilePreviewTabViewProps> = ({
                     <FileSpreadsheet className="w-3.5 h-3.5" />
                   ) : file.fileExtension === 'html' ? (
                     <Globe className="w-3.5 h-3.5" />
-                  ) : file.fileExtension === 'png' ? (
-                    <ImageIcon className="w-3.5 h-3.5" />
                   ) : file.fileExtension === 'py' || file.fileExtension === 'ts' ? (
                     <Code2 className="w-3.5 h-3.5" />
                   ) : (
@@ -488,23 +485,6 @@ export const FilePreviewTabView: React.FC<FilePreviewTabViewProps> = ({
                 className="w-full h-[460px] border-0"
               />
             </div>
-          </div>
-        )}
-
-        {activeFile.fileExtension === 'png' && activeFile.binaryBase64 && (
-          <div data-testid="preview-tab-image-inspector" className="space-y-3">
-            <div className="text-xs font-mono text-sky-400">
-              Generated image ({activeFile.fileName})
-            </div>
-            <img
-              src={
-                activeFile.binaryBase64.startsWith('data:')
-                  ? activeFile.binaryBase64
-                  : `data:${activeFile.mimeType};base64,${activeFile.binaryBase64}`
-              }
-              alt={activeFile.subjectTitle}
-              className="max-h-[70vh] max-w-full rounded-xl border border-slate-800 object-contain"
-            />
           </div>
         )}
 

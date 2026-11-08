@@ -37,27 +37,21 @@ async function startServer(env: NodeJS.ProcessEnv, port: number): Promise<ChildP
   const child = spawn(process.execPath, ['--import', 'tsx', 'server.ts'], {
     cwd: process.cwd(),
     env: { ...process.env, ...env, PORT: String(port), PANINI_BIND_HOST: '127.0.0.1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: 'ignore',
   });
-  let output = '';
-  child.stdout?.on('data', (chunk: Buffer) => { output = `${output}${chunk.toString()}`.slice(-4000); });
-  child.stderr?.on('data', (chunk: Buffer) => { output = `${output}${chunk.toString()}`.slice(-4000); });
   const url = `http://127.0.0.1:${port}/api/auth/session`;
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    if (child.exitCode !== null) {
-      throw new Error(`Server exited during startup with code ${child.exitCode}. ${output}`);
-    }
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Server exited during startup with code ${child.exitCode}.`);
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(200) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(500) });
       if (response.ok) return child;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  const exited = once(child, 'exit');
   child.kill();
-  await exited;
-  throw new Error(`Server did not become ready within 30 seconds. ${output}`);
+  await once(child, 'exit');
+  throw new Error('Server did not become ready within 10 seconds.');
 }
 
 async function stopServer(child: ChildProcess): Promise<void> {
@@ -107,30 +101,8 @@ test('production API serves online chat and restores authenticated sessions afte
       response.end(JSON.stringify({ text: 'Integrated transcription result' }));
       return;
     }
-    if (request.url === '/v1/images/generations') {
-      const png = Buffer.alloc(64);
-      Buffer.from('89504e470d0a1a0a', 'hex').copy(png);
-      response.setHeader('Content-Type', 'application/json');
-      response.end(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }));
-      return;
-    }
     response.statusCode = 404;
     response.end('not found');
-  });
-  const mockOllama = await listen(async (request, response) => {
-    response.setHeader('Content-Type', 'application/json');
-    if (request.url === '/api/version') {
-      response.end(JSON.stringify({ version: 'test-ollama' }));
-    } else if (request.url === '/api/tags') {
-      response.end(JSON.stringify({
-        models: [{ name: 'qwen3.5:4b', model: 'qwen3.5:4b', size: 12, digest: 'digest', modified_at: 'today' }],
-      }));
-    } else if (request.url === '/api/chat') {
-      response.end(JSON.stringify({ model: 'qwen3.5:4b', message: { content: 'Local model response' }, done: true }));
-    } else {
-      response.statusCode = 404;
-      response.end(JSON.stringify({ error: 'not found' }));
-    }
   });
   const env = {
     NODE_ENV: 'production',
@@ -139,10 +111,8 @@ test('production API serves online chat and restores authenticated sessions afte
     PANINI_TRUST_PROXY: '1',
     PANINI_DB_PATH: path.join(directory, 'panini.sqlite'),
     PANINI_JSON_DB_PATH: path.join(directory, 'legacy.json'),
-    OLLAMA_BASE_URL: `http://127.0.0.1:${mockOllama.port}`,
     OPENAI_API_KEY: 'integration-test-key',
     OPENAI_CHAT_MODEL: 'test-chat-model',
-    OPENAI_IMAGE_MODEL: 'test-image-model',
     OPENAI_API_BASE_URL: `http://127.0.0.1:${mockProvider.port}/v1`,
   };
 
@@ -150,7 +120,6 @@ test('production API serves online chat and restores authenticated sessions afte
   t.after(async () => {
     if (child) await stopServer(child);
     await mockProvider.close();
-    await mockOllama.close();
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -183,33 +152,58 @@ test('production API serves online chat and restores authenticated sessions afte
   assert.equal(chatResponse.status, 200);
   assert.equal((await chatResponse.json()).response, 'Integrated provider response');
 
-  const localModelStatus = await fetch(`${baseUrl}/api/llm/status`, {
+  const unavailableMedia = await Promise.all([
+    fetch(`${baseUrl}/api/multimodal/video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ prompt: 'A cinematic skyline' }),
+    }),
+    fetch(`${baseUrl}/api/multimodal/music`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ prompt: 'Ambient orchestral music' }),
+    }),
+    fetch(`${baseUrl}/api/multimodal/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ prompt: 'A botanical illustration', isOnline: false }),
+    }),
+  ]);
+  assert.deepEqual(unavailableMedia.map((response) => response.status), [501, 501, 503]);
+  assert.deepEqual(
+    await Promise.all(unavailableMedia.map(async (response) => (await response.json()).code)),
+    ['VIDEO_MODEL_UNAVAILABLE', 'MUSIC_MODEL_UNAVAILABLE', 'OFFLINE_IMAGE_MODEL_UNAVAILABLE']
+  );
+
+  const evidenceResponse = await fetch(`${baseUrl}/api/research/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+    body: JSON.stringify({
+      query: 'SQLite persistence',
+      answer: 'SQLite stores persistent production sessions using a durable local database.',
+      sources: [
+        {
+          title: 'Source one',
+          url: 'https://one.example/persistence',
+          snippet: 'SQLite stores persistent production sessions using a durable local database.',
+        },
+        {
+          title: 'Source two',
+          url: 'https://two.example/persistence',
+          snippet: 'A durable local SQLite database stores persistent production sessions.',
+        },
+      ],
+    }),
+  });
+  const evidenceResult = await evidenceResponse.json();
+  assert.equal(evidenceResponse.status, 200);
+  assert.equal(evidenceResult.claimChecks[0].status, 'cross_source_supported');
+  assert.match(evidenceResult.limitation, /not proof of truth/i);
+  const storedEvidenceResponse = await fetch(`${baseUrl}/api/research/validation/recent`, {
     headers: { Cookie: cookie, Origin: baseUrl },
   });
-  const runtimeStatus = await localModelStatus.json();
-  assert.equal(runtimeStatus.configuredDefaultModel, 'qwen3.5:4b');
-  const manifestResponse = await fetch(`${baseUrl}/api/install/manifest.json`);
-  const manifest = await manifestResponse.json();
-  assert.equal(manifest.inferenceRuntime.available, true);
-  assert.equal(manifest.inferenceRuntime.weightsInstalled, true);
-  assert.equal(manifest.inferenceRuntime.models[0].name, 'qwen3.5:4b');
-  const localModelChat = await fetch(`${baseUrl}/api/llm/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
-    body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello local model' }] }),
-  });
-  assert.equal((await localModelChat.json()).response, 'Local model response');
-
-  const imageResponse = await fetch(`${baseUrl}/api/multimodal/image`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
-    body: JSON.stringify({ prompt: 'A green hillside at sunrise', isOnline: false }),
-  });
-  const imageResult = await imageResponse.json();
-  assert.equal(imageResponse.status, 200);
-  assert.equal(imageResult.generationMode, 'provider-generated-image');
-  assert.equal(imageResult.modelUsed, 'test-image-model');
-  assert.match(imageResult.photographicPlateUrl, /^data:image\/png;base64,/);
+  const storedEvidence = await storedEvidenceResponse.json();
+  assert.equal(storedEvidence.records[0].claimChecks[0].status, 'cross_source_supported');
 
   const examples = Array.from({ length: 10 }, (_, index) => ({
     messages: [

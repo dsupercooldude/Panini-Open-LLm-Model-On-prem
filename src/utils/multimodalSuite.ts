@@ -415,8 +415,7 @@ export interface ImageStudioSpec {
   id: string;
   prompt: string;
   modelUsed: string;
-  generationMode?: 'provider-generated-image' | 'grounded-preview';
-  openSourceArchitecture?: string;
+  openSourceArchitecture?: OpenSourceImageModelArchitecture;
   vaeLatentChannels?: string;
   guidanceScale?: number;
   inferenceSteps?: number;

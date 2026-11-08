@@ -120,12 +120,11 @@ export interface ChatThreadSession {
 export interface GeneratedMediaItem {
   id: string;
   modality: 'Image' | 'Video';
-  generationMode?: 'provider-generated-image' | 'grounded-preview' | 'procedural-preview';
   prompt: string;
   timestamp: string;
   quantType: QuantizationType;
   qualityTier: MediaQualityTier;
-  resolution: '512x288' | '768x432' | '1024x576' | '1920x1080' | '3840x2160' | '7680x4320' | '1536x1024' | '1024x1536';
+  resolution: string;
   aspectRatio?: VideoAspectRatio;
   sourcePhotoDataUrl?: string;
   durationSec?: number;

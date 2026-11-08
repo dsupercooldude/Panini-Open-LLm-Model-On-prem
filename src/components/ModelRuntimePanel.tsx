@@ -78,7 +78,11 @@ export default function ModelRuntimePanel() {
           ? previous
           : modelResult.models.some((model) => model.name === saved)
             ? saved
-            : result.configuredDefaultModel || modelResult.models[0]?.name || ''
+            : modelResult.models.find((model) => model.name === result.configuredDefaultModel && !/:cloud$/i.test(model.name))?.name ||
+              modelResult.models.find((model) => !/:cloud$/i.test(model.name))?.name ||
+              result.configuredDefaultModel ||
+              modelResult.models[0]?.name ||
+              ''
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load model runtime status.');

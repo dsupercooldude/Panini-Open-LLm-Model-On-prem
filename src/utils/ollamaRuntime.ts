@@ -9,7 +9,6 @@ export interface OllamaModel {
 export interface OllamaChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
-  images?: string[];
 }
 
 export class OllamaRuntimeError extends Error {
@@ -94,6 +93,19 @@ export class OllamaRuntime {
       throw new OllamaRuntimeError('Ollama returned an invalid model list.');
     }
     return data.models;
+  }
+
+  async chooseLocalModel(preferredModel?: string): Promise<string> {
+    const models = await this.listModels();
+    const preferred = models.find((model) => model.name === preferredModel);
+    if (preferred && !/:cloud$/i.test(preferred.name)) return preferred.name;
+
+    const localModel = models.find((model) => !/:cloud$/i.test(model.name));
+    if (localModel) return localModel.name;
+    throw new OllamaRuntimeError(
+      'No local Ollama model is installed. Download a local model before using offline inference.',
+      503
+    );
   }
 
   async pullModel(
