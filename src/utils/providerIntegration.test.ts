@@ -276,3 +276,68 @@ test('SQLite migrates existing research validation tables to retain claim eviden
   assert.equal(persistedChecks[0]?.status, 'unverified');
   migrated.close();
 });
+
+test('SQLite persists and ranks local research excerpts with FTS5 BM25 evaluation cases', (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'panini-rag-'));
+  const file = path.join(directory, 'state.sqlite');
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+
+  const store = new SqliteStore(file);
+  assert.equal(
+    store.upsertResearchSources([
+      {
+        title: 'Urban tree canopy and heat mitigation',
+        url: 'https://research.example/urban-canopy',
+        domain: 'research.example',
+        snippet: 'Urban trees and canopy cover reduce heat exposure in city neighborhoods.',
+        sourceEngine: 'Research API',
+      },
+      {
+        title: 'Marine biodiversity',
+        url: 'https://journal.example/marine',
+        domain: 'journal.example',
+        snippet: 'Marine biodiversity is affected by ocean temperature and acidification.',
+        sourceEngine: 'Journal API',
+      },
+      {
+        title: 'SQLite production session storage',
+        url: 'https://docs.example/sqlite-sessions',
+        domain: 'docs.example',
+        snippet: 'SQLite provides durable local persistence for production application sessions.',
+        sourceEngine: 'Documentation',
+      },
+    ]),
+    3
+  );
+  assert.equal(
+    store.upsertResearchSources([
+      {
+        title: 'Updated urban tree study',
+        url: 'https://research.example/urban-canopy',
+        domain: 'research.example',
+        snippet: 'Urban canopy cover reduces extreme heat exposure in city neighborhoods.',
+        sourceEngine: 'Research API',
+      },
+    ]),
+    1
+  );
+  store.close();
+
+  const reopened = new SqliteStore(file);
+  const cases = [
+    { query: 'urban canopy heat city', expectedUrl: 'https://research.example/urban-canopy' },
+    { query: 'marine biodiversity ocean temperature', expectedUrl: 'https://journal.example/marine' },
+    { query: 'SQLite persistent production sessions', expectedUrl: 'https://docs.example/sqlite-sessions' },
+  ];
+  const reciprocalRanks = cases.map(({ query, expectedUrl }) => {
+    const results = reopened.searchResearchSources(query, 3);
+    const rank = results.findIndex((result) => result.url === expectedUrl);
+    return rank < 0 ? 0 : 1 / (rank + 1);
+  });
+  assert.ok(reciprocalRanks.every((rank) => rank === 1), `Expected MRR 1.0, got ${reciprocalRanks.join(', ')}`);
+  const results = reopened.searchResearchSources('urban canopy heat city', 3);
+  assert.equal(results[0].title, 'Updated urban tree study');
+  assert.match(results[0].snippet, /extreme heat exposure/);
+  assert.equal(reopened.searchResearchSources('nonexistent query', 3).length, 0);
+  reopened.close();
+});

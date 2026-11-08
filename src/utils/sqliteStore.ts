@@ -20,6 +20,15 @@ export interface ResearchValidationRecord {
   createdAt: string;
 }
 
+export interface ResearchSourceRecord {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  sourceEngine?: string;
+  createdAt?: string;
+}
+
 export class SqliteStore implements SessionRecordStore {
   private readonly db: DatabaseSync;
 
@@ -52,6 +61,19 @@ export class SqliteStore implements SessionRecordStore {
         provider TEXT NOT NULL,
         created_at TEXT NOT NULL,
         detail_json TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS research_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        snippet TEXT NOT NULL,
+        source_engine TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE VIRTUAL TABLE IF NOT EXISTS research_sources_fts USING fts5(
+        title, url, domain, snippet, source_engine,
+        tokenize = 'unicode61'
       );
     `);
     const researchColumns = this.db
@@ -101,6 +123,136 @@ export class SqliteStore implements SessionRecordStore {
         JSON.stringify(record.claimChecks || []),
         record.createdAt
       );
+  }
+
+  upsertResearchSources(sources: ResearchSourceRecord[]): number {
+    const sourceStatement = this.db.prepare(
+      `INSERT INTO research_sources (url, title, domain, snippet, source_engine, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(url) DO UPDATE SET
+         title = excluded.title,
+         domain = excluded.domain,
+         snippet = excluded.snippet,
+         source_engine = excluded.source_engine,
+         updated_at = excluded.updated_at`
+    );
+    const selectId = this.db.prepare('SELECT id FROM research_sources WHERE url = ?');
+    const deleteIndex = this.db.prepare('DELETE FROM research_sources_fts WHERE rowid = ?');
+    const insertIndex = this.db.prepare(
+      `INSERT INTO research_sources_fts (rowid, title, url, domain, snippet, source_engine)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    let indexed = 0;
+    this.db.exec('BEGIN');
+    try {
+      for (const source of sources) {
+        const snippet = source.snippet.trim().slice(0, 4000);
+        let url: URL;
+        try {
+          url = new URL(source.url);
+        } catch {
+          continue;
+        }
+        if (url.protocol !== 'https:' || !snippet) continue;
+
+        const canonicalUrl = url.toString();
+        const title = source.title.trim().slice(0, 500) || canonicalUrl;
+        const domain = url.hostname.toLowerCase().replace(/^www\./, '');
+        sourceStatement.run(
+          canonicalUrl,
+          title,
+          domain,
+          snippet,
+          (source.sourceEngine || 'Retrieved source').slice(0, 200),
+          source.createdAt || new Date().toISOString()
+        );
+        const row = selectId.get(canonicalUrl) as { id: number } | undefined;
+        if (!row) throw new Error('Failed to resolve indexed research source.');
+        deleteIndex.run(row.id);
+        insertIndex.run(
+          row.id,
+          title,
+          canonicalUrl,
+          domain,
+          snippet,
+          (source.sourceEngine || 'Retrieved source').slice(0, 200)
+        );
+        indexed += 1;
+      }
+      this.db.exec('COMMIT');
+      return indexed;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  getResearchSourcesByUrls(urls: string[]): ResearchSourceRecord[] {
+    const uniqueUrls = [...new Set(urls)].slice(0, 20);
+    if (!uniqueUrls.length) return [];
+    const placeholders = uniqueUrls.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT title, url, domain, snippet, source_engine, updated_at
+         FROM research_sources WHERE url IN (${placeholders})`
+      )
+      .all(...uniqueUrls) as Array<{
+      title: string;
+      url: string;
+      domain: string;
+      snippet: string;
+      source_engine: string;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      title: row.title,
+      url: row.url,
+      domain: row.domain,
+      snippet: row.snippet,
+      sourceEngine: row.source_engine,
+      createdAt: row.updated_at,
+    }));
+  }
+
+  searchResearchSources(
+    query: string,
+    limit = 5
+  ): Array<ResearchSourceRecord & { score: number }> {
+    const terms = [...new Set(query.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [])]
+      .filter((term) => term.length > 1)
+      .slice(0, 24);
+    if (!terms.length) return [];
+
+    const matchQuery = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(' OR ');
+    const safeLimit = Math.max(1, Math.min(10, Math.floor(limit)));
+    const rows = this.db
+      .prepare(
+        `SELECT s.title, s.url, s.domain, s.snippet, s.source_engine, s.updated_at,
+                bm25(research_sources_fts, 5.0, 0.1, 1.0, 3.0, 0.5) AS score
+         FROM research_sources_fts
+         JOIN research_sources s ON s.id = research_sources_fts.rowid
+         WHERE research_sources_fts MATCH ?
+         ORDER BY score ASC, s.updated_at DESC
+         LIMIT ?`
+      )
+      .all(matchQuery, safeLimit) as Array<{
+      title: string;
+      url: string;
+      domain: string;
+      snippet: string;
+      source_engine: string;
+      updated_at: string;
+      score: number;
+    }>;
+    return rows.map((row) => ({
+      title: row.title,
+      url: row.url,
+      domain: row.domain,
+      snippet: row.snippet,
+      sourceEngine: row.source_engine,
+      createdAt: row.updated_at,
+      score: row.score,
+    }));
   }
 
   listResearchValidations(limit = 50): ResearchValidationRecord[] {

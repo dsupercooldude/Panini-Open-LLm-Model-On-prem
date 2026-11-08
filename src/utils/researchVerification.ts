@@ -2,6 +2,7 @@ export interface ResearchEvidenceSource {
   title: string;
   url: string;
   snippet: string;
+  sourceEngine?: string;
 }
 
 export interface ClaimEvidenceMatch {
@@ -51,7 +52,9 @@ function extractClaims(answer: string): string[] {
 function normalizedHost(urlText: string): string | undefined {
   try {
     const url = new URL(urlText);
-    return url.protocol === 'https:' ? url.hostname.toLowerCase().replace(/^www\./, '') : undefined;
+    return url.protocol === 'https:' && !url.username && !url.password
+      ? url.hostname.toLowerCase().replace(/^www\./, '')
+      : undefined;
   } catch {
     return undefined;
   }

@@ -197,13 +197,24 @@ test('production API serves online chat and restores authenticated sessions afte
   });
   const evidenceResult = await evidenceResponse.json();
   assert.equal(evidenceResponse.status, 200);
-  assert.equal(evidenceResult.claimChecks[0].status, 'cross_source_supported');
+  assert.equal(evidenceResult.claimChecks[0].status, 'unverified');
+  assert.match(evidenceResult.limitation, /0 of 2 submitted sources matched the stored records/);
   assert.match(evidenceResult.limitation, /not proof of truth/i);
+  const retrievalResponse = await fetch(`${baseUrl}/api/research/retrieve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+    body: JSON.stringify({ query: 'SQLite persistent production sessions', limit: 5 }),
+  });
+  const retrievalResult = await retrievalResponse.json();
+  assert.equal(retrievalResponse.status, 200);
+  assert.equal(retrievalResult.provider, 'SQLite FTS5 BM25');
+  assert.equal(retrievalResult.sources.length, 0);
+
   const storedEvidenceResponse = await fetch(`${baseUrl}/api/research/validation/recent`, {
     headers: { Cookie: cookie, Origin: baseUrl },
   });
   const storedEvidence = await storedEvidenceResponse.json();
-  assert.equal(storedEvidence.records[0].claimChecks[0].status, 'cross_source_supported');
+  assert.equal(storedEvidence.records[0].claimChecks[0].status, 'unverified');
 
   const examples = Array.from({ length: 10 }, (_, index) => ({
     messages: [

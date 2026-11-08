@@ -4,10 +4,12 @@ Panini Studio is a local-first application with deterministic workflows and opti
 
 ## What this repository provides
 
-- Ask and Coding call an explicitly selected Ollama model, or select an installed non-cloud model by default. They can also call an OpenAI-compatible online chat provider. Retrieved excerpts are passed as untrusted context; if inference fails, deterministic fallback output is identified.
+- Ask and Coding call an explicitly selected Ollama model, or select an installed non-cloud model by default. They can also call an OpenAI-compatible online chat provider. They use stable source IDs for citations; citation links are emitted only for supplied HTTPS excerpts.
 - Ollama integration supports runtime status, installed-model listing, model pulls, inference, and Modelfile export. GGUF export serves only validated weight files from a separately configured directory.
 - OpenAI-compatible endpoints support online chat, image generation, provider fine-tuning job submission/status, speech synthesis, and transcription. Image generation returns the provider’s actual PNG dimensions. Fine-tuning is provider-hosted, not local offline training.
-- Research review stores source excerpts and checks answer sentences for overlapping terms on distinct HTTPS hosts. This is a deterministic evidence-matching aid, not semantic fact-checking, proof of source independence, or a contradiction detector.
+- Search uses public Wikipedia, OpenAlex, and Crossref APIs. It does not claim Google Search access. Generated summaries and bibliographic metadata without an actual excerpt are not treated as source evidence.
+- SQLite stores retrieved HTTPS excerpts and indexes them for local FTS5/BM25 retrieval. Offline Ask/Coding can use indexed excerpts after they have been collected online. This is lexical retrieval, not embedding/vector search.
+- Research review checks claim/excerpt term overlap and requires submitted excerpts to match sources already indexed by the server. It is not semantic fact-checking, proof of source independence, or contradiction detection. Review the cited originals.
 - SQLite stores production authentication sessions, claim-level evidence checks, source excerpts, and provider fine-tuning job metadata. Existing application settings and knowledge shards still use their current local JSON persistence.
 - Video and music generation fail explicitly because no real video/music model provider is configured; storyboard and composition controls are not rendered media files. Local image generation likewise requires separate image-model weights/runtime; online image generation requires `OPENAI_API_KEY`.
 - Admin views, scenario management, REST/MCP examples, and diagnostic UI include prototype or illustrative controls that do not provision unconfigured infrastructure.
@@ -28,7 +30,8 @@ The development server binds to `127.0.0.1:3000`. To use npm instead, install de
 
 ### Optional model providers
 
-- For local inference, install and start Ollama separately. Configure `OLLAMA_BASE_URL` if it is not `http://127.0.0.1:11434`, then download a model in Model Registry or with Ollama. An installed non-cloud model is chosen by default; set `PANINI_OLLAMA_MODEL` to prefer another local model. Ollama stores model weights outside this repository.
+- For local inference, install and start Ollama separately. On Windows, install Ollama from its official download page, start it, then run `ollama pull qwen3.5:4b` in PowerShell (or choose another model that fits your hardware). Configure `OLLAMA_BASE_URL` if it is not `http://127.0.0.1:11434`. An installed non-cloud model is chosen by default; set `PANINI_OLLAMA_MODEL` to prefer another local model. Ollama stores downloaded weights outside this repository.
+- Model weights are not bundled or committed: even a small quantized model is multiple gigabytes, model licenses differ, and hardware requirements vary. The app can use locally hosted weights through Ollama after they are installed; this does not make the model equivalent in capability to Gemini or Claude.
 - For online chat, image generation, speech, transcription, or fine-tuning, configure `OPENAI_API_KEY` and relevant model variables: `OPENAI_CHAT_MODEL`, `OPENAI_IMAGE_MODEL`, `OPENAI_TTS_MODEL`, and `OPENAI_TRANSCRIPTION_MODEL`. `OPENAI_API_BASE_URL` can point at a compatible provider that supports those endpoints. Fine-tuning requires an eligible provider model and 10–10,000 valid training examples.
 - `PANINI_DB_PATH` selects the SQLite database location. `PANINI_GGUF_EXPORT_DIR` enables export of actual `.gguf` files from a trusted local directory; it does not convert other model formats.
 
@@ -42,10 +45,10 @@ npm test
 npm run build
 ```
 
-`npm test` covers deterministic logic, provider adapters with mocked HTTP responses, SQLite persistence, and an HTTP integration test for production auth/session persistence and online chat routing. It is not a real-provider, GPU, media-generation, security-audit, or full browser acceptance suite.
+`npm test` covers deterministic logic, citation ID validation, provider adapters with mocked HTTP responses, FTS5 retrieval and persistence, SQLite migrations, and an HTTP integration test for production auth/session persistence and API behavior. It is not a real-provider, GPU, media-generation, adversarial security, model-quality, or full browser acceptance suite.
 
 ## Production-mode API protection
 
-Production mode requires `NODE_ENV=production` and `PANINI_ADMIN_PASSWORD` (at least 16 characters). Set `PANINI_ADMIN_USERNAME` to override the default username. Authentication sessions persist in SQLite for eight hours. Use HTTPS. When TLS terminates at a trusted reverse proxy, set `PANINI_TRUST_PROXY=1` and ensure the proxy overwrites forwarded headers. The default bind address is loopback; a remote bind must be explicitly configured with `PANINI_BIND_HOST`.
+Production mode requires `NODE_ENV=production` and `PANINI_ADMIN_PASSWORD` (at least 16 characters). Set `PANINI_ADMIN_USERNAME` to override the default username. Authentication sessions persist in SQLite for eight hours; sign-in attempts are rate-limited per client IP in process memory. Use HTTPS. When TLS terminates at a trusted reverse proxy, set `PANINI_TRUST_PROXY=1` and ensure the proxy overwrites forwarded headers. The default bind address is loopback; a remote bind must be explicitly configured with `PANINI_BIND_HOST`.
 
-These integrations do not by themselves establish production readiness. Real-provider credentials and model acceptance, deployment hardening, per-user authorization, independent research verification, and full browser acceptance must be validated for each deployment. Review release documents’ legacy claims before relying on them.
+These integrations do not by themselves establish production readiness or frontier-model quality. Real-provider credentials and model acceptance, deployment hardening, per-user authorization, genuine semantic/independent fact checking, and full browser acceptance must be validated for each deployment. Review release documents’ legacy claims before relying on them.

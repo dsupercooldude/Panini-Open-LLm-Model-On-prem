@@ -4862,7 +4862,7 @@ export function buildRetrievedSearchStream(
     activeEnginesCount: engines.length,
     zeroThirdPartyAiModelsUsed: true,
     inferenceEnginePolicy:
-      'Google Search + Wikipedia + Wikidata + OpenAlex + Crossref live indexes; 100% sovereign reasoning.',
+      'Retrieved results come from public encyclopedia and scholarly metadata APIs; snippets are evidence, not independent verification.',
     engines,
   };
 }

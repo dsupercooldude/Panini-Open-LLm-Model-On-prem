@@ -111,7 +111,6 @@ import {
   exportD3SubGraphToGgufShardV64,
   runDuplexVoiceToVoiceTurnV64,
 } from './src/utils/engineLogic';
-import { GoogleGenAI } from '@google/genai';
 import { INITIAL_CUSTOM_SCENARIOS, INITIAL_MODELS } from './src/utils/initialData';
 import {
   analyzeBioscienceQuery,
@@ -168,17 +167,19 @@ async function startServer() {
   function recordResearchEvidence(
     query: string,
     sources: ResearchEvidenceSource[],
-    claimChecks: ClaimEvidenceCheck[] = []
+    claimChecks: ClaimEvidenceCheck[] = [],
+    indexSources = true
   ) {
     const records = sources.flatMap((source) => {
       try {
         const url = new URL(source.url);
-        if (url.protocol !== 'https:') return [];
+        if (url.protocol !== 'https:' || url.username || url.password) return [];
         return [{
           title: source.title.slice(0, 500),
           url: url.toString(),
           domain: url.hostname.toLowerCase().replace(/^www\./, ''),
           snippet: source.snippet.slice(0, 4000),
+          sourceEngine: source.sourceEngine || 'Retrieved source',
         }];
       } catch {
         return [];
@@ -194,6 +195,7 @@ async function startServer() {
       claimChecks: claimChecks.length,
       evidenceAssessment: summarizeClaimEvidence(claimChecks),
     } as const;
+    if (indexSources) sqliteStore.upsertResearchSources(records);
     sqliteStore.saveResearchValidation({
       query: query.slice(0, 2000),
       sourceCount: records.length,
@@ -561,6 +563,30 @@ async function startServer() {
     res.json({ ok: true, records: sqliteStore.listResearchValidations(limit) });
   });
 
+  app.post('/api/research/retrieve', (req, res) => {
+    const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    const limit = Number(req.body?.limit) || 5;
+    if (!query || query.length > 2000 || !Number.isFinite(limit)) {
+      res.status(400).json({
+        ok: false,
+        code: 'INVALID_RETRIEVAL_REQUEST',
+        error: 'Provide a query up to 2,000 characters and a valid result limit.',
+      });
+      return;
+    }
+
+    const sources = sqliteStore.searchResearchSources(query, limit);
+    res.json({
+      ok: true,
+      provider: 'SQLite FTS5 BM25',
+      mode: 'local_persisted_excerpt_retrieval',
+      resultCount: sources.length,
+      sources,
+      limitation:
+        'Retrieval ranks locally stored HTTPS excerpts lexically; it does not establish source accuracy or semantic relevance.',
+    });
+  });
+
   app.post('/api/research/verify', (req, res) => {
     const query = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
     const answer = typeof req.body?.answer === 'string' ? req.body.answer : '';
@@ -601,7 +627,8 @@ async function startServer() {
         return;
       }
       try {
-        if (new URL((source as ResearchEvidenceSource).url).protocol !== 'https:') {
+        const url = new URL((source as ResearchEvidenceSource).url);
+        if (url.protocol !== 'https:' || url.username || url.password) {
           throw new Error('HTTPS required');
         }
       } catch {
@@ -615,8 +642,20 @@ async function startServer() {
       sources.push(source as ResearchEvidenceSource);
     }
 
-    const claimChecks = verifyClaimsAgainstSources(answer, sources);
-    const evidenceCoverage = recordResearchEvidence(query, sources, claimChecks);
+    const storedSourcesByUrl = new Map(
+      sqliteStore
+        .getResearchSourcesByUrls(sources.map((source) => new URL(source.url).toString()))
+        .map((source) => [source.url, source])
+    );
+    const persistedSources = sources.flatMap((source) => {
+      const canonicalUrl = new URL(source.url).toString();
+      const stored = storedSourcesByUrl.get(canonicalUrl);
+      return stored && stored.title === source.title && stored.snippet === source.snippet
+        ? [{ ...source, url: canonicalUrl }]
+        : [];
+    });
+    const claimChecks = verifyClaimsAgainstSources(answer, persistedSources);
+    const evidenceCoverage = recordResearchEvidence(query, persistedSources, claimChecks, false);
     res.json({
       ok: true,
       method: 'Deterministic lexical matching of answer claims to supplied HTTPS source excerpts.',
@@ -624,7 +663,7 @@ async function startServer() {
       claimChecks,
       evidenceCoverage,
       limitation:
-        'Text overlap is not proof of truth, source independence, or absence of contradictory evidence. Review original sources before relying on claims.',
+        `Only excerpts previously indexed by this server were assessed (${persistedSources.length} of ${sources.length} submitted sources matched the stored records). Text overlap is not proof of truth, source independence, or absence of contradictory evidence. Review original sources before relying on claims.`,
     });
   });
 
@@ -692,7 +731,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
     });
   });
 
-  // Helper: Fetch live internet search results from Google Search (Grounding + RSS/Web Index) + Wikipedia Multi-Section + Wikidata + OpenAlex + Crossref
+  // Query public encyclopedic and scholarly indexes; only returned excerpts are used as evidence.
   async function fetchLiveInternetSources(query: string, maxResults = 6) {
     const rawTrimmed = query.trim() || 'quantum computing';
     const isPptxPrompt =
@@ -714,93 +753,6 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       snippet: string;
       sourceEngine: string;
     }[] = [];
-
-    // 0a. Optional Google Search Grounding via @google/genai when GEMINI_API_KEY is configured
-    const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
-    if (geminiApiKey && geminiApiKey !== 'MY_GEMINI_API_KEY' && geminiApiKey.length > 12) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-        const gRes = await Promise.race([
-          ai.models.generateContent({
-            model: 'gemini-3.8-flash',
-            contents: `Provide a concise, strictly factual 2-sentence encyclopedic summary of: ${cleanQ}`,
-            config: {
-              tools: [{ googleSearch: {} }],
-            },
-          }),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2600)),
-        ]);
-        if (gRes && gRes.text) {
-          const groundingChunks =
-            gRes.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-          const firstWebUrl =
-            groundingChunks.find((c) => c.web?.uri)?.web?.uri ||
-            `https://www.google.com/search?q=${encoded}`;
-          const firstWebTitle =
-            groundingChunks.find((c) => c.web?.title)?.web?.title ||
-            `${cleanQ} — Google Search Grounding`;
-          results.push({
-            title: firstWebTitle,
-            authorsOrInstitution: 'Google Search Grounding Index',
-            publicationOrSource: 'Google Search (Web & Knowledge Graph)',
-            year: currentYear,
-            url: firstWebUrl,
-            doiOrUrl: firstWebUrl,
-            snippet: gRes.text.replace(/\s+/g, ' ').trim().slice(0, 420),
-            sourceEngine: 'Google Search & Knowledge Graph Engine',
-          });
-        }
-      } catch {
-        // Fall through to keyless Google RSS + Wikipedia + OpenAlex + Crossref
-      }
-    }
-
-    // 0b. Keyless Google Web & News Search RSS Index (always works without API keys)
-    try {
-      const googleRssRes = await fetch(
-        `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`,
-        {
-          signal: AbortSignal.timeout(2400),
-          headers: { 'User-Agent': 'PaniniOpenLLMStudio/6.2' },
-        }
-      );
-      if (googleRssRes.ok) {
-        const rssXml = await googleRssRes.text();
-        const itemMatches = rssXml.match(/<item>[\s\S]*?<\/item>/gi) || [];
-        for (const itemXml of itemMatches.slice(0, 2)) {
-          const rawTitle =
-            itemXml.match(/<title>([\s\S]*?)<\/title>/i)?.[1]
-              ?.replace(/<!\[CDATA\[|\]\]>/g, '')
-              .replace(/&amp;/g, '&')
-              .replace(/&quot;/g, '"')
-              .replace(/&#39;/g, "'")
-              .trim() || '';
-          const rawLink =
-            itemXml.match(/<link>([\s\S]*?)<\/link>/i)?.[1]?.trim() ||
-            `https://www.google.com/search?q=${encoded}`;
-          const rawSource =
-            itemXml.match(/<source[^>]*>([\s\S]*?)<\/source>/i)?.[1]
-              ?.replace(/<!\[CDATA\[|\]\]>/g, '')
-              .trim() || 'Google Search Index';
-          const pubDateStr = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1] || '';
-          const pubYear = pubDateStr ? new Date(pubDateStr).getFullYear() || currentYear : currentYear;
-          if (rawTitle) {
-            results.push({
-              title: `${rawTitle} (Google Search Index)`,
-              authorsOrInstitution: rawSource,
-              publicationOrSource: `Google Search · ${rawSource}`,
-              year: pubYear,
-              url: rawLink,
-              doiOrUrl: rawLink,
-              snippet: `Google Search verified web record for "${cleanQ}": ${rawTitle} (Published via ${rawSource}, ${pubYear}).`,
-              sourceEngine: 'Google Search & Knowledge Graph Engine',
-            });
-          }
-        }
-      }
-    } catch {
-      // Continue to Wikipedia / Wikidata / OpenAlex / Crossref
-    }
 
     try {
       // 1a. Try Wikipedia REST Page Summary for exact entity topic first
@@ -896,7 +848,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               year: currentYear,
               url,
               doiOrUrl: url,
-              snippet: cleanSnippet || 'No excerpt was provided by the Wikipedia search API.',
+              snippet: cleanSnippet,
               sourceEngine: 'Wikipedia Live REST Engine',
             });
           }
@@ -919,6 +871,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             display_name?: string;
             publication_year?: number;
             doi?: string;
+            abstract_inverted_index?: Record<string, number[]>;
             authorships?: { author?: { display_name?: string } }[];
             primary_location?: { source?: { display_name?: string } };
           }[];
@@ -934,7 +887,12 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
               .join(', ') || 'Author not listed';
           const venue =
             w.primary_location?.source?.display_name || 'OpenAlex Peer-Reviewed Index';
-          const workUrl = w.doi || w.id || `https://openalex.org/works?search=${encoded}`;
+          const workUrl = w.doi || w.id;
+          if (!workUrl || !/^https:\/\//i.test(workUrl)) continue;
+          const abstractTokens = Object.entries(w.abstract_inverted_index || {})
+            .flatMap(([token, positions]) => positions.map((position) => ({ token, position })))
+            .sort((left, right) => left.position - right.position)
+            .map(({ token }) => token);
           results.push({
             title: w.display_name,
             authorsOrInstitution: authors,
@@ -942,7 +900,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             year: w.publication_year || 0,
             url: workUrl,
             doiOrUrl: workUrl,
-            snippet: `OpenAlex record for "${cleanQ}". ${w.display_name}; ${authors}; ${w.publication_year || 'publication year not listed'}.`,
+            snippet: abstractTokens.join(' '),
             sourceEngine: 'OpenAlex Scholarly Index',
           });
         }
@@ -1003,9 +961,7 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
             year: publicationDate,
             url,
             doiOrUrl: url,
-            snippet:
-              abstract ||
-              `Crossref bibliographic record for "${cleanQ}": ${title} (${authors}, ${work['container-title']?.[0] || 'Crossref Index'}, ${publicationDate || currentYear}).`,
+            snippet: abstract || '',
             sourceEngine: 'Crossref Works API',
           });
         }
@@ -1174,8 +1130,8 @@ Write-Host "[Panini-400B] Ready on http://localhost:3000"
       res.json({
         ok: true,
         releaseVersion: `${CURRENT_ACTIVE_RELEASE_VERSION} (${CURRENT_ACTIVE_SVN_REVISION})`,
-        primaryEngine: 'Google Search & Knowledge Graph Engine',
-        engine: 'Google Search & Knowledge Graph Engine',
+        primaryEngine: 'Wikipedia, OpenAlex, and Crossref public APIs',
+        engine: 'Wikipedia, OpenAlex, and Crossref public APIs',
         query: rawQuery,
         cleanSubject,
         sourcesCount: liveSources.length,
